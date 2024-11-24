@@ -1,0 +1,7 @@
+# Zig artifacts
+/.zig-cache
+/zig-out
+/docs
+
+# Debug
+.gdb_history
