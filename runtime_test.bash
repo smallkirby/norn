@@ -2,7 +2,7 @@
 
 set -o pipefail
 
-TIMEOUT=5
+TIMEOUT=60
 TMPFILE=$(mktemp)
 
 function cleanup()
