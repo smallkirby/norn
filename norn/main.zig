@@ -1,3 +1,62 @@
+const std = @import("std");
+const log = std.log.scoped(.main);
+
+const surtr = @import("surtr");
+const norn = @import("norn");
+const klog = norn.klog;
+
+const BootInfo = surtr.BootInfo;
+
+/// Override the standard options.
+pub const std_options = std.Options{
+    // Logging
+    .logFn = klog.log,
+    .log_level = klog.log_level,
+};
+
+/// Early-phase kernel stack for BSP.
+extern const __early_stack: [*]const u8;
+
+/// Entry point from the bootloader.
+/// BSP starts here with its early stack.
 export fn kernelEntry() callconv(.Naked) noreturn {
-    while (true) asm volatile ("hlt");
+    asm volatile (
+        \\movq %[new_stack], %%rsp
+        \\call kernelTrampoline
+        :
+        : [new_stack] "r" (@intFromPtr(&__early_stack) - 0x10),
+    );
+}
+
+/// Trampoline function to call the main kernel function.
+/// This function is intended to convert the calling convention from .Win64 to Zig.
+export fn kernelTrampoline(boot_info: BootInfo) callconv(.Win64) noreturn {
+    kernelMain(boot_info) catch |err| {
+        log.err("Kernel aborted with error: {}", .{err});
+        @panic("Exiting...");
+    };
+
+    unreachable;
+}
+
+/// Kernel main function in Zig calling convention.
+fn kernelMain(early_boot_info: BootInfo) !void {
+    // Init kernel logger.
+    klog.init();
+    log.info("Booting Norn kernel...", .{});
+
+    // Validate the boot info.
+    validateBootInfo(early_boot_info) catch |err| {
+        log.err("Invalid boot info: {}", .{err});
+        return error.InvalidBootInfo;
+    };
+
+    norn.unimplemented("Reached unreachable Norn EOL.");
+}
+
+/// Validate the BootInfo passed by the bootloader.
+fn validateBootInfo(boot_info: BootInfo) !void {
+    if (boot_info.magic != surtr.magic) {
+        return error.InvalidMagic;
+    }
 }
