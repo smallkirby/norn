@@ -22,8 +22,6 @@ qemu-system-x86_64 \
   -nographic \
   -serial mon:stdio \
   -no-reboot \
-  -enable-kvm \
-  -cpu host \
   -smp 1 \
   -device isa-debug-exit,iobase=0xF0,iosize=0x01 \
   2>&1 \

@@ -4,4 +4,4 @@
 
 ![Lint](https://github.com/smallkirby/norn/actions/workflows/lint.yml/badge.svg)
 ![Unit Tests](https://github.com/smallkirby/norn/actions/workflows/unittest.yml/badge.svg)
-![Runtime Tests](https://img.shields.io/travis/com/smallkirby/norn?style=flat&logo=travis&label=Runtime%20Tests)
+![Runtime Tests](https://github.com/smallkirby/norn/actions/workflows/runtimetest.yml/badge.svg)

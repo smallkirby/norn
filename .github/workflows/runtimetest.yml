@@ -1,4 +1,4 @@
-name: Runtime Tests
+name: Runtime Tests (no kvm)
 
 on:
   push:
