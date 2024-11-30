@@ -4,7 +4,7 @@ pub const drivers = @import("drivers.zig");
 pub const klog = @import("log.zig");
 
 pub const Serial = @import("Serial.zig");
-pub const SpinLock = @import("spin.zig").SpinLock;
+pub const SpinLock = @import("SpinLock.zig");
 
 const std = @import("std");
 const log = std.log;
