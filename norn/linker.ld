@@ -9,9 +9,7 @@ PHDRS {
     data PT_LOAD;
     bss PT_LOAD;
 
-    __stackguard_upper PT_LOAD FLAGS(4);
-    __stack PT_LOAD FLAGS(6);
-    __stackguard_lower PT_LOAD FLAGS(4);
+    __early_stack PT_LOAD FLAGS(6);
 }
 
 SECTIONS {
@@ -37,16 +35,8 @@ SECTIONS {
         *(.lbss)
     } :bss
 
-    __stackguard_upper ALIGN(4K) (NOLOAD) : AT (ADDR(__stackguard_upper) - KERNEL_VADDR_BASE) {
-        . += 4K;
-    } :__stackguard_upper
-
-    __stack ALIGN(4K) (NOLOAD) : AT (ADDR(__stack) - KERNEL_VADDR_BASE) {
+    __early_stack ALIGN(4K) (NOLOAD) : AT (ADDR(__early_stack) - KERNEL_VADDR_BASE) {
+        __early_stack  = .;
         . += STACK_SIZE;
-    } :__stack
-
-    __stackguard_lower ALIGN(4K) (NOLOAD) : AT (ADDR(__stackguard_lower) - KERNEL_VADDR_BASE) {
-        __stackguard_lower = .;
-        . += 4K;
-    } :__stackguard_lower
+    } :__early_stack
 }
