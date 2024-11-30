@@ -51,6 +51,9 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         return error.InvalidBootInfo;
     };
 
+    if (norn.is_runtime_test) {
+        norn.terminateQemu(0);
+    }
     norn.unimplemented("Reached unreachable Norn EOL.");
 }
 

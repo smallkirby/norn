@@ -6,6 +6,7 @@ pub fn build(b: *std.Build) void {
         .os_tag = .freestanding,
         .ofmt = .elf,
     });
+    const userland_target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     // Options
@@ -28,8 +29,15 @@ pub fn build(b: *std.Build) void {
             @panic("Invalid log level");
     };
 
+    const is_runtime_test = b.option(
+        bool,
+        "runtime_test",
+        "Specify if the build is for the runtime testing.",
+    ) orelse false;
+
     const options = b.addOptions();
     options.addOption(std.log.Level, "log_level", log_level);
+    options.addOption(bool, "is_runtime_test", is_runtime_test);
 
     // Modules
     const surtr_module = b.createModule(.{
@@ -114,4 +122,19 @@ pub fn build(b: *std.Build) void {
 
     const run_qemu_cmd = b.step("run", "Run QEMU");
     run_qemu_cmd.dependOn(&qemu_cmd.step);
+
+    // Unit tests
+    const unit_test = b.addTest(.{
+        .name = "Unit Test",
+        .root_source_file = b.path("norn/norn.zig"),
+        .target = userland_target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    unit_test.root_module.addImport("norn", &unit_test.root_module);
+    unit_test.root_module.addImport("surtr", surtr_module);
+    unit_test.root_module.addOptions("option", options);
+    const run_unit_tests = b.addRunArtifact(unit_test);
+    const unit_test_step = b.step("test", "Run unit tests");
+    unit_test_step.dependOn(&run_unit_tests.step);
 }

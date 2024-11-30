@@ -3,6 +3,7 @@ pub const bits = @import("bits.zig");
 pub const drivers = @import("drivers.zig");
 pub const klog = @import("log.zig");
 
+pub const is_runtime_test = @import("option").is_runtime_test;
 pub const Serial = @import("Serial.zig");
 pub const SpinLock = @import("SpinLock.zig");
 
@@ -35,4 +36,16 @@ pub fn getSerial() *Serial {
         serial.init();
     }
     return &serial;
+}
+
+/// Terminate QEMU.
+/// Available only for testing.
+pub fn terminateQemu(status: u8) void {
+    if (is_runtime_test) {
+        arch.outb(status, 0xF0);
+    }
+}
+
+test {
+    std.testing.refAllDeclsRecursive(@This());
 }
