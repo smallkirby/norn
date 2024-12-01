@@ -50,7 +50,7 @@ pub fn rttExpectEqual(expected: anytype, actual: anytype) void {
 
 // ====================================================
 
-pub inline fn expectEqual(expected: anytype, actual: anytype) !void {
+inline fn expectEqual(expected: anytype, actual: anytype) !void {
     const T = @TypeOf(expected, actual);
     return expectEqualInner(T, expected, actual);
 }
@@ -216,7 +216,7 @@ fn SliceDiffer(comptime T: type) type {
     };
 }
 
-pub fn expectEqualSlices(comptime T: type, expected: []const T, actual: []const T) !void {
+fn expectEqualSlices(comptime T: type, expected: []const T, actual: []const T) !void {
     if (expected.ptr == actual.ptr and expected.len == actual.len) {
         return;
     }
