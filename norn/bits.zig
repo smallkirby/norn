@@ -33,6 +33,16 @@ pub inline fn concat(T: type, a: anytype, b: @TypeOf(a)) T {
     return (@as(T, a) << width_U) | @as(T, b);
 }
 
+/// Set the nth bit in the integer.
+pub inline fn set(T: type, val: T, comptime nth: anytype) T {
+    return val | tobit(T, nth);
+}
+
+/// Unset the nth bit in the integer.
+pub inline fn unset(T: type, val: T, comptime nth: anytype) T {
+    return val & ~tobit(T, nth);
+}
+
 const testing = std.testing;
 
 test "tobit" {
@@ -51,4 +61,16 @@ test "isset" {
 test "concat" {
     try testing.expectEqual(0b10, concat(u2, @as(u1, 1), @as(u1, 0)));
     try testing.expectEqual(0x1234, concat(u16, 0x12, 0x34));
+}
+
+test "set" {
+    try testing.expectEqual(0b0000_0010, set(u8, 0, 1));
+    try testing.expectEqual(0b0001_0000, set(u8, 0, 4));
+    try testing.expectEqual(0b1000_0000, set(u8, 0, 7));
+}
+
+test "unset" {
+    try testing.expectEqual(0b0000_0000, unset(u8, 0b0000_0001, 0));
+    try testing.expectEqual(0b0000_0000, unset(u8, 0b0001_0000, 4));
+    try testing.expectEqual(0b0000_0000, unset(u8, 0b1000_0000, 7));
 }
