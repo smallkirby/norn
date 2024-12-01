@@ -106,10 +106,10 @@ fn loadKernelCs() void {
         \\mov %[kernel_cs], %%rax
         \\push %%rax
         // Push RIP
-        \\leaq next(%%rip), %%rax
+        \\leaq .Lnext(%%rip), %%rax
         \\pushq %%rax
         \\lretq
-        \\next:
+        \\.Lnext:
         \\
         :
         : [kernel_cs] "n" (@as(u16, @bitCast(SegmentSelector{
