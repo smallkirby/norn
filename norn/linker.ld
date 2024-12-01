@@ -36,7 +36,7 @@ SECTIONS {
     } :bss
 
     __early_stack ALIGN(4K) (NOLOAD) : AT (ADDR(__early_stack) - KERNEL_VADDR_BASE) {
-        __early_stack  = .;
         . += STACK_SIZE;
     } :__early_stack
+    __early_stack_bottom  = .;
 }

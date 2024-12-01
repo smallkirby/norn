@@ -18,7 +18,7 @@ pub const std_options = std.Options{
 pub const panic = @import("panic.zig").panic_fn;
 
 /// Early-phase kernel stack for BSP.
-extern const __early_stack: [*]const u8;
+extern const __early_stack_bottom: [*]const u8;
 
 /// Entry point from the bootloader.
 /// BSP starts here with its early stack.
@@ -27,7 +27,7 @@ export fn kernelEntry() callconv(.Naked) noreturn {
         \\movq %[new_stack], %%rsp
         \\call kernelTrampoline
         :
-        : [new_stack] "r" (@intFromPtr(&__early_stack) - 0x10),
+        : [new_stack] "r" (@intFromPtr(&__early_stack_bottom) - 0x10),
     );
 }
 
