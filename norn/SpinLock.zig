@@ -1,4 +1,8 @@
 const atomic = @import("std").atomic;
+const is_test = @import("builtin").is_test;
+
+const norn = @import("norn");
+const arch = norn.arch;
 
 const Self = @This();
 const SpinLock = Self;
@@ -21,7 +25,28 @@ pub fn lock(self: *Self) void {
     }
 }
 
+/// Lock the spin lock and disable IRQ.
+/// Must be paired with `unlockRestoreIrq()`.
+pub fn lockDisableIrq(self: *SpinLock) bool {
+    if (!is_test) {
+        const ie = arch.isIrqEnabled();
+        lock(self);
+        return ie;
+    } else {
+        lock(self);
+        return false;
+    }
+}
+
 /// Unlock the spin lock.
 pub fn unlock(self: *Self) void {
     self._state.store(false, .release);
+}
+
+/// Unlock the spin lock and restore IRQ mask.
+pub fn unlockRestoreIrq(self: *SpinLock, ie: bool) void {
+    self.unlock();
+    if (!is_test and ie) {
+        arch.enableIrq();
+    }
 }

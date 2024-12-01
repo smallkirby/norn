@@ -22,23 +22,23 @@ _read_fn: ReadFn = undefined,
 
 /// Write a single byte to the serial console.
 pub fn write(self: *Self, c: u8) void {
-    self.lock.lock();
-    defer self.lock.unlock();
+    const ie = self.lock.lockDisableIrq();
+    defer self.lock.unlockRestoreIrq(ie);
 
     self._write_fn(c);
 }
 
-fn writeUnlocked(self: *Self, c: u8) void {
+fn writeNoLock(self: *Self, c: u8) void {
     self._write_fn(c);
 }
 
 /// Write a string to the serial console.
 pub fn writeString(self: *Self, s: []const u8) void {
-    self.lock.lock();
-    defer self.lock.unlock();
+    const ie = self.lock.lockDisableIrq();
+    defer self.lock.unlockRestoreIrq(ie);
 
     for (s) |c| {
-        self.writeUnlocked(c);
+        self.writeNoLock(c);
     }
 }
 
@@ -51,8 +51,8 @@ pub fn tryRead(_: *Self) ?u8 {
 /// Initialize the serial console.
 /// You MUST call this function before using the serial console.
 pub fn init(self: *Self) void {
-    self.lock.lock();
-    defer self.lock.unlock();
+    const ie = self.lock.lockDisableIrq();
+    defer self.lock.unlockRestoreIrq(ie);
 
     const functions = serial8250.initSerial(.com1, 115200);
     self._write_fn = functions.write;

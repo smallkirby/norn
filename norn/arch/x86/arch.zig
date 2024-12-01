@@ -22,6 +22,11 @@ pub inline fn enableIrq() void {
     am.sti();
 }
 
+/// Check if external interrupts are enabled.
+pub fn isIrqEnabled() bool {
+    return am.readRflags().ie;
+}
+
 /// Halt the current CPU.
 pub inline fn halt() void {
     am.hlt();
