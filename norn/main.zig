@@ -48,6 +48,12 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     klog.init();
     log.info("Booting Norn kernel...", .{});
 
+    // Init runtime testing.
+    if (norn.is_runtime_test) {
+        norn.initRtt();
+        log.info("Initialized runtime testing.", .{});
+    }
+
     // Validate the boot info.
     validateBootInfo(early_boot_info) catch |err| {
         log.err("Invalid boot info: {}", .{err});

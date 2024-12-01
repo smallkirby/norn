@@ -73,6 +73,8 @@ pub fn init() void {
     loadKernelDs();
     loadKernelCs();
     loadKernelTss();
+
+    testGdtEntries();
 }
 
 /// Load the kernel data segment selector.
@@ -268,3 +270,25 @@ const GdtRegister = packed struct {
     limit: u16,
     base: *[max_num_gdt]SegmentDescriptor,
 };
+
+// =======================================
+
+fn testGdtEntries() void {
+    if (norn.is_runtime_test) {
+        const expected_ds: u64 = 0x00CF93000000FFFF;
+        const expected_cs: u64 = 0x00AF99000000FFFF;
+        const expected_tss: u64 = 0x00A08B0000000000;
+        norn.rttExpectEqual(
+            expected_ds,
+            @as(u64, @bitCast(gdt[kernel_ds_index])),
+        );
+        norn.rttExpectEqual(
+            expected_cs,
+            @as(u64, @bitCast(gdt[kernel_cs_index])),
+        );
+        norn.rttExpectEqual(
+            expected_tss,
+            @as(u64, @bitCast(gdt[kernel_tss_index])),
+        );
+    }
+}

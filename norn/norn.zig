@@ -2,6 +2,7 @@ pub const arch = @import("arch.zig");
 pub const bits = @import("bits.zig");
 pub const drivers = @import("drivers.zig");
 pub const klog = @import("log.zig");
+pub usingnamespace @import("test.zig");
 
 pub const is_runtime_test = @import("option").is_runtime_test;
 pub const Serial = @import("Serial.zig");
