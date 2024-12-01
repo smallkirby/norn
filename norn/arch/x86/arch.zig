@@ -1,3 +1,5 @@
+pub const gdt = @import("gdt.zig");
+
 const std = @import("std");
 const log = std.log.scoped(.arch);
 

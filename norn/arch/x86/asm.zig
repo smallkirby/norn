@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const regs = @import("registers.zig");
+
 pub inline fn cli() void {
     asm volatile ("cli");
 }
@@ -32,6 +34,14 @@ pub inline fn inl(port: u16) u32 {
     );
 }
 
+pub inline fn lgdt(gdtr: u64) void {
+    asm volatile (
+        \\lgdt (%[gdtr])
+        :
+        : [gdtr] "r" (gdtr),
+    );
+}
+
 pub inline fn outb(value: u8, port: u16) void {
     asm volatile (
         \\outb %[value], %[port]
@@ -57,6 +67,14 @@ pub inline fn outl(value: u32, port: u16) void {
         : [value] "{eax}" (value),
           [port] "{dx}" (port),
     );
+}
+
+pub inline fn readRflags() regs.Rflags {
+    return @bitCast(asm volatile (
+        \\pushfq
+        \\pop %[rflags]
+        : [rflags] "=r" (-> u64),
+    ));
 }
 
 /// Pause the CPU for a short period of time.

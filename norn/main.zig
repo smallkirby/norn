@@ -3,6 +3,7 @@ const log = std.log.scoped(.main);
 
 const surtr = @import("surtr");
 const norn = @import("norn");
+const arch = norn.arch;
 const klog = norn.klog;
 
 const BootInfo = surtr.BootInfo;
@@ -51,6 +52,11 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         return error.InvalidBootInfo;
     };
 
+    // Initialize GDT.
+    arch.gdt.init();
+    log.info("Initialized GDT.", .{});
+
+    // EOL
     if (norn.is_runtime_test) {
         norn.terminateQemu(0);
     }

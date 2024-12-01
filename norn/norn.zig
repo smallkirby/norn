@@ -46,6 +46,14 @@ pub fn terminateQemu(status: u8) void {
     }
 }
 
+/// Halt the CPU indefinitely.
+pub fn endlessHalt() noreturn {
+    while (true) {
+        arch.disableIrq();
+        arch.halt();
+    }
+}
+
 test {
     std.testing.refAllDeclsRecursive(@This());
 }
