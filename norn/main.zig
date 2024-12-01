@@ -14,6 +14,8 @@ pub const std_options = std.Options{
     .logFn = klog.log,
     .log_level = klog.log_level,
 };
+/// Override the panic function.
+pub const panic = @import("panic.zig").panic_fn;
 
 /// Early-phase kernel stack for BSP.
 extern const __early_stack: [*]const u8;
