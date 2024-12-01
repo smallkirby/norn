@@ -275,16 +275,19 @@ const GdtRegister = packed struct {
 
 fn testGdtEntries() void {
     if (norn.is_runtime_test) {
-        const expected_ds: u64 = 0x00CF93000000FFFF;
-        const expected_cs: u64 = 0x00AF99000000FFFF;
+        const bits = norn.bits;
+        const accessed_bit = 40;
+
+        const expected_ds = bits.unset(u64, 0x00CF93000000FFFF, accessed_bit);
+        const expected_cs = bits.unset(u64, 0x00AF99000000FFFF, accessed_bit);
         const expected_tss: u64 = 0x00A08B0000000000;
         norn.rttExpectEqual(
             expected_ds,
-            @as(u64, @bitCast(gdt[kernel_ds_index])),
+            bits.unset(u64, @bitCast(gdt[kernel_ds_index]), accessed_bit),
         );
         norn.rttExpectEqual(
             expected_cs,
-            @as(u64, @bitCast(gdt[kernel_cs_index])),
+            bits.unset(u64, @bitCast(gdt[kernel_cs_index]), accessed_bit),
         );
         norn.rttExpectEqual(
             expected_tss,
