@@ -34,4 +34,4 @@ jobs:
 
       - name: Unit Tests
         run: |
-          zig build test --summary all
+          zig build test --summary all -Druntime_test=true
