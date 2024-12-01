@@ -116,6 +116,7 @@ fn loadKernelCs() void {
             .rpl = 0,
             .index = kernel_cs_index,
           }))),
+        : "rax"
     );
 }
 
@@ -129,6 +130,7 @@ fn loadKernelTss() void {
             .rpl = 0,
             .index = kernel_tss_index,
           }))),
+        : "di"
     );
 }
 
