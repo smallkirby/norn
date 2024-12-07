@@ -1,4 +1,5 @@
 pub const gdt = @import("gdt.zig");
+pub const intr = @import("intr.zig");
 
 const std = @import("std");
 const log = std.log.scoped(.arch);
@@ -6,6 +7,7 @@ const log = std.log.scoped(.arch);
 const norn = @import("norn");
 
 const am = @import("asm.zig");
+const isr = @import("isr.zig");
 
 /// Pause a CPU for a short period of time.
 pub fn relax() void {
