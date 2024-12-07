@@ -69,9 +69,6 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     arch.enableIrq();
     log.info("Initialized IDT.", .{});
 
-    const a: *volatile u64 = @ptrFromInt(0xDEAD_BEEF_0000_0000);
-    a.* = 0x1234_5678_9ABC_DEF0;
-
     // EOL
     if (norn.is_runtime_test) {
         norn.terminateQemu(0);
