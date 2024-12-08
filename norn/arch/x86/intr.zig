@@ -43,7 +43,7 @@ var handlers: [max_num_gates]Handler = [_]Handler{unhandledHandler} ** max_num_g
 
 /// Initialize the IDT.
 pub fn init() void {
-    // Set IRS stubs for all gates.
+    // Set ISR stubs for all gates.
     inline for (0..max_num_gates) |i| {
         const gate = GateDescriptor.new(
             @intFromPtr(&isr.generateIsr(i)),
