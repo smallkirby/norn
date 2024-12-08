@@ -1,4 +1,3 @@
-pub const gdt = @import("gdt.zig");
 pub const intr = @import("intr.zig");
 
 const std = @import("std");
@@ -7,6 +6,7 @@ const log = std.log.scoped(.arch);
 const norn = @import("norn");
 
 const am = @import("asm.zig");
+const gdt = @import("gdt.zig");
 const isr = @import("isr.zig");
 
 /// Pause a CPU for a short period of time.
@@ -27,6 +27,11 @@ pub inline fn enableIrq() void {
 /// Check if external interrupts are enabled.
 pub fn isIrqEnabled() bool {
     return am.readRflags().ie;
+}
+
+/// Initialize the GDT.
+pub fn initGdt() void {
+    gdt.init();
 }
 
 /// Halt the current CPU.

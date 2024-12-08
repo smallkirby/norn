@@ -29,3 +29,7 @@ pub const page_mask_4k: u64 = page_size_4k - 1;
 pub const page_mask_2mb: u64 = page_size_2mb - 1;
 /// Mask for a 1G page.
 pub const page_mask_1gb: u64 = page_size_1gb - 1;
+
+/// The base virtual address of the kernel.
+/// The virtual address strating from the address is directly mapped to the physical address at 0x0.
+pub const kernel_base = 0xFFFF_FFFF_8000_0000;

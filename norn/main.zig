@@ -61,7 +61,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     };
 
     // Initialize GDT.
-    arch.gdt.init();
+    arch.initGdt();
     log.info("Initialized GDT.", .{});
 
     // Initialize IDT.

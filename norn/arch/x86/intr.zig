@@ -27,6 +27,17 @@ var idtr = IdtRegister{
     .base = undefined,
 };
 
+const Ist = [mem.page_size_4k]u8;
+const num_ists = 7;
+/// Interrupt stack tables.
+/// TODO: Must be per-CPU.
+var ists: [num_ists]Ist align(mem.page_size_4k) = [_]Ist{std.mem.zeroes(Ist)} ** num_ists;
+/// TSS.
+var tss: gdt.TaskStateSegment align(mem.page_size_4k) = .{};
+
+/// Index of IST for #DF.
+const df_ist_index = 1;
+
 /// Interrupt handlers.
 var handlers: [max_num_gates]Handler = [_]Handler{unhandledHandler} ** max_num_gates;
 
@@ -43,9 +54,18 @@ pub fn init() void {
         setGate(i, gate);
     }
 
+    // Set IST for #DF.
+    idt[@intFromEnum(Exception.double_fault)].ist = df_ist_index;
+
+    // Load TSS.
+    tss.ist1 = @intFromPtr(&ists[df_ist_index - 1]) + @sizeOf(Ist) - 0x10;
+    gdt.setTss(@intFromPtr(&tss) - norn.mem.kernel_base);
+
     // Load IDTR.
     idtr.base = &idt;
     am.lidt(@intFromPtr(&idtr));
+
+    testTss();
 }
 
 /// Set a gate descriptor in the IDT.
@@ -90,6 +110,15 @@ fn unhandledHandler(context: *Context) void {
     log.err("R14    : 0x{X:0>16}", .{context.registers.r14});
     log.err("R15    : 0x{X:0>16}", .{context.registers.r15});
     log.err("CS     : 0x{X:0>4}", .{context.cs});
+
+    const cr0: u64 = @bitCast(am.readCr0());
+    const cr2: u64 = @bitCast(am.readCr2());
+    const cr3: u64 = @bitCast(am.readCr3());
+    const cr4: u64 = @bitCast(am.readCr4());
+    log.err("CR0    : 0x{X:0>16}", .{cr0});
+    log.err("CR2    : 0x{X:0>16}", .{cr2});
+    log.err("CR3    : 0x{X:0>16}", .{cr3});
+    log.err("CR4    : 0x{X:0>16}", .{cr4});
 
     norn.endlessHalt();
 }
@@ -159,6 +188,7 @@ pub const GateDescriptor = packed struct(u128) {
     /// Segment Selector that must point to a valid code segment in the GDT.
     seg_selector: u16,
     /// Interrupt Stack Table.
+    /// If set to 0, the processor does not switch stacks.
     ist: u3 = 0,
     /// Reserved.
     _reserved1: u5 = 0,
@@ -218,6 +248,28 @@ const IdtRegister = packed struct {
 // ====================================================
 
 const testing = std.testing;
+
+fn testTss() void {
+    if (norn.is_runtime_test) {
+        // Check if IST1 is set correctly.
+        const tss_ptr: *u64 = @ptrCast(&tss);
+        const tss_ist1_ptr: *u64 = @ptrFromInt(@intFromPtr(tss_ptr) + 0x24);
+        norn.rttExpectEqual(@intFromPtr(&ists[0]) + @sizeOf(Ist) - 0x10, tss_ist1_ptr.*);
+
+        // Check if TR is set correctly.
+        const tr: gdt.SegmentSelector = @bitCast(asm volatile (
+            \\str %[tr]
+            : [tr] "={ax}" (-> u16),
+            :
+            : "rax"
+        ));
+        norn.rttExpectEqual(gdt.SegmentSelector{
+            .index = gdt.kernel_tss_index,
+            .ti = .gdt,
+            .rpl = 0,
+        }, tr);
+    }
+}
 
 test {
     testing.refAllDeclsRecursive(@This());

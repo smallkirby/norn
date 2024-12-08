@@ -50,6 +50,22 @@ pub inline fn lidt(idtr: u64) void {
     );
 }
 
+pub inline fn loadCr3(cr3: u64) void {
+    asm volatile (
+        \\mov %[cr3], %%cr3
+        :
+        : [cr3] "r" (cr3),
+    );
+}
+
+pub inline fn loadCr4(cr4: anytype) void {
+    asm volatile (
+        \\mov %[cr4], %%cr4
+        :
+        : [cr4] "r" (@as(u64, @bitCast(cr4))),
+    );
+}
+
 pub inline fn outb(value: u8, port: u16) void {
     asm volatile (
         \\outb %[value], %[port]
@@ -75,6 +91,40 @@ pub inline fn outl(value: u32, port: u16) void {
         : [value] "{eax}" (value),
           [port] "{dx}" (port),
     );
+}
+
+pub inline fn readCr0() regs.Cr0 {
+    var cr0: u64 = undefined;
+    asm volatile (
+        \\mov %%cr0, %[cr0]
+        : [cr0] "=r" (cr0),
+    );
+    return @bitCast(cr0);
+}
+
+pub inline fn readCr2() regs.Cr2 {
+    var cr2: u64 = undefined;
+    asm volatile (
+        \\mov %%cr2, %[cr2]
+        : [cr2] "=r" (cr2),
+    );
+    return cr2;
+}
+
+pub inline fn readCr3() u64 {
+    return asm volatile (
+        \\mov %%cr3, %[cr3]
+        : [cr3] "=r" (-> u64),
+    );
+}
+
+pub inline fn readCr4() regs.Cr4 {
+    var cr4: u64 = undefined;
+    asm volatile (
+        \\mov %%cr4, %[cr4]
+        : [cr4] "=r" (cr4),
+    );
+    return @bitCast(cr4);
 }
 
 pub inline fn readRflags() regs.Rflags {

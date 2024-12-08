@@ -3,6 +3,8 @@ const norn = @import("norn");
 
 const am = @import("asm.zig");
 
+const Phys = norn.mem.Phys;
+
 /// Maximum number of GDT entries.
 const max_num_gdt = 0x10;
 
@@ -56,14 +58,6 @@ pub fn init() void {
         0,
         .kbyte,
     );
-    gdt[kernel_tss_index] = SegmentDescriptor.new(
-        0,
-        0,
-        .{ .system = .tss_available },
-        .system,
-        0,
-        .kbyte,
-    );
 
     am.lgdt(@intFromPtr(&gdtr));
 
@@ -72,9 +66,25 @@ pub fn init() void {
     // To flush the changes, we need to set segment registers.
     loadKernelDs();
     loadKernelCs();
-    loadKernelTss();
 
     testGdtEntries();
+}
+
+/// Set the TSS.
+pub fn setTss(tss: Phys) void {
+    if (norn.is_runtime_test) {
+        norn.rttExpectEqual(0, tss >> 32);
+    }
+
+    gdt[kernel_tss_index] = SegmentDescriptor.new(
+        @truncate(tss), // assuming physical address
+        std.math.maxInt(u20),
+        .{ .system = .tss_available },
+        .system,
+        0,
+        .kbyte,
+    );
+    loadKernelTss();
 }
 
 /// Load the kernel data segment selector.
@@ -273,6 +283,41 @@ const GdtRegister = packed struct {
     base: *[max_num_gdt]SegmentDescriptor,
 };
 
+/// Task State Segment.
+/// cf. SDM Vol.3A Figure 8-11.
+pub const TaskStateSegment = packed struct {
+    /// Reserved.
+    _reserved1: u32 = 0,
+    /// RSP0.
+    rsp0: u64 = 0,
+    /// RSP1.
+    rsp1: u64 = 0,
+    /// RSP2.
+    rsp2: u64 = 0,
+    /// Reserved.
+    _reserved2: u64 = 0,
+    /// IST1 (Interrupt Stack Table).
+    ist1: u64 = 0,
+    /// IST2.
+    ist2: u64 = 0,
+    /// IST3.
+    ist3: u64 = 0,
+    /// IST4.
+    ist4: u64 = 0,
+    /// IST5.
+    ist5: u64 = 0,
+    /// IST6.
+    ist6: u64 = 0,
+    /// IST7.
+    ist7: u64 = 0,
+    /// Reserved.
+    _reserved3: u64 = 0,
+    /// Reserved.
+    _reserved4: u16 = 0,
+    /// I/O Map Base Address: Offset to the I/O permission bitmap from the TSS base.
+    iomap_base: u16 = 0,
+};
+
 // =======================================
 
 fn testGdtEntries() void {
@@ -282,7 +327,6 @@ fn testGdtEntries() void {
 
         const expected_ds = bits.unset(u64, 0x00CF93000000FFFF, accessed_bit);
         const expected_cs = bits.unset(u64, 0x00AF99000000FFFF, accessed_bit);
-        const expected_tss: u64 = 0x00A08B0000000000;
         norn.rttExpectEqual(
             expected_ds,
             bits.unset(u64, @bitCast(gdt[kernel_ds_index]), accessed_bit),
@@ -290,10 +334,6 @@ fn testGdtEntries() void {
         norn.rttExpectEqual(
             expected_cs,
             bits.unset(u64, @bitCast(gdt[kernel_cs_index]), accessed_bit),
-        );
-        norn.rttExpectEqual(
-            expected_tss,
-            @as(u64, @bitCast(gdt[kernel_tss_index])),
         );
     }
 }
