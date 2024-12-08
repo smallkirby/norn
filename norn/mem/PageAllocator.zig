@@ -88,6 +88,7 @@ pub fn init(self: *Self, map: MemoryMap) void {
 
     // Scan memory map and mark usable regions.
     var desc_iter = MemoryDescriptorIterator.new(map);
+    var avail_num: usize = 0;
     while (true) {
         const desc: *uefi.tables.MemoryDescriptor = desc_iter.next() orelse break;
 
@@ -95,10 +96,22 @@ pub fn init(self: *Self, map: MemoryMap) void {
         if (avail_end < desc.physical_start) {
             self.markAllocated(phys2frame(avail_end), desc.number_of_pages);
         }
+
+        // Truncate the region if it exceeds the supported size.
+        var phys_end = desc.physical_start + desc.number_of_pages * page_size;
+        if (desc.physical_start >= max_physical_size) {
+            log.warn("Available memory size exceeds supported size.", .{});
+            break;
+        }
+        if (phys_end > max_physical_size) {
+            log.warn("Available memory size exceeds supported size.", .{});
+            phys_end = max_physical_size;
+        }
+
         // Mark the region described by the descriptor as used or unused.
-        const phys_end = desc.physical_start + desc.number_of_pages * page_size;
         if (isUsableMemory(desc)) {
             avail_end = phys_end;
+            avail_num += desc.number_of_pages;
             self.markNotUsed(phys2frame(desc.physical_start), desc.number_of_pages);
         } else {
             self.markAllocated(phys2frame(desc.physical_start), desc.number_of_pages);
@@ -106,6 +119,7 @@ pub fn init(self: *Self, map: MemoryMap) void {
 
         self.frame_end = phys2frame(avail_end);
     }
+    log.debug("Page allocator recognizes {} MiB of usable memory.", .{avail_num * page_size / mib});
 
     // Runtime test
     if (norn.is_runtime_test) {
