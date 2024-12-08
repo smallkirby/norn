@@ -60,6 +60,9 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         return error.InvalidBootInfo;
     };
 
+    // Copy boot_info into Norn's stack since it becomes inaccessible soon.
+    const boot_info = early_boot_info;
+
     // Initialize GDT.
     arch.initGdt();
     log.info("Initialized GDT.", .{});
@@ -68,6 +71,10 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     arch.intr.init();
     arch.enableIrq();
     log.info("Initialized IDT.", .{});
+
+    // Initialize page allocator.
+    norn.mem.initPageAllocator(boot_info.memory_map);
+    log.info("Initialized page allocator.", .{});
 
     // EOL
     if (norn.is_runtime_test) {
