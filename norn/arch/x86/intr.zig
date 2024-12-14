@@ -248,6 +248,7 @@ const IdtRegister = packed struct {
 // ====================================================
 
 const testing = std.testing;
+const rtt = norn.rtt;
 
 fn testTss() void {
     if (norn.is_runtime_test) {
@@ -256,7 +257,7 @@ fn testTss() void {
         const tss_ist1_low_ptr: *u32 = @ptrFromInt(@intFromPtr(tss_ptr) + 0x24);
         const tss_ist1_high_ptr: *u32 = @ptrFromInt(@intFromPtr(tss_ptr) + 0x28);
         const tss_ist1 = norn.bits.concat(u64, tss_ist1_high_ptr.*, tss_ist1_low_ptr.*);
-        norn.rttExpectEqual(@intFromPtr(&ists[0]) + @sizeOf(Ist) - 0x10, tss_ist1);
+        rtt.expectEqual(@intFromPtr(&ists[0]) + @sizeOf(Ist) - 0x10, tss_ist1);
 
         // Check if TR is set correctly.
         const tr: gdt.SegmentSelector = @bitCast(asm volatile (
@@ -265,7 +266,7 @@ fn testTss() void {
             :
             : "rax"
         ));
-        norn.rttExpectEqual(gdt.SegmentSelector{
+        rtt.expectEqual(gdt.SegmentSelector{
             .index = gdt.kernel_tss_index,
             .ti = .gdt,
             .rpl = 0,

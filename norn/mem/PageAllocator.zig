@@ -125,7 +125,7 @@ pub fn init(self: *Self, map: MemoryMap) void {
     if (norn.is_runtime_test) {
         self.lock.unlockRestoreIrq(mask);
     }
-    testPageAllocator();
+    rttPageAllocator();
 }
 
 /// Notify that BootServicesData region is no longer needed.
@@ -294,6 +294,8 @@ inline fn isUsableMemory(descriptor: *uefi.tables.MemoryDescriptor) bool {
 
 // ====================================================
 
+const rtt = norn.rtt;
+
 inline fn rttExpectOldMap() void {
     if (norn.is_runtime_test) {
         if (mem.isPgtblInitialized()) {
@@ -312,34 +314,34 @@ inline fn rttExpectNewMap() void {
     }
 }
 
-fn testPageAllocator() void {
-    if (norn.is_runtime_test) {
-        const allocator = mem.getPageAllocatorInstance();
-        const m1 = allocator.allocPages(1).?;
-        const m2 = allocator.allocPages(3).?;
-        const m3 = allocator.allocPages(1).?;
-        const start_virt_addr: mem.Virt = @intFromPtr(m1.ptr);
-        // Size is correct.
-        norn.rttExpectEqual(m1.len, mem.page_size_4k * 1);
-        norn.rttExpectEqual(m2.len, mem.page_size_4k * 3);
-        norn.rttExpectEqual(m3.len, mem.page_size_4k * 1);
-        // Pages are contiguous.
-        norn.rttExpectEqual(@intFromPtr(m1.ptr) + mem.page_size_4k, @intFromPtr(m2.ptr));
-        norn.rttExpectEqual(@intFromPtr(m2.ptr) + mem.page_size_4k * 3, @intFromPtr(m3.ptr));
-        // Returned value is virtual address.
-        norn.rttExpect(mem.direct_map_base <= @intFromPtr(m1.ptr) and @intFromPtr(m1.ptr) < mem.kernel_base);
-        norn.rttExpect(mem.direct_map_base <= @intFromPtr(m2.ptr) and @intFromPtr(m2.ptr) < mem.kernel_base);
-        norn.rttExpect(mem.direct_map_base <= @intFromPtr(m3.ptr) and @intFromPtr(m3.ptr) < mem.kernel_base);
+fn rttPageAllocator() void {
+    if (!norn.is_runtime_test) return;
 
-        // Free pages.
-        allocator.freePages(m1);
-        allocator.freePages(m2);
-        allocator.freePages(m3);
-        // New pages are allocated from the same frame.
-        const m4 = allocator.allocPages(4).?;
-        norn.rttExpectEqual(@intFromPtr(m4.ptr), start_virt_addr);
+    const allocator = mem.getPageAllocatorInstance();
+    const m1 = allocator.allocPages(1).?;
+    const m2 = allocator.allocPages(3).?;
+    const m3 = allocator.allocPages(1).?;
+    const start_virt_addr: mem.Virt = @intFromPtr(m1.ptr);
+    // Size is correct.
+    rtt.expectEqual(m1.len, mem.page_size_4k * 1);
+    rtt.expectEqual(m2.len, mem.page_size_4k * 3);
+    rtt.expectEqual(m3.len, mem.page_size_4k * 1);
+    // Pages are contiguous.
+    rtt.expectEqual(@intFromPtr(m1.ptr) + mem.page_size_4k, @intFromPtr(m2.ptr));
+    rtt.expectEqual(@intFromPtr(m2.ptr) + mem.page_size_4k * 3, @intFromPtr(m3.ptr));
+    // Returned value is virtual address.
+    rtt.expect(mem.direct_map_base <= @intFromPtr(m1.ptr) and @intFromPtr(m1.ptr) < mem.kernel_base);
+    rtt.expect(mem.direct_map_base <= @intFromPtr(m2.ptr) and @intFromPtr(m2.ptr) < mem.kernel_base);
+    rtt.expect(mem.direct_map_base <= @intFromPtr(m3.ptr) and @intFromPtr(m3.ptr) < mem.kernel_base);
 
-        // Cleanup
-        allocator.freePages(m4);
-    }
+    // Free pages.
+    allocator.freePages(m1);
+    allocator.freePages(m2);
+    allocator.freePages(m3);
+    // New pages are allocated from the same frame.
+    const m4 = allocator.allocPages(4).?;
+    rtt.expectEqual(@intFromPtr(m4.ptr), start_virt_addr);
+
+    // Cleanup
+    allocator.freePages(m4);
 }

@@ -73,7 +73,7 @@ pub fn init() void {
 /// Set the TSS.
 pub fn setTss(tss: Phys) void {
     if (norn.is_runtime_test) {
-        norn.rttExpectEqual(0, tss >> 32);
+        norn.rtt.expectEqual(0, tss >> 32);
     }
 
     gdt[kernel_tss_index] = SegmentDescriptor.new(
@@ -320,6 +320,8 @@ pub const TaskStateSegment = packed struct {
 
 // =======================================
 
+const rtt = norn.rtt;
+
 fn testGdtEntries() void {
     if (norn.is_runtime_test) {
         const bits = norn.bits;
@@ -327,11 +329,11 @@ fn testGdtEntries() void {
 
         const expected_ds = bits.unset(u64, 0x00CF93000000FFFF, accessed_bit);
         const expected_cs = bits.unset(u64, 0x00AF99000000FFFF, accessed_bit);
-        norn.rttExpectEqual(
+        rtt.expectEqual(
             expected_ds,
             bits.unset(u64, @bitCast(gdt[kernel_ds_index]), accessed_bit),
         );
-        norn.rttExpectEqual(
+        rtt.expectEqual(
             expected_cs,
             bits.unset(u64, @bitCast(gdt[kernel_cs_index]), accessed_bit),
         );

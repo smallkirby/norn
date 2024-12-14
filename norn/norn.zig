@@ -3,7 +3,8 @@ pub const bits = @import("bits.zig");
 pub const drivers = @import("drivers.zig");
 pub const klog = @import("log.zig");
 pub const mem = @import("mem.zig");
-pub usingnamespace @import("test.zig");
+
+pub const rtt = @import("rtt.zig");
 
 pub const is_runtime_test = @import("option").is_runtime_test;
 pub const Serial = @import("Serial.zig");

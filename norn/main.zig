@@ -50,7 +50,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 
     // Init runtime testing.
     if (norn.is_runtime_test) {
-        norn.initRtt();
+        norn.rtt.init();
         log.info("Initialized runtime testing.", .{});
     }
 
