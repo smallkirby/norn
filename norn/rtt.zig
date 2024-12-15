@@ -24,13 +24,14 @@ fn write(_: void, bytes: []const u8) WriterError!usize {
 /// Init runtime testing framework.
 pub fn init() void {
     @setCold(true);
+
     onlyForTest();
     serial = norn.getSerial();
 }
 
 pub fn expect(condition: bool) void {
     @setCold(true);
-    onlyForTest();
+    if (!norn.is_runtime_test) return;
 
     if (!condition) {
         log.err("RTT expectation failed at 0x{X:0>16}", .{callerInfo()});
@@ -40,7 +41,7 @@ pub fn expect(condition: bool) void {
 
 pub fn expectEqual(expected: anytype, actual: anytype) void {
     @setCold(true);
-    onlyForTest();
+    if (!norn.is_runtime_test) return;
 
     inner.expectEqual(expected, actual) catch {
         log.err("RTT expectation failed at 0x{X:0>16}", .{callerInfo()});

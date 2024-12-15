@@ -72,9 +72,7 @@ pub fn init() void {
 
 /// Set the TSS.
 pub fn setTss(tss: Phys) void {
-    if (norn.is_runtime_test) {
-        norn.rtt.expectEqual(0, tss >> 32);
-    }
+    norn.rtt.expectEqual(0, tss >> 32);
 
     gdt[kernel_tss_index] = SegmentDescriptor.new(
         @truncate(tss), // assuming physical address

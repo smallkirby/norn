@@ -181,9 +181,7 @@ pub fn reconstruct(allocator: *PageAllocator) PageError!void {
 
     const lv4idx_start = (direct_map_base >> lv4_shift) & index_mask;
     const lv4idx_end = lv4idx_start + (direct_map_size >> lv4_shift);
-    if (norn.is_runtime_test) {
-        norn.rtt.expect(lv4idx_start < lv4idx_end);
-    }
+    norn.rtt.expect(lv4idx_start < lv4idx_end);
 
     // Create the direct mapping using 1GiB pages.
     for (lv4tbl[lv4idx_start..lv4idx_end], 0..) |*lv4ent, i| {

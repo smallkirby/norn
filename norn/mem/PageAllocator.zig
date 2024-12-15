@@ -132,9 +132,7 @@ pub fn init(self: *Self, map: MemoryMap) void {
 /// This function makes these regions available for the page allocator.
 pub fn discardBootService(self: *Self) void {
     // Assuming page mapping is reconstructed.
-    if (norn.is_runtime_test) {
-        norn.rtt.expect(mem.isPgtblInitialized());
-    }
+    norn.rtt.expect(mem.isPgtblInitialized());
 
     var discarded_size: usize = 0;
 
