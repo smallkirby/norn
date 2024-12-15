@@ -41,7 +41,7 @@ const PageAllocator = Self;
 /// Maximum physical memory size in bytes that can be managed by this allocator.
 const max_physical_size = 128 * gib;
 /// Maximum page frame count.
-const frame_count = max_physical_size / mem.page_size_4k;
+const frame_count = max_physical_size / mem.size_4kib;
 
 /// Single unit of bitmap line.
 const MapLineType = u64;
@@ -133,8 +133,10 @@ pub fn init(self: *Self, map: MemoryMap) void {
 pub fn discardBootService(self: *Self) void {
     // Assuming page mapping is reconstructed.
     if (norn.is_runtime_test) {
-        norn.rttExpect(mem.isPgtblInitialized());
+        norn.rtt.expect(mem.isPgtblInitialized());
     }
+
+    var discarded_size: usize = 0;
 
     self.memmap.descriptors = @ptrFromInt(p2v(self.memmap.descriptors));
     var desc_iter = MemoryDescriptorIterator.new(self.memmap);
@@ -144,7 +146,10 @@ pub fn discardBootService(self: *Self) void {
 
         const start = desc.physical_start;
         self.markNotUsed(phys2frame(start), desc.number_of_pages);
+        discarded_size += desc.number_of_pages * page_size;
     }
+
+    log.debug("Collected {} MiB of memory from UEFI data.", .{discarded_size / mib});
 }
 
 fn markAllocated(self: *Self, frame: FrameId, num_frames: usize) void {
@@ -187,7 +192,7 @@ fn set(self: *Self, frame: FrameId, status: Status) void {
 }
 
 /// Allocate physically contiguous and aligned pages.
-pub fn allocPages(self: *Self, num_pages: usize) ?[]u8 {
+pub fn allocPages(self: *Self, num_pages: usize) ?[]align(mem.size_4kib) u8 {
     const mask = self.lock.lockDisableIrq();
     defer self.lock.unlockRestoreIrq(mask);
 
@@ -203,7 +208,7 @@ pub fn allocPages(self: *Self, num_pages: usize) ?[]u8 {
         if (i == num_frames) {
             self.markAllocated(start_frame, num_frames);
             const virt_addr: [*]u8 = @ptrFromInt(p2v(frame2phys(start_frame)));
-            return virt_addr[0 .. num_pages * page_size];
+            return @alignCast(virt_addr[0 .. num_pages * page_size]);
         }
 
         start_frame += @max(i, 1);
@@ -323,12 +328,12 @@ fn rttPageAllocator() void {
     const m3 = allocator.allocPages(1).?;
     const start_virt_addr: mem.Virt = @intFromPtr(m1.ptr);
     // Size is correct.
-    rtt.expectEqual(m1.len, mem.page_size_4k * 1);
-    rtt.expectEqual(m2.len, mem.page_size_4k * 3);
-    rtt.expectEqual(m3.len, mem.page_size_4k * 1);
+    rtt.expectEqual(m1.len, mem.size_4kib * 1);
+    rtt.expectEqual(m2.len, mem.size_4kib * 3);
+    rtt.expectEqual(m3.len, mem.size_4kib * 1);
     // Pages are contiguous.
-    rtt.expectEqual(@intFromPtr(m1.ptr) + mem.page_size_4k, @intFromPtr(m2.ptr));
-    rtt.expectEqual(@intFromPtr(m2.ptr) + mem.page_size_4k * 3, @intFromPtr(m3.ptr));
+    rtt.expectEqual(@intFromPtr(m1.ptr) + mem.size_4kib, @intFromPtr(m2.ptr));
+    rtt.expectEqual(@intFromPtr(m2.ptr) + mem.size_4kib * 3, @intFromPtr(m3.ptr));
     // Returned value is virtual address.
     rtt.expect(mem.direct_map_base <= @intFromPtr(m1.ptr) and @intFromPtr(m1.ptr) < mem.kernel_base);
     rtt.expect(mem.direct_map_base <= @intFromPtr(m2.ptr) and @intFromPtr(m2.ptr) < mem.kernel_base);

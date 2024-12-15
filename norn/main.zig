@@ -76,6 +76,11 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     norn.mem.initPageAllocator(boot_info.memory_map);
     log.info("Initialized page allocator.", .{});
 
+    // Reconstruct memory mapping from the one provided by UEFI and Sutr.
+    log.info("Reconstructing memory mapping...", .{});
+    try norn.mem.reconstructMapping();
+    log.info("Memory mapping is reconstructed.", .{});
+
     // EOL
     if (norn.is_runtime_test) {
         norn.terminateQemu(0);

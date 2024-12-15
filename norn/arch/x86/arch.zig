@@ -1,4 +1,5 @@
 pub const intr = @import("intr.zig");
+pub const page = @import("page.zig");
 
 const std = @import("std");
 const log = std.log.scoped(.arch);
@@ -47,4 +48,8 @@ pub fn inb(port: u16) u8 {
 /// Write a byte to an I/O port.
 pub fn outb(value: u8, port: u16) void {
     am.outb(value, port);
+}
+
+test {
+    std.testing.refAllDeclsRecursive(@This());
 }

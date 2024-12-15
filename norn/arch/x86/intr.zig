@@ -27,13 +27,13 @@ var idtr = IdtRegister{
     .base = undefined,
 };
 
-const Ist = [mem.page_size_4k]u8;
+const Ist = [mem.size_4kib]u8;
 const num_ists = 7;
 /// Interrupt stack tables.
 /// TODO: Must be per-CPU.
-var ists: [num_ists]Ist align(mem.page_size_4k) = [_]Ist{std.mem.zeroes(Ist)} ** num_ists;
+var ists: [num_ists]Ist align(mem.size_4kib) = [_]Ist{std.mem.zeroes(Ist)} ** num_ists;
 /// TSS.
-var tss: gdt.TaskStateSegment align(mem.page_size_4k) = .{};
+var tss: gdt.TaskStateSegment align(mem.size_4kib) = .{};
 
 /// Index of IST for #DF.
 const df_ist_index = 1;
