@@ -184,15 +184,14 @@ pub fn reconstruct(allocator: *PageAllocator) PageError!void {
     norn.rtt.expect(lv4idx_start < lv4idx_end);
 
     // Create the direct mapping using 1GiB pages.
+    const upper_bound = virt2phys(direct_map_base + direct_map_size);
     for (lv4tbl[lv4idx_start..lv4idx_end], 0..) |*lv4ent, i| {
         const lv3tbl: [*]Lv3Entry = @ptrCast(try boot.allocatePage(allocator));
         @memset(lv3tbl[0..num_table_entries], std.mem.zeroes(Lv3Entry));
 
         for (0..num_table_entries) |lv3idx| {
             const phys: u64 = (i << lv4_shift) + (lv3idx << lv3_shift);
-            if (phys >= direct_map_base) {
-                break;
-            }
+            if (phys >= upper_bound) break;
             lv3tbl[lv3idx] = Lv3Entry.newMapPage(phys, true);
         }
         lv4ent.* = Lv4Entry{
