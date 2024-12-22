@@ -235,13 +235,13 @@ const Madt = extern struct {
             self._offset += header.length;
 
             return switch (header.entry_type) {
-                EntryType.local_apic => Entry{ .local_apic = @alignCast(@ptrCast(header)) },
-                EntryType.io_apic => Entry{ .io_apic = @alignCast(@ptrCast(header)) },
-                EntryType.io_apic_src_override => Entry{ .io_apic_src_override = @alignCast(@ptrCast(header)) },
-                EntryType.io_apic_nmi_src => Entry{ .io_apic_nmi_src = @alignCast(@ptrCast(header)) },
-                EntryType.local_apic_nmi_src => Entry{ .local_apic_nmi_src = @alignCast(@ptrCast(header)) },
-                EntryType.local_apic_address_override => Entry{ .local_apic_address_override = @alignCast(@ptrCast(header)) },
-                EntryType.local_x2apic => Entry{ .local_x2apic = @alignCast(@ptrCast(header)) },
+                .local_apic => .{ .local_apic = @alignCast(@ptrCast(header)) },
+                .io_apic => .{ .io_apic = @alignCast(@ptrCast(header)) },
+                .io_apic_src_override => .{ .io_apic_src_override = @alignCast(@ptrCast(header)) },
+                .io_apic_nmi_src => .{ .io_apic_nmi_src = @alignCast(@ptrCast(header)) },
+                .local_apic_nmi_src => .{ .local_apic_nmi_src = @alignCast(@ptrCast(header)) },
+                .local_apic_address_override => .{ .local_apic_address_override = @alignCast(@ptrCast(header)) },
+                .local_x2apic => .{ .local_x2apic = @alignCast(@ptrCast(header)) },
             };
         }
     };
