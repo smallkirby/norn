@@ -146,7 +146,7 @@ const Madt = extern struct {
             length: u8,
         };
 
-        local_apic: *packed struct {
+        local_apic: *align(1) packed struct {
             /// Common header.
             header: Header,
             /// ACPI Processor ID.
@@ -156,7 +156,7 @@ const Madt = extern struct {
             /// Flags.
             flags: u32,
         },
-        io_apic: *packed struct {
+        io_apic: *align(1) packed struct {
             /// Common header.
             header: Header,
             /// I/O APIC ID.
@@ -168,7 +168,7 @@ const Madt = extern struct {
             /// Global system interrupt base.
             gsi_base: u32,
         },
-        io_apic_src_override: *packed struct {
+        io_apic_src_override: *align(1) packed struct {
             /// Common header.
             header: Header,
             /// Bus source.
@@ -180,7 +180,7 @@ const Madt = extern struct {
             /// Flags.
             flags: u16,
         },
-        io_apic_nmi_src: *packed struct {
+        io_apic_nmi_src: *align(1) packed struct {
             /// Common header.
             header: Header,
             /// Flags.
@@ -188,7 +188,7 @@ const Madt = extern struct {
             /// Global system interrupt.
             gsi: u32,
         },
-        local_apic_nmi_src: *packed struct {
+        local_apic_nmi_src: *align(1) packed struct {
             /// Common header.
             header: Header,
             /// ACPI Processor ID.
@@ -198,7 +198,7 @@ const Madt = extern struct {
             /// Local APIC LINT number.
             lint: u8,
         },
-        local_apic_address_override: *packed struct {
+        local_apic_address_override: *align(1) packed struct {
             /// Common header.
             header: Header,
             /// Reserved.
@@ -206,7 +206,7 @@ const Madt = extern struct {
             /// Local APIC address.
             local_apic_address: u64,
         },
-        local_x2apic: *packed struct {
+        local_x2apic: *align(1) packed struct {
             /// Common header.
             header: Header,
             /// Reserved.
