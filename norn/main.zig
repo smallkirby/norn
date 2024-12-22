@@ -81,6 +81,10 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     try norn.mem.reconstructMapping();
     log.info("Memory mapping is reconstructed.", .{});
 
+    // Initialize general allocator.
+    norn.mem.initGeneralAllocator();
+    log.info("Initialized general allocator.", .{});
+
     // EOL
     if (norn.is_runtime_test) {
         norn.terminateQemu(0);

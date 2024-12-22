@@ -54,13 +54,19 @@ pub const page_allocator = Allocator{
     .ptr = &page_allocator_instance,
     .vtable = &PageAllocator.vtable,
 };
+/// General memory allocator.
+pub const general_allocator = Allocator{
+    .ptr = &bin_allocator_instance,
+    .vtable = &BinAllocator.vtable,
+};
 
 /// Raw page allocator.
 /// You should use `Allocator` instead of this.
 pub const PageAllocator = @import("mem/PageAllocator.zig");
-/// Page allocator instance.
-/// You should use this allocator via `page_allocator` interface.
 var page_allocator_instance = PageAllocator.newUninit();
+
+const BinAllocator = @import("mem/BinAllocator.zig");
+var bin_allocator_instance = BinAllocator.newUninit();
 
 /// Whether the page table is initialized.
 var pgtbl_initialized = atomic.Value(bool).init(false);
@@ -78,6 +84,12 @@ pub fn getPageAllocatorInstance() *PageAllocator {
         @panic("getPageAllocatorInstance: page table has been initialized. Use page_allocator instead.");
     }
     return &page_allocator_instance;
+}
+
+/// Initialize the general allocator.
+/// You MUST call this function before using `general_allocator`.
+pub fn initGeneralAllocator() void {
+    bin_allocator_instance.init(page_allocator);
 }
 
 /// Check if the page table is initialized.
