@@ -1,3 +1,4 @@
+pub const acpi = @import("acpi.zig");
 pub const arch = @import("arch.zig");
 pub const bits = @import("bits.zig");
 pub const drivers = @import("drivers.zig");

@@ -11,6 +11,8 @@ pub const BootInfo = extern struct {
     magic: usize = magic,
     /// Memory map provided by UEFI.
     memory_map: MemoryMap,
+    /// RSDP.
+    rsdp: *anyopaque,
 };
 
 /// Memory map provided by UEFI.

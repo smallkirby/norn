@@ -61,7 +61,10 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     };
 
     // Copy boot_info into Norn's stack since it becomes inaccessible soon.
-    const boot_info = early_boot_info;
+    // `var` is to avoid the copy from being delayed.
+    // (If the copy is performed after the mapping reconstruction, we cannot access the original boot_info and results in #PF).
+    var boot_info: BootInfo = undefined;
+    boot_info = early_boot_info;
 
     // Initialize GDT.
     arch.initGdt();
@@ -84,6 +87,10 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     // Initialize general allocator.
     norn.mem.initGeneralAllocator();
     log.info("Initialized general allocator.", .{});
+
+    // Initialize ACPI.
+    try norn.acpi.init(boot_info.rsdp);
+    log.info("Initialized ACPI.", .{});
 
     // EOL
     if (norn.is_runtime_test) {

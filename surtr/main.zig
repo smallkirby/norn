@@ -30,6 +30,7 @@ const SurtrError = error{
     PageTable,
     MemoryMap,
     ExitBootServices,
+    Other,
 };
 const Error = SurtrError || arch.page.PageError;
 
@@ -206,6 +207,12 @@ pub fn boot() Error!void {
         return Error.Fs;
     }
 
+    // Find RSDP.
+    const rsdp = getRsdp() orelse {
+        log.err("Failed to find RSDP.", .{});
+        return Error.Other;
+    };
+
     // Get memory map.
     const map_buffer_size = page_size * 4;
     var map_buffer: [map_buffer_size]u8 = undefined;
@@ -260,6 +267,7 @@ pub fn boot() Error!void {
     const boot_info = surtr.BootInfo{
         .magic = surtr.magic,
         .memory_map = map,
+        .rsdp = rsdp,
     };
     kernel_entry(boot_info);
 
@@ -316,6 +324,17 @@ fn getMemoryMap(map: *surtr.MemoryMap, boot_services: *BootServices) Error!void 
         &map.descriptor_version,
     );
     return if (status == .Success) {} else Error.MemoryMap;
+}
+
+/// Find ACPI v2.0 table from UEFI configuration table.
+fn getRsdp() ?*anyopaque {
+    for (0..uefi.system_table.number_of_table_entries) |i| {
+        const ctent = uefi.system_table.configuration_table[i];
+        if (ctent.vendor_guid.eql(uefi.tables.ConfigurationTable.acpi_20_table_guid)) {
+            return ctent.vendor_table;
+        }
+    }
+    return null;
 }
 
 fn assert(condition: bool, comptime message: []const u8) void {
