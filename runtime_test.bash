@@ -22,7 +22,7 @@ qemu-system-x86_64 \
   -nographic \
   -serial mon:stdio \
   -no-reboot \
-  -smp 1 \
+  -smp 2 \
   -device isa-debug-exit,iobase=0xF0,iosize=0x01 \
   2>&1 \
 | tee "$TMPFILE"
