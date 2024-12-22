@@ -120,6 +120,138 @@ const Madt = extern struct {
     flags: u32,
     /// List of variable length records that describe the interrupt devices.
     records: void,
+
+    const EntryType = enum(u8) {
+        /// Processor Local APIC.
+        local_apic = 0,
+        /// I/O APIC.
+        io_apic = 1,
+        /// I/O APIC Interrupt Source Override.
+        io_apic_src_override = 2,
+        /// I/O APIC NMI Source.
+        io_apic_nmi_src = 3,
+        /// Local APIC NMI Source.
+        local_apic_nmi_src = 4,
+        /// Local APIC Address Override.
+        local_apic_address_override = 5,
+        /// Processor Local x2APIC.
+        local_x2apic = 9,
+    };
+
+    const Entry = union(EntryType) {
+        const Header = packed struct {
+            /// Entry type.
+            entry_type: EntryType,
+            /// Length of the entry.
+            length: u8,
+        };
+
+        local_apic: *packed struct {
+            /// Common header.
+            header: Header,
+            /// ACPI Processor ID.
+            acpi_proc_id: u8,
+            /// APIC ID.
+            apic_id: u8,
+            /// Flags.
+            flags: u32,
+        },
+        io_apic: *packed struct {
+            /// Common header.
+            header: Header,
+            /// I/O APIC ID.
+            io_apic_id: u8,
+            /// Reserved.
+            _reserved: u8,
+            /// I/O APIC address.
+            io_apic_address: u32,
+            /// Global system interrupt base.
+            gsi_base: u32,
+        },
+        io_apic_src_override: *packed struct {
+            /// Common header.
+            header: Header,
+            /// Bus source.
+            bus: u8,
+            /// IRQ source.
+            irq: u8,
+            /// Global system interrupt.
+            gsi: u32,
+            /// Flags.
+            flags: u16,
+        },
+        io_apic_nmi_src: *packed struct {
+            /// Common header.
+            header: Header,
+            /// Flags.
+            flags: u16,
+            /// Global system interrupt.
+            gsi: u32,
+        },
+        local_apic_nmi_src: *packed struct {
+            /// Common header.
+            header: Header,
+            /// ACPI Processor ID.
+            acpi_proc_id: u8,
+            /// Flags.
+            flags: u16,
+            /// Local APIC LINT number.
+            lint: u8,
+        },
+        local_apic_address_override: *packed struct {
+            /// Common header.
+            header: Header,
+            /// Reserved.
+            _reserved: u16,
+            /// Local APIC address.
+            local_apic_address: u64,
+        },
+        local_x2apic: *packed struct {
+            /// Common header.
+            header: Header,
+            /// Reserved.
+            _reserved: u16,
+            /// APIC ID.
+            apic_id: u32,
+            /// Flags.
+            flags: u32,
+            /// ACPI Processor UID.
+            acpi_proc_uid: u32,
+        },
+    };
+
+    /// Iterator for the MADT entries.
+    const Iterator = struct {
+        _madt: *Madt,
+        _offset: usize = @offsetOf(Madt, "records"),
+
+        /// Get the next entry if available.
+        pub fn next(self: *Iterator) ?Entry {
+            if (self._offset >= self._madt.header.length) {
+                return null;
+            }
+
+            const header: *Entry.Header = @ptrFromInt(@intFromPtr(self._madt) + self._offset);
+            self._offset += header.length;
+
+            return switch (header.entry_type) {
+                EntryType.local_apic => Entry{ .local_apic = @alignCast(@ptrCast(header)) },
+                EntryType.io_apic => Entry{ .io_apic = @alignCast(@ptrCast(header)) },
+                EntryType.io_apic_src_override => Entry{ .io_apic_src_override = @alignCast(@ptrCast(header)) },
+                EntryType.io_apic_nmi_src => Entry{ .io_apic_nmi_src = @alignCast(@ptrCast(header)) },
+                EntryType.local_apic_nmi_src => Entry{ .local_apic_nmi_src = @alignCast(@ptrCast(header)) },
+                EntryType.local_apic_address_override => Entry{ .local_apic_address_override = @alignCast(@ptrCast(header)) },
+                EntryType.local_x2apic => Entry{ .local_x2apic = @alignCast(@ptrCast(header)) },
+            };
+        }
+    };
+
+    /// Get an iterator for the MADT entries.
+    pub fn iter(self: *Madt) Iterator {
+        return Iterator{
+            ._madt = self,
+        };
+    }
 };
 
 /// Common header for all ACPI tables (except RSDP).
@@ -171,6 +303,11 @@ pub fn init(rsdp_phys: *anyopaque) Error!void {
     // Find MADT structure.
     madt = @alignCast(@ptrCast(xsdt.find("APIC") orelse return Error.InvalidTable));
     try madt.header.validate("APIC");
+    if (norn.is_runtime_test) {
+        var madt_iter = madt.iter();
+        while (madt_iter.next() != null) {}
+        norn.rtt.expectEqual(madt.header.length, madt_iter._offset);
+    }
 
     initialized.store(true, .release);
 }
