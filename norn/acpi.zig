@@ -22,6 +22,10 @@ var initialized = atomic.Value(bool).init(false);
 /// Lock for the ACPI.
 var lock = SpinLock{};
 
+/// System information.
+/// Once the ACPI is initialized, this must be immutable.
+var system_info: SystemInfo = undefined;
+
 /// Root System Description Pointer version 2.0.
 /// This structure is used to locate the XSDT (RSDT).
 const Rsdp = extern struct {
@@ -309,6 +313,18 @@ pub fn init(rsdp_phys: *anyopaque) Error!void {
         norn.rtt.expectEqual(madt.header.length, madt_iter._offset);
     }
 
+    // Get system information.
+    system_info.num_cpus = 0;
+
+    var madt_iter = madt.iter();
+    var madt_ent = madt_iter.next();
+    while (madt_ent != null) : (madt_ent = madt_iter.next()) {
+        switch (madt_ent.?) {
+            .local_apic => system_info.num_cpus += 1,
+            else => {},
+        }
+    }
+
     initialized.store(true, .release);
 }
 
@@ -319,4 +335,16 @@ fn checksum(data: []u8) u8 {
         sum +%= byte;
     }
     return sum;
+}
+
+/// System information that can be obtained from ACPI.
+const SystemInfo = struct {
+    /// Number of CPUS in the system.
+    num_cpus: usize,
+};
+
+/// Get the system information.
+pub fn getSystemInfo() SystemInfo {
+    norn.rtt.expectEqual(true, initialized.load(.acquire));
+    return system_info;
 }

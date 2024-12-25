@@ -91,6 +91,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     // Initialize ACPI.
     try norn.acpi.init(boot_info.rsdp);
     log.info("Initialized ACPI.", .{});
+    log.info("Number of available CPUs: {d}", .{norn.acpi.getSystemInfo().num_cpus});
 
     // EOL
     if (norn.is_runtime_test) {
