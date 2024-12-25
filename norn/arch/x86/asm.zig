@@ -1,6 +1,10 @@
 const std = @import("std");
 
 const regs = @import("registers.zig");
+const Msr = regs.Msr;
+
+const norn = @import("norn");
+const bits = norn.bits;
 
 pub inline fn cli() void {
     asm volatile ("cli");
@@ -138,6 +142,19 @@ pub inline fn readRflags() regs.Rflags {
 /// Pause the CPU for a short period of time.
 pub inline fn relax() void {
     asm volatile ("rep; nop");
+}
+
+pub inline fn rdmsr(comptime msr: Msr) u64 {
+    var eax: u32 = undefined;
+    var edx: u32 = undefined;
+    asm volatile (
+        \\rdmsr
+        : [eax] "={eax}" (eax),
+          [edx] "={edx}" (edx),
+        : [msr] "{ecx}" (@intFromEnum(msr)),
+        : "eax", "edx", "ecx"
+    );
+    return bits.concat(u64, edx, eax);
 }
 
 pub inline fn sti() void {

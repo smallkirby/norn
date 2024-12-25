@@ -4,6 +4,7 @@ const std = @import("std");
 const atomic = std.atomic;
 
 const norn = @import("norn");
+const arch = norn.arch;
 const mem = norn.mem;
 const SpinLock = norn.SpinLock;
 
@@ -308,13 +309,22 @@ pub fn init(rsdp_phys: *anyopaque) Error!void {
     madt = @alignCast(@ptrCast(xsdt.find("APIC") orelse return Error.InvalidTable));
     try madt.header.validate("APIC");
     if (norn.is_runtime_test) {
+        // Check the validity of sizes.
         var madt_iter = madt.iter();
         while (madt_iter.next() != null) {}
         norn.rtt.expectEqual(madt.header.length, madt_iter._offset);
+
+        // Check if the local APIC address is same as one in MSR,
+        // because the base address in the MADT can be overridden.
+        norn.rtt.expectEqual(true, arch.isCurrentBsp());
+        norn.rtt.expectEqual(arch.getLocalApicAddress(), madt.local_apic_address);
     }
 
     // Get system information.
-    system_info.num_cpus = 0;
+    system_info = .{
+        .num_cpus = 0,
+        .local_apic_address = madt.local_apic_address,
+    };
 
     var madt_iter = madt.iter();
     var madt_ent = madt_iter.next();
@@ -341,6 +351,8 @@ fn checksum(data: []u8) u8 {
 const SystemInfo = struct {
     /// Number of CPUS in the system.
     num_cpus: usize,
+    /// Physical address of the local APIC.
+    local_apic_address: u32,
 };
 
 /// Get the system information.

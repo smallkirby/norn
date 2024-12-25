@@ -145,3 +145,11 @@ pub const Cr4 = packed struct(u64) {
     /// Reserved.
     _reserved4: u39 = 0,
 };
+
+/// Address of Model-Specific Registers.
+pub const Msr = enum(u64) {
+    /// IA32_APIC_BASE.
+    apic_base = 0x1B,
+
+    _,
+};
