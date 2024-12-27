@@ -4,6 +4,7 @@ pub const bits = @import("bits.zig");
 pub const drivers = @import("drivers.zig");
 pub const klog = @import("log.zig");
 pub const mem = @import("mem.zig");
+pub usingnamespace @import("typing.zig");
 
 pub const rtt = @import("rtt.zig");
 
