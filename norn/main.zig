@@ -96,6 +96,11 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         try norn.acpi.spinForUsec(1000); // test if PM timer is working
     }
 
+    // TODO disable PIC.
+
+    // Boot APs.
+    try arch.mp.bootAllAps(norn.mem.page_allocator);
+
     // EOL
     if (norn.is_runtime_test) {
         norn.terminateQemu(0);
