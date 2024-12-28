@@ -4,9 +4,6 @@ const norn = @import("norn");
 const arch = norn.arch;
 const bits = norn.bits;
 
-const inb = arch.inb;
-const outb = arch.outb;
-
 /// I/O ports for serial ports.
 pub const Ports = enum(u16) {
     com1 = 0x3F8,
@@ -150,4 +147,12 @@ fn tryReadByteCom3() ?u8 {
 
 fn tryReadByteCom4() ?u8 {
     return tryReadByte(.com4);
+}
+
+fn inb(port: u16) u8 {
+    return arch.in(u8, port);
+}
+
+fn outb(value: u8, port: u16) void {
+    arch.out(u8, value, port);
 }

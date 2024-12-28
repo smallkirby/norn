@@ -89,9 +89,12 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     log.info("Initialized general allocator.", .{});
 
     // Initialize ACPI.
-    try norn.acpi.init(boot_info.rsdp);
+    try norn.acpi.init(boot_info.rsdp, norn.mem.general_allocator);
     log.info("Initialized ACPI.", .{});
     log.info("Number of available CPUs: {d}", .{norn.acpi.getSystemInfo().num_cpus});
+    if (norn.is_runtime_test) {
+        try norn.acpi.spinForUsec(1000); // test if PM timer is working
+    }
 
     // EOL
     if (norn.is_runtime_test) {

@@ -47,7 +47,7 @@ pub fn getSerial() *Serial {
 /// Available only for testing.
 pub fn terminateQemu(status: u8) void {
     if (is_runtime_test) {
-        arch.outb(status, 0xF0);
+        arch.out(u8, status, 0xF0);
     }
 }
 

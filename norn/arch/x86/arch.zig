@@ -45,9 +45,14 @@ pub inline fn halt() void {
     am.hlt();
 }
 
-/// Read a byte from an I/O port.
-pub fn inb(port: u16) u8 {
-    return am.inb(port);
+/// Read a data from an I/O port.
+pub inline fn in(T: type, port: u16) T {
+    return switch (T) {
+        u8 => am.inb(port),
+        u16 => am.inw(port),
+        u32 => am.inl(port),
+        else => @compileError("Unsupported type for asm in()"),
+    };
 }
 
 /// Check if the current CPU is the BSP.
@@ -56,8 +61,13 @@ pub fn isCurrentBsp() bool {
 }
 
 /// Write a byte to an I/O port.
-pub fn outb(value: u8, port: u16) void {
-    am.outb(value, port);
+pub fn out(T: type, value: T, port: u16) void {
+    return switch (T) {
+        u8 => am.outb(value, port),
+        u16 => am.outw(value, port),
+        u32 => am.outl(value, port),
+        else => @compileError("Unsupported type for asm out()"),
+    };
 }
 
 /// Get the APIC ID of the BSP.
