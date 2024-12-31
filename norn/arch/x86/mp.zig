@@ -204,10 +204,14 @@ fn relocateGdtr(trampoline: []u8) void {
     const gdtr_offset = @intFromPtr(&__ap_gdtr) - @intFromPtr(&__ap_trampoline);
     const gdt_offset = @intFromPtr(&__ap_gdt) - @intFromPtr(&__ap_trampoline);
     const gdt_addr = mem.virt2phys(trampoline.ptr) + gdt_offset;
-    const reloc: *volatile u32 = @ptrFromInt(@intFromPtr(trampoline.ptr) + gdtr_offset + 2); // +2 for `Base` field of GDTR
+    const reloc: [*]volatile u16 = @ptrFromInt(@intFromPtr(trampoline.ptr) + gdtr_offset + 2); // +2 for `Base` field of GDTR
 
     norn.rtt.expectEqual(0, gdt_addr & ~@as(u64, 0xFFFF));
-    reloc.* = @intCast(gdt_addr);
+
+    // GDTR.Base is not 4-byte aligned. So we have to set it by 2-byte chunks to suppress Zig's runtime check.
+    for (0..2) |i| {
+        reloc[i] = @truncate(gdt_addr >> @as(u6, @intCast(16 * i)));
+    }
 }
 
 fn relocateFarjmp32(trampoline: []u8) void {
