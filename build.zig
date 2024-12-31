@@ -116,7 +116,7 @@ pub fn build(b: *std.Build) void {
         "-cpu",
         "host",
         "-smp",
-        "2",
+        "3",
         "-s",
     };
     const qemu_cmd = b.addSystemCommand(&qemu_args);
