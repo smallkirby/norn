@@ -16,11 +16,6 @@ const regs = @import("registers.zig");
 
 const Msr = regs.Msr;
 
-/// Pause a CPU for a short period of time.
-pub fn relax() void {
-    am.relax();
-}
-
 /// Disable external interrupts.
 pub inline fn disableIrq() void {
     am.cli();
@@ -31,6 +26,16 @@ pub inline fn enableIrq() void {
     am.sti();
 }
 
+/// Get the local APIC address by reading the MSR.
+pub fn getLocalApicAddress() u32 {
+    return @truncate(am.rdmsr(.apic_base) & 0xFFFF_FFFF_FFFF_F000);
+}
+
+/// Halt the current CPU.
+pub inline fn halt() void {
+    am.hlt();
+}
+
 /// Check if external interrupts are enabled.
 pub fn isIrqEnabled() bool {
     return am.readRflags().ie;
@@ -39,11 +44,6 @@ pub fn isIrqEnabled() bool {
 /// Initialize the GDT.
 pub fn initGdt() void {
     gdt.init();
-}
-
-/// Halt the current CPU.
-pub inline fn halt() void {
-    am.hlt();
 }
 
 /// Read a data from an I/O port.
@@ -77,9 +77,9 @@ pub fn queryBspId() u8 {
     return @truncate(leaf.ebx >> 24);
 }
 
-/// Get the local APIC address by reading the MSR.
-pub fn getLocalApicAddress() u32 {
-    return @truncate(am.rdmsr(.apic_base) & 0xFFFF_FFFF_FFFF_F000);
+/// Pause a CPU for a short period of time.
+pub fn relax() void {
+    am.relax();
 }
 
 // ========================================
