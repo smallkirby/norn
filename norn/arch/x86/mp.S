@@ -134,7 +134,7 @@ __ap_reloc_zigentry:
 # Temporary GDT
 .align 16
 __ap_gdt:
-	.long	0x00000000, 0x00000000 # NULL descriptor
+  .long	0x00000000, 0x00000000 # NULL descriptor
   .long	0x0000FFFF, 0x008F9200 # Data32
   .long	0x0000FFFF, 0x00CF9A00 # Code32
   .long	0x0000FFFF, 0x00CF9200 # Data64
