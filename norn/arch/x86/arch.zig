@@ -1,4 +1,3 @@
-pub const intr = @import("intr.zig");
 pub const mp = @import("mp.zig");
 
 const std = @import("std");
@@ -11,6 +10,7 @@ const PageAllocator = norn.mem.PageAllocator;
 const am = @import("asm.zig");
 const cpuid = @import("cpuid.zig");
 const gdt = @import("gdt.zig");
+const intr = @import("intr.zig");
 const isr = @import("isr.zig");
 const pg = @import("page.zig");
 const regs = @import("registers.zig");
@@ -61,6 +61,12 @@ pub inline fn in(T: type, port: u16) T {
         u32 => am.inl(port),
         else => @compileError("Unsupported type for asm in()"),
     };
+}
+
+/// Initialize interrupt and exception handling.
+/// Note that this function does not enable interrupts.
+pub fn initInterrupt() void {
+    intr.init();
 }
 
 /// Check if the current CPU is the BSP.
