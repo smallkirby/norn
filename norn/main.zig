@@ -99,6 +99,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     // TODO disable PIC.
 
     // Boot APs.
+    log.info("Booting APs...", .{});
     try arch.mp.bootAllAps(norn.mem.page_allocator);
 
     // EOL

@@ -54,6 +54,12 @@ pub const LocalApic = struct {
             else => @compileError("Invalid type"),
         };
     }
+
+    /// Get the local APIC ID.
+    pub fn id(self: Self) u8 {
+        const n: u32 = self.read(u32, .id);
+        return @truncate(n >> 24);
+    }
 };
 
 /// Low 32-bits of Interrupt Command Register.

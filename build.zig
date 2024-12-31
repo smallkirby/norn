@@ -74,6 +74,7 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
         .code_model = .kernel,
     });
+    norn.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
     norn.entry = .{ .symbol_name = "kernelEntry" };
     norn.linker_script = b.path("norn/linker.ld");
     norn.root_module.addImport("surtr", surtr_module);
@@ -132,6 +133,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .link_libc = true,
     });
+    unit_test.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
     unit_test.root_module.addImport("norn", &unit_test.root_module);
     unit_test.root_module.addImport("surtr", surtr_module);
     unit_test.root_module.addOptions("option", options);

@@ -59,6 +59,13 @@ pub fn init() void {
         .kbyte,
     );
 
+    loadKernelGdt();
+
+    testGdtEntries();
+}
+
+/// Load kernel segment selectors.
+pub fn loadKernelGdt() void {
     am.lgdt(@intFromPtr(&gdtr));
 
     // Changing the entries in the GDT, or setting GDTR
@@ -66,8 +73,6 @@ pub fn init() void {
     // To flush the changes, we need to set segment registers.
     loadKernelDs();
     loadKernelCs();
-
-    testGdtEntries();
 }
 
 /// Set the TSS.

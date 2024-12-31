@@ -23,6 +23,8 @@ pub const PageError = error{
     InvalidAddress,
     /// Specified address is not mapped.
     NotMapped,
+    /// Specified address is already mapped.
+    AlreadyMapped,
 };
 
 const size_4k = mem.size_4kib;
@@ -169,73 +171,99 @@ pub fn translateWalk(addr: Virt) ?Phys {
     return lv1ent.phys + (addr & page_mask_4k); // 4KiB page
 }
 
-/// Directly map all memory with offset.
-/// After calling this function, it is safe to unmap direct mappings of UEFI.
-/// This function must be called only once.
-pub fn reconstruct(allocator: *PageAllocator) PageError!void {
-    // We cannot use virt2phys and phys2virt here since page tables are not initialized yet.
+/// These functions must be used only before page tables are reconstructed.
+pub const boot = struct {
+    /// Directly map all memory with offset.
+    /// After calling this function, it is safe to unmap direct mappings of UEFI.
+    /// This function must be called only once.
+    pub fn reconstruct(allocator: *PageAllocator) PageError!void {
+        // We cannot use virt2phys and phys2virt here since page tables are not initialized yet.
 
-    const lv4tbl_ptr: [*]Lv4Entry = @ptrCast(try boot.allocatePage(allocator));
-    const lv4tbl = lv4tbl_ptr[0..num_table_entries];
-    @memset(lv4tbl, std.mem.zeroes(Lv4Entry));
+        const lv4tbl_ptr: [*]Lv4Entry = @ptrCast(try boot.allocatePage(allocator));
+        const lv4tbl = lv4tbl_ptr[0..num_table_entries];
+        @memset(lv4tbl, std.mem.zeroes(Lv4Entry));
 
-    const lv4idx_start = (direct_map_base >> lv4_shift) & index_mask;
-    const lv4idx_end = lv4idx_start + (direct_map_size >> lv4_shift);
-    norn.rtt.expect(lv4idx_start < lv4idx_end);
+        const lv4idx_start = (direct_map_base >> lv4_shift) & index_mask;
+        const lv4idx_end = lv4idx_start + (direct_map_size >> lv4_shift);
+        norn.rtt.expect(lv4idx_start < lv4idx_end);
 
-    // Create the direct mapping using 1GiB pages.
-    const upper_bound = virt2phys(direct_map_base + direct_map_size);
-    for (lv4tbl[lv4idx_start..lv4idx_end], 0..) |*lv4ent, i| {
-        const lv3tbl: [*]Lv3Entry = @ptrCast(try boot.allocatePage(allocator));
-        @memset(lv3tbl[0..num_table_entries], std.mem.zeroes(Lv3Entry));
+        // Create the direct mapping using 1GiB pages.
+        const upper_bound = virt2phys(direct_map_base + direct_map_size);
+        for (lv4tbl[lv4idx_start..lv4idx_end], 0..) |*lv4ent, i| {
+            const lv3tbl: [*]Lv3Entry = @ptrCast(try boot.allocatePage(allocator));
+            @memset(lv3tbl[0..num_table_entries], std.mem.zeroes(Lv3Entry));
 
-        for (0..num_table_entries) |lv3idx| {
-            const phys: u64 = (i << lv4_shift) + (lv3idx << lv3_shift);
-            if (phys >= upper_bound) break;
-            lv3tbl[lv3idx] = Lv3Entry.newMapPage(phys, true);
-        }
-        lv4ent.* = Lv4Entry{
-            .present = true,
-            .rw = true,
-            .us = false,
-            .ps = false,
-            .phys = @truncate(@intFromPtr(lv3tbl) >> page_shift_4k),
-        };
-    }
-
-    // Recursively clone tables for the kernel region.
-    // Kernel text and data sections are mapped by UEFI and present in the tables.
-    // Here we clone the tables so that UEFI tables can be discarded.
-    // Note that kernel regions are located beyond the direct mapping region.
-    const old_lv4tbl = boot.getLv4Table(am.readCr3());
-    for (lv4idx_end..num_table_entries) |lv4idx| {
-        // Search for any mappings beyond the direct mapping region.
-        if (old_lv4tbl[lv4idx].present) {
-            const lv3tbl = boot.getLv3Table(old_lv4tbl[lv4idx].address());
-            const new_lv3tbl = try boot.cloneLevel3Table(lv3tbl, allocator);
-            lv4tbl[lv4idx] = Lv4Entry{
+            for (0..num_table_entries) |lv3idx| {
+                const phys: u64 = (i << lv4_shift) + (lv3idx << lv3_shift);
+                if (phys >= upper_bound) break;
+                lv3tbl[lv3idx] = Lv3Entry.newMapPage(phys, true);
+            }
+            lv4ent.* = Lv4Entry{
                 .present = true,
                 .rw = true,
                 .us = false,
                 .ps = false,
-                .phys = @truncate(@intFromPtr(new_lv3tbl.ptr) >> page_shift_4k),
+                .phys = @truncate(@intFromPtr(lv3tbl) >> page_shift_4k),
             };
         }
+
+        // Recursively clone tables for the kernel region.
+        // Kernel text and data sections are mapped by UEFI and present in the tables.
+        // Here we clone the tables so that UEFI tables can be discarded.
+        // Note that kernel regions are located beyond the direct mapping region.
+        const old_lv4tbl = boot.getLv4Table(am.readCr3());
+        for (lv4idx_end..num_table_entries) |lv4idx| {
+            // Search for any mappings beyond the direct mapping region.
+            if (old_lv4tbl[lv4idx].present) {
+                const lv3tbl = boot.getLv3Table(old_lv4tbl[lv4idx].address());
+                const new_lv3tbl = try boot.cloneLevel3Table(lv3tbl, allocator);
+                lv4tbl[lv4idx] = Lv4Entry{
+                    .present = true,
+                    .rw = true,
+                    .us = false,
+                    .ps = false,
+                    .phys = @truncate(@intFromPtr(new_lv3tbl.ptr) >> page_shift_4k),
+                };
+            }
+        }
+
+        var cr3 = @intFromPtr(lv4tbl) & ~@as(u64, 0xFFF);
+
+        // Enable PCID.
+        if (boot.enablePcid()) {
+            cr3 |= kernel_pcid;
+        }
+
+        // Set new lv4-table and flush all TLBs.
+        am.loadCr3(cr3);
     }
 
-    var cr3 = @intFromPtr(lv4tbl) & ~@as(u64, 0xFFF);
+    /// Map single 4KiB page at the given virtual address to the given physical address.
+    /// Return an error if:
+    /// - `virt` is not page-aligned.
+    /// - `phys` is not page-aligned.
+    /// - `virt` is already mapped.
+    pub fn map4kPageDirect(virt: Virt, phys: Phys, allocator: Allocator) PageError!void {
+        if ((virt & page_mask_4k) != 0) return PageError.InvalidAddress;
+        if ((phys & page_mask_4k) != 0) return PageError.InvalidAddress;
 
-    // Enable PCID.
-    if (boot.enablePcid()) {
-        cr3 |= kernel_pcid;
+        var lv4ent = getLv4Entry(virt, am.readCr3());
+        if (!lv4ent.present) lv4ent.* = Lv4Entry.newMapTable(try Lv3Entry.newTable(allocator), true);
+
+        const lv3ent = getLv3Entry(virt, lv4ent.address());
+        if (!lv3ent.present) lv3ent.* = Lv3Entry.newMapTable(try Lv2Entry.newTable(allocator), true);
+        if (lv3ent.ps) return PageError.AlreadyMapped;
+
+        const lv2ent = getLv2Entry(virt, lv3ent.address());
+        if (!lv2ent.present) lv2ent.* = Lv2Entry.newMapTable(try Lv1Entry.newTable(allocator), true);
+        if (lv2ent.ps) return PageError.AlreadyMapped;
+
+        const lv1ent = getLv1Entry(virt, lv2ent.address());
+        if (lv1ent.present) return PageError.AlreadyMapped;
+
+        lv1ent.* = Lv1Entry.newMapPage(phys, true);
     }
 
-    // Set new lv4-table and flush all TLBs.
-    am.loadCr3(cr3);
-}
-
-/// These functions must be used only before page tables are reconstructed.
-const boot = struct {
     fn cloneLevel3Table(lv3_table: []Lv3Entry, allocator: *PageAllocator) PageError![]Lv3Entry {
         const new_lv3ptr: [*]Lv3Entry = @ptrCast(try allocatePage(allocator));
         const new_lv3tbl = new_lv3ptr[0..num_table_entries];
@@ -445,6 +473,13 @@ fn EntryBase(table_level: TableLevel) type {
                 .ps = true,
                 .phys = @truncate(phys >> page_shift_4k),
             };
+        }
+
+        /// Create a new empty page table.
+        pub fn newTable(allocator: Allocator) PageError![*]Self {
+            const table = try allocator.alignedAlloc(Self, size_4k, num_table_entries);
+            @memset(@as([*]u8, @ptrCast(table.ptr))[0..size_4k], 0);
+            return @ptrCast(table.ptr);
         }
     };
 }
