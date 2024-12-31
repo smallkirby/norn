@@ -79,6 +79,7 @@ pub fn build(b: *std.Build) void {
     norn.root_module.addImport("surtr", surtr_module);
     norn.root_module.addImport("norn", norn_module);
     norn.root_module.addOptions("option", options);
+    norn.want_lto = false; // NOTE: LTO dead-strips exported functions in Zig file. cf: https://github.com/ziglang/zig/issues/22234
     b.installArtifact(norn);
 
     // EFI directory
