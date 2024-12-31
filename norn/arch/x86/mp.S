@@ -106,12 +106,19 @@ __ap_reloc_farjmp64:
 .align 32
 .code64
 __ap_entry64:
+  # Set up segment registers
   movw $(TMP_DS64_INDEX << 3), %di
   movw %di, %ds
   movw %di, %es
   movw %di, %fs
   movw %di, %gs
   movw %di, %ss
+
+  # Align SP to 16-byte boundary
+  pushq %rsp
+  pushq (%rsp)
+  andq $-0x10, %rsp
+  addq $8, %rsp
 
 __ap_reloc_zigentry:
   movabsq  $TO_RELOCATE, %rax
