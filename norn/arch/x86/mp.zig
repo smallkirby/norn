@@ -22,6 +22,7 @@ const Error = error{
     OutOfMemory,
 } || pg.PageError;
 
+/// Number of pages for the each AP stack.
 const num_ap_stack_pages = 5;
 
 /// Spin lock shared by all APs while booting.
