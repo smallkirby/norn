@@ -50,3 +50,8 @@ pub fn unlockRestoreIrq(self: *SpinLock, ie: bool) void {
         arch.enableIrq();
     }
 }
+
+/// Check if the spin lock is locked.
+pub fn isLocked(self: *Self) bool {
+    return self._state.load(.acquire);
+}
