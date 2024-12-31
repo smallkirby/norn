@@ -264,6 +264,25 @@ pub const boot = struct {
         lv1ent.* = Lv1Entry.newMapPage(phys, true);
     }
 
+    /// Unmap single 4KiB page at the given virtual address.
+    pub fn unmap4kPage(virt: Virt) PageError!void {
+        if ((virt & page_mask_4k) != 0) return PageError.InvalidAddress;
+
+        var lv4ent = getLv4Entry(virt, am.readCr3());
+        if (!lv4ent.present) return PageError.NotMapped;
+
+        const lv3ent = getLv3Entry(virt, lv4ent.address());
+        if (!lv3ent.present or lv3ent.ps) return PageError.NotMapped;
+
+        const lv2ent = getLv2Entry(virt, lv3ent.address());
+        if (!lv2ent.present or lv2ent.ps) return PageError.NotMapped;
+
+        const lv1ent = getLv1Entry(virt, lv2ent.address());
+        if (!lv1ent.present) return PageError.NotMapped;
+
+        lv1ent.present = false;
+    }
+
     fn cloneLevel3Table(lv3_table: []Lv3Entry, allocator: *PageAllocator) PageError![]Lv3Entry {
         const new_lv3ptr: [*]Lv3Entry = @ptrCast(try allocatePage(allocator));
         const new_lv3tbl = new_lv3ptr[0..num_table_entries];

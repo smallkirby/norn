@@ -100,7 +100,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 
     // Boot APs.
     log.info("Booting APs...", .{});
-    try arch.mp.bootAllAps(norn.mem.page_allocator);
+    try arch.mp.bootAllAps(norn.mem.getPageAllocatorInstance());
 
     // EOL
     if (norn.is_runtime_test) {

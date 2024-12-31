@@ -1,12 +1,12 @@
 const std = @import("std");
 const atomic = std.atomic;
 const log = std.log.scoped(.mp);
-const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const acpi = norn.acpi;
 const bits = norn.bits;
 const mem = norn.mem;
+const PageAllocator = mem.PageAllocator;
 const Phys = mem.Phys;
 const SpinLock = norn.SpinLock;
 
@@ -14,6 +14,7 @@ const am = @import("asm.zig");
 const apic = @import("apic.zig");
 const arch = @import("arch.zig");
 const gdt = @import("gdt.zig");
+const intr = @import("intr.zig");
 const pg = @import("page.zig");
 
 const Error = error{
@@ -21,14 +22,20 @@ const Error = error{
     OutOfMemory,
 } || pg.PageError;
 
+const num_ap_stack_pages = 5;
+
 /// Spin lock shared by all APs while booting.
 var lock = SpinLock{};
+/// Page allocator used by APs while booting.
+var ap_page_allocator: *PageAllocator = undefined;
 
 /// Boot all APs.
-pub fn bootAllAps(allocator: Allocator) Error!void {
+pub fn bootAllAps(allocator: *PageAllocator) Error!void {
     const ie = arch.isIrqEnabled();
     arch.disableIrq();
     defer if (ie) arch.enableIrq();
+
+    ap_page_allocator = allocator;
 
     const system_info = acpi.getSystemInfo();
     const bsp_id = arch.queryBspId();
@@ -39,19 +46,27 @@ pub fn bootAllAps(allocator: Allocator) Error!void {
     const trampoline: [*]const u8 = @ptrCast(&__ap_trampoline);
     const trampoline_end: [*]const u8 = @ptrCast(&__ap_trampoline_end);
     const trampoline_size = @intFromPtr(trampoline_end) - @intFromPtr(trampoline);
-    const trampoline_page = try allocator.alignedAlloc(u8, mem.size_4kib, trampoline_size);
+    const trampoline_page = allocator.allocPages(1) orelse return Error.OutOfMemory;
     const trampoline_page_phys = mem.virt2phys(trampoline_page.ptr);
     @memcpy(trampoline_page[0..trampoline_size], trampoline[0..trampoline_size]);
     norn.rtt.expectEqual(0, @intFromPtr(trampoline_page.ptr) % mem.size_4kib);
 
     // Direct map the trampoline page.
     // This is required when AP enables paging.
-    try pg.boot.map4kPageDirect(trampoline_page_phys, trampoline_page_phys, allocator);
+    try pg.boot.map4kPageDirect(
+        trampoline_page_phys,
+        trampoline_page_phys,
+        allocator.getAllocator(),
+    );
 
     // Prepare temporary stack for APs.
-    const ap_stack = try allocator.alignedAlloc(u8, mem.size_4kib, mem.size_4kib);
+    const ap_stack = allocator.allocPages(1) orelse return Error.OutOfMemory;
     @memset(ap_stack, 0);
-    try pg.boot.map4kPageDirect(mem.virt2phys(ap_stack.ptr), mem.virt2phys(ap_stack.ptr), allocator);
+    try pg.boot.map4kPageDirect(
+        mem.virt2phys(ap_stack.ptr),
+        mem.virt2phys(ap_stack.ptr),
+        allocator.getAllocator(),
+    );
 
     // Relocate boot code.
     relocateTrampoline(trampoline_page, ap_stack);
@@ -64,9 +79,18 @@ pub fn bootAllAps(allocator: Allocator) Error!void {
             continue;
         }
         bootAp(ap_id, lapic, trampoline_page_phys);
+
+        // Wait for the AP to boot.
+        while (lock.isLocked()) {
+            atomic.spinLoopHint();
+        }
     }
 
-    // TODO free trampoline memory after all APs are booted.
+    // Unmap and free the temporary pages.
+    try pg.boot.unmap4kPage(mem.virt2phys(ap_stack.ptr));
+    try pg.boot.unmap4kPage(mem.virt2phys(trampoline_page.ptr));
+    allocator.freePages(ap_stack);
+    allocator.freePages(trampoline_page);
 }
 
 /// Boot a single AP.
@@ -159,22 +183,45 @@ fn bootAp(ap_id: u8, lapic: apic.LocalApic, ap_entry: Phys) void {
 /// Trampoline code in assembly starts from protected mode and jumps to this function in long mode.
 /// At this point, CR3 is set to BSP's one.
 /// GDT is temporary. IDT is not set. Interrupts are disabled.
-fn apEntry64() noreturn {
+/// Stack is shared and temporary.
+fn apEntry64() callconv(.C) noreturn {
     // Load kernel GDT.
     gdt.loadKernelGdt();
+
+    // Load kernel IDT.
+    intr.loadKernelIdt();
+
+    // Allocate stack.
+    // TODO: set guard page.
+    const stack_top = ap_page_allocator.allocPages(num_ap_stack_pages + 1) orelse @panic("Failed to allocate stack for AP");
+    const stack = @intFromPtr(stack_top.ptr) + (num_ap_stack_pages + 1) * mem.size_4kib - 0x10;
+
+    // Set stack pointer.
+    asm volatile (
+        \\xorq %%rbp, %%rbp
+        \\movq %[stack], %%rsp
+        \\call apTrampolineToMain
+        :
+        : [stack] "r" (stack),
+    );
+
+    unreachable;
+}
+
+/// Final function before entering the AP main function.
+/// AP uses its own stack here. The only shared resource is the lock.
+export fn apTrampolineToMain() callconv(.C) noreturn {
+    // Unlock the lock for BSP to continue booting other APs.
+    lock.unlock();
 
     // Greeting
     const lapic = apic.LocalApic.new(acpi.getSystemInfo().local_apic_address);
     const lapic_id = lapic.id();
-    log.info("AP #{d} has been booted. Setting up...", .{lapic_id});
+    log.info("AP #{d} has been booted.", .{lapic_id});
 
-    // TODO implement
+    // TODO jump to AP main
     while (true) am.hlt();
 
-    // Unlock the lock for BSP to continue booting other APs.
-    lock.unlock();
-
-    // TODO go to AP main
     unreachable;
 }
 

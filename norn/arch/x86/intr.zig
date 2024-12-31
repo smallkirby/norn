@@ -63,9 +63,15 @@ pub fn init() void {
 
     // Load IDTR.
     idtr.base = &idt;
-    am.lidt(@intFromPtr(&idtr));
+    loadKernelIdt();
 
     testTss();
+}
+
+/// Load the IDT.
+/// Caller must ensure that the IDT is initialized.
+pub fn loadKernelIdt() void {
+    am.lidt(@intFromPtr(&idtr));
 }
 
 /// Set a gate descriptor in the IDT.
