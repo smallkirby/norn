@@ -57,6 +57,14 @@ pub fn init(self: *Self, page_allocator: Allocator) void {
     self.lock = SpinLock{};
 }
 
+/// Get the Allocator interface.
+pub fn getAllocator(self: *Self) Allocator {
+    return Allocator{
+        .ptr = self,
+        .vtable = &vtable,
+    };
+}
+
 /// Get the bin index for the given size.
 /// If the size exceeds the largest bin size, return null.
 fn binIndex(size: usize) ?usize {

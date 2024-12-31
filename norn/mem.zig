@@ -50,15 +50,9 @@ pub const direct_map_size = 512 * gib;
 pub const kernel_base = 0xFFFF_FFFF_8000_0000;
 
 /// Page allocator.
-pub const page_allocator = Allocator{
-    .ptr = &page_allocator_instance,
-    .vtable = &PageAllocator.vtable,
-};
+pub const page_allocator = page_allocator_instance.getAllocator();
 /// General memory allocator.
-pub const general_allocator = Allocator{
-    .ptr = &bin_allocator_instance,
-    .vtable = &BinAllocator.vtable,
-};
+pub const general_allocator = bin_allocator_instance.getAllocator();
 
 /// Raw page allocator.
 /// You should use `Allocator` instead of this.
