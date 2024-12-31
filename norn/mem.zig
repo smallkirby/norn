@@ -96,7 +96,7 @@ pub fn reconstructMapping() !void {
     defer arch.enableIrq();
 
     // Remap pages.
-    try arch.page.boot.reconstruct(getPageAllocatorInstance());
+    try arch.bootReconstructPageTable(getPageAllocatorInstance());
     pgtbl_initialized.store(true, .release);
 
     // Notify that BootServicesData region is no longer needed.

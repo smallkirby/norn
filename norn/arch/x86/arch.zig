@@ -1,20 +1,27 @@
 pub const intr = @import("intr.zig");
 pub const mp = @import("mp.zig");
-pub const page = @import("page.zig");
 
 const std = @import("std");
 const log = std.log.scoped(.arch);
 
 const norn = @import("norn");
 const bits = norn.bits;
+const PageAllocator = norn.mem.PageAllocator;
 
 const am = @import("asm.zig");
 const cpuid = @import("cpuid.zig");
 const gdt = @import("gdt.zig");
 const isr = @import("isr.zig");
+const pg = @import("page.zig");
 const regs = @import("registers.zig");
 
 const Msr = regs.Msr;
+
+/// Reconstruct the page tables
+/// This function MUST be called only once.
+pub fn bootReconstructPageTable(allocator: *PageAllocator) pg.PageError!void {
+    try pg.boot.reconstruct(allocator);
+}
 
 /// Disable external interrupts.
 pub inline fn disableIrq() void {
