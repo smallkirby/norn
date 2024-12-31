@@ -30,6 +30,7 @@ pub fn lock(self: *Self) void {
 pub fn lockDisableIrq(self: *SpinLock) bool {
     if (!is_test) {
         const ie = arch.isIrqEnabled();
+        arch.disableIrq();
         lock(self);
         return ie;
     } else {
