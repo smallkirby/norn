@@ -171,7 +171,7 @@ fn apEntry64() noreturn {
     // TODO implement
     while (true) am.hlt();
 
-    // Unlock the lock for BSP to continue booting other ASPs.
+    // Unlock the lock for BSP to continue booting other APs.
     lock.unlock();
 
     // TODO go to AP main
