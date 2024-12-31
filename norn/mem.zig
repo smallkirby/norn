@@ -80,9 +80,6 @@ pub fn initPageAllocator(map: MemoryMap) void {
 /// Get the raw instance of the page allocator.
 /// This function is available only before page table is initialized.
 pub fn getPageAllocatorInstance() *PageAllocator {
-    if (isPgtblInitialized()) {
-        @panic("getPageAllocatorInstance: page table has been initialized. Use page_allocator instead.");
-    }
     return &page_allocator_instance;
 }
 

@@ -189,6 +189,14 @@ fn set(self: *Self, frame: FrameId, status: Status) void {
     }
 }
 
+/// Get the Allocator interface.
+pub fn getAllocator(self: *Self) Allocator {
+    return Allocator{
+        .ptr = @ptrCast(self),
+        .vtable = &vtable,
+    };
+}
+
 /// Allocate physically contiguous and aligned pages.
 pub fn allocPages(self: *Self, num_pages: usize) ?[]align(mem.size_4kib) u8 {
     const mask = self.lock.lockDisableIrq();
