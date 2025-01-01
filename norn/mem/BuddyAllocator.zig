@@ -66,8 +66,9 @@ const FreeList = struct {
 
         // If the list is empty, just put the page into the head.
         if (self.head == null) {
+            new_page.next = null;
             self.head = new_page;
-            self.head.?.next = null;
+            self.num_total += 1;
             return;
         }
 
@@ -116,7 +117,7 @@ const FreeList = struct {
         if (self.head != null) {
             const ret = self.head.?;
             self.head = ret.next;
-            self.num_in_use -= 1;
+            self.num_total -= 1;
             return ret;
         } else return Error.OutOfMemory;
     }
@@ -166,8 +167,9 @@ const Arena = struct {
 
     /// Add a memory region to the free list.
     pub fn addRegion(self: *Arena, start: Phys, end: Phys) void {
-        var cur_start = start;
+        rtt.expect(start < end);
 
+        var cur_start = start;
         while (true) {
             const size = end - cur_start;
             const orig_order, var remaining = orderFloor(size / mem.size_4kib);
@@ -216,7 +218,10 @@ const Arena = struct {
     fn splitRecursive(self: *Arena, order: SizeOrder) void {
         rtt.expect(order != 0);
 
+        const lower_order = order - 1;
         const free_list = self.getList(order);
+
+        // Ensure that the freelist is not empty.
         if (free_list.isEmpty()) {
             self.splitRecursive(order + 1);
             rtt.expectEqual(false, free_list.isEmpty());
@@ -226,10 +231,11 @@ const Arena = struct {
             @panic("BuddyAllocator: failed to split the free list.");
         };
 
-        const block_size = orderToInt(order - 1) * mem.size_4kib;
-        const num_blocks = orderToInt(order) * mem.size_4kib / block_size;
-        for (0..num_blocks) |i| {
-            self.getList(order - 1).addRegion(mem.phys2virt(mem.virt2phys(block) + i * block_size));
+        const block_size = orderToInt(lower_order) * mem.size_4kib;
+        const num_blocks = (orderToInt(order) * mem.size_4kib) / block_size;
+        rtt.expectEqual(2, num_blocks);
+        for (0..2) |i| {
+            self.getList(lower_order).addRegion(mem.virt2phys(block) + i * block_size);
         }
     }
 
