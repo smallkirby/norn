@@ -400,6 +400,12 @@ pub fn init(self: *Self, bs: *BootstrapAllocator) void {
             .{ total_inuse_pages * mem.size_4kib / mem.mib, total_pages * mem.size_4kib / mem.mib },
         );
     }
+
+    // Runtime test.
+    if (norn.is_runtime_test) {
+        self.lock.unlockRestoreIrq(ie);
+    }
+    rttTestBuddyAllocator(self);
 }
 
 /// Get the PageAllocator interface.
@@ -451,4 +457,60 @@ inline fn rttExpectNewMap() void {
         log.err("Page table must be initialized before calling the function.", .{});
         norn.endlessHalt();
     }
+}
+
+const TestingAllocatedPage = packed struct {
+    next: TestingPagePointer,
+};
+const TestingPagePointer = ?*TestingAllocatedPage;
+
+/// Runtime test for BuddyAllocator.
+fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
+    if (!norn.is_runtime_test) return;
+
+    const allocator = buddy_allocator.getAllocator();
+    const arena = buddy_allocator.zones.getArena(.normal);
+
+    var allocated_pages_order0: TestingPagePointer = null;
+    const num_pages_order0 = (arena.lists[0].num_total - arena.lists[0].num_in_use) * Arena.orderToInt(0);
+
+    // Allocate 3 pages and check the alignment.
+    {
+        const page = allocator.allocPages(3, .normal) catch {
+            @panic("Unexpected failure in rttTestBuddyAllocator()");
+        };
+        // Must be aligned to 16 KiB.
+        rtt.expectEqual(0, @intFromPtr(page.ptr) & 0x3_FFF);
+        allocator.freePages(page);
+    }
+
+    // Consume all pages from 0-th freelist.
+    {
+        var prev: [*]allowzero u8 = @ptrFromInt(0);
+        for (0..num_pages_order0) |_| {
+            const page = rttAllocatePage(&allocated_pages_order0, allocator);
+            // Blocks in the freelist must be sorted.
+            rtt.expect(@intFromPtr(prev) < @intFromPtr(page.ptr));
+            prev = page.ptr;
+        }
+        rtt.expectEqual(null, arena.lists[0].head);
+    }
+
+    // Split pages in the 1-st freelist to the 0-th.
+    {
+        const page1 = rttAllocatePage(&allocated_pages_order0, allocator);
+        const page2 = rttAllocatePage(&allocated_pages_order0, allocator);
+        // Two pages must be contiguous because they are split from the same block.
+        rtt.expectEqual(@intFromPtr(page1.ptr) + mem.size_4kib, @intFromPtr(page2.ptr));
+    }
+}
+
+fn rttAllocatePage(list: *TestingPagePointer, allocator: PageAllocator) []align(mem.size_4kib) u8 {
+    const page = allocator.allocPages(1, .normal) catch {
+        @panic("Unexpected failure in rttAllocatePage()");
+    };
+    const new_page: *TestingAllocatedPage = @ptrCast(page.ptr);
+    new_page.next = list.*;
+    list.* = new_page;
+    return page;
 }
