@@ -168,6 +168,41 @@ fn resize(_: *anyopaque, _: []u8, _: u8, _: usize, _: usize) bool {
 
 const testing = std.testing;
 
+const TestPageAllocator = struct {
+    pub const vtable = PageAllocator.Vtable{
+        .allocPages = allocPages,
+        .freePages = freePages,
+    };
+
+    const Error = PageAllocator.Error;
+
+    pub fn new() TestPageAllocator {
+        return .{};
+    }
+
+    pub fn allocator(self: *TestPageAllocator) PageAllocator {
+        return PageAllocator{
+            .ptr = self,
+            .vtable = &TestPageAllocator.vtable,
+        };
+    }
+
+    pub fn allocPages(_: *anyopaque, num_pages: usize, _: mem.Zone) Error![]align(mem.size_4kib) u8 {
+        const ret = std.heap.page_allocator.alignedAlloc(
+            u8,
+            mem.size_4kib,
+            mem.size_4kib * num_pages,
+        );
+        return ret;
+    }
+
+    pub fn freePages(_: *anyopaque, slice: []u8) void {
+        std.heap.page_allocator.free(slice);
+    }
+};
+
+var test_page_allocator = TestPageAllocator.new();
+
 test {
     testing.refAllDeclsRecursive(@This());
 }
@@ -175,7 +210,7 @@ test {
 fn getTestingAllocator() Allocator {
     var bin_allocator_instance // we don't want an error check
         = std.heap.page_allocator.create(Self) catch unreachable;
-    bin_allocator_instance.init(std.heap.page_allocator);
+    bin_allocator_instance.init(test_page_allocator.allocator());
 
     return Allocator{
         .ptr = bin_allocator_instance,
