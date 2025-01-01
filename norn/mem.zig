@@ -115,13 +115,6 @@ pub fn initGeneralAllocator() void {
     bin_allocator_instance.init(page_allocator);
 }
 
-/// Get the raw instance of the bootstrap allocator.
-/// This function is available only before page table is initialized.
-pub fn getBootstrapAllocator() *BootstrapAllocator {
-    norn.rtt.expect(!pgtbl_initialized.load(.acquire));
-    return &bootstrap_allocator_instance;
-}
-
 /// Check if the page table is initialized.
 pub fn isPgtblInitialized() bool {
     return pgtbl_initialized.load(.acquire);
@@ -131,11 +124,13 @@ pub fn isPgtblInitialized() bool {
 /// It creates two mappings: direct mapping and kernel mapping.
 /// After this function, direct mapping provided by UEFI is no longer available.
 pub fn reconstructMapping() !void {
+    norn.rtt.expect(!pgtbl_initialized.load(.acquire));
+
     arch.disableIrq();
     defer arch.enableIrq();
 
     // Remap pages.
-    try arch.bootReconstructPageTable(getBootstrapAllocator().getAllocator());
+    try arch.bootReconstructPageTable(bootstrap_allocator_instance.getAllocator());
     pgtbl_initialized.store(true, .release);
 }
 

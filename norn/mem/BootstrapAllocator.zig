@@ -11,6 +11,7 @@
 const std = @import("std");
 const log = std.log.scoped(.pa);
 const uefi = std.os.uefi;
+const MemoryDescriptor = uefi.tables.MemoryDescriptor;
 
 const surtr = @import("surtr");
 const MemoryMap = surtr.MemoryMap;
@@ -22,11 +23,12 @@ const PageAllocator = mem.PageAllocator;
 const Phys = norn.mem.Phys;
 
 const Self = @This();
+const Error = PageAllocator.Error;
 
-pub const Error = error{
-    /// Out of memory.
-    OutOfMemory,
-};
+/// Memory map provided by UEFI.
+map: MemoryMap = undefined,
+/// Management structure for pages.
+pages: *[num_max_pages]Page = undefined,
 
 /// Physical page managed by the allocator.
 const Page = packed struct {
@@ -52,15 +54,11 @@ blk: {
     break :blk @sizeOf(Page) / mem.size_4kib + 1;
 };
 
+/// Vtable for PageAllocator interface.
 const vtable = PageAllocator.Vtable{
     .allocPages = allocPages,
     .freePages = freePages,
 };
-
-/// Memory map provided by UEFI.
-memmap: MemoryMap = undefined,
-/// Management structure for pages.
-pages: *[num_max_pages]Page = undefined,
 
 /// Create a new instance of the allocator.
 /// The instance is uninitialized and must be initialized before use.
@@ -72,14 +70,18 @@ pub fn new() Self {
 pub fn init(self: *Self, map: MemoryMap) void {
     rttExpectOldMap();
 
-    self.memmap = map;
+    self.map = map;
 
+    // Iterate over the memory map to find a region that can be used by the allocator.
+    // Note that all the memory (both for metadata and pool) must be allocated from the single region.
+    // Additionally, memory must be allocated from the beginning of the region.
     var desc_iter = MemoryDescriptorIterator.new(map);
     while (true) {
-        const desc: *uefi.tables.MemoryDescriptor = desc_iter.next() orelse break;
-        var phys_start = desc.physical_start;
-
+        const desc: *MemoryDescriptor = desc_iter.next() orelse break;
         if (!isUsableMemory(desc)) continue;
+
+        var phys_start = desc.physical_start;
+        // If the region does not have enough size, skip it.
         if (desc.number_of_pages < meta_total_pages + num_max_pages) continue;
 
         // Initialize the management structure.
@@ -109,14 +111,35 @@ pub fn getAllocator(self: *Self) PageAllocator {
     };
 }
 
+/// Get the region of used pages.
+pub fn getUsedRegion(self: *Self) struct { region: Phys, num_pages: usize } {
+    rttExpectNewMap();
+
+    const pages: *[num_max_pages]Page = @ptrFromInt(mem.phys2virt(self.pages.ptr));
+    const region = pages[0].phys;
+    const num_pages = for (0..num_max_pages) |i| {
+        if (!pages[i].in_use) break i;
+    } else num_max_pages;
+
+    // Check if the in-use pages are contiguous and does not have gap between.
+    if (norn.is_runtime_test) {
+        for (0..num_max_pages) |i| {
+            norn.rtt.expectEqual(i < num_pages, pages[i].in_use);
+        }
+    }
+
+    return .{ .region = region, .num_pages = num_pages };
+}
+
 /// Allocate physically contiguous and aligned pages.
-/// Zone is ignored.
+/// Returned slice points to physical address.
+/// Note that the argument `zone` is ignored. It's undefined from which zone the memory is allocated.
 fn allocPages(ctx: *anyopaque, num_pages: usize, _: mem.Zone) Error![]align(mem.size_4kib) u8 {
     rttExpectOldMap();
 
     const self: *Self = @alignCast(@ptrCast(ctx));
-
     var start_ix: usize = 0;
+
     while (true) {
         var i: usize = 0;
 
@@ -134,16 +157,19 @@ fn allocPages(ctx: *anyopaque, num_pages: usize, _: mem.Zone) Error![]align(mem.
             return @alignCast(phys_addr[0 .. num_pages * mem.size_4kib]);
         }
 
+        // Increment the start index and retry.
         start_ix += @max(i, 1);
         if (start_ix + num_pages >= num_max_pages) return Error.OutOfMemory;
     }
 }
 
+/// BootstrapAllocator does not support free.
 fn freePages(_: *anyopaque, _: []u8) void {
-    norn.unimplemented("BootstrapAllocator.freePages()");
+    @panic("BootstrapAllocator is not supposed to free memory.");
 }
 
 /// Check if the memory region described by the descriptor is usable for this allocator.
+/// Page tables are not reconstructed, so BootServicesData is not usable here.
 inline fn isUsableMemory(descriptor: *uefi.tables.MemoryDescriptor) bool {
     return switch (descriptor.type) {
         .ConventionalMemory,
@@ -151,25 +177,6 @@ inline fn isUsableMemory(descriptor: *uefi.tables.MemoryDescriptor) bool {
         => true,
         else => false,
     };
-}
-
-pub fn getUsedRegion(self: *Self) struct { region: Phys, num_pages: usize } {
-    rttExpectNewMap();
-
-    const pages: *[num_max_pages]Page = @ptrFromInt(mem.phys2virt(self.pages.ptr));
-    const region = pages[0].phys;
-    const num_pages = for (0..num_max_pages) |i| {
-        if (!pages[i].in_use) break i;
-    } else num_max_pages;
-
-    // check if the in-use pages are contiguous and does not have gap.
-    if (norn.is_runtime_test) {
-        for (0..num_max_pages) |i| {
-            norn.rtt.expectEqual(i < num_pages, pages[i].in_use);
-        }
-    }
-
-    return .{ .region = region, .num_pages = num_pages };
 }
 
 // ====================================================

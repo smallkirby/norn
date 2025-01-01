@@ -9,7 +9,14 @@ const SpinLock = norn.SpinLock;
 const Self = @This();
 const BinAllocator = Self;
 
-pub const vtable = Allocator.VTable{
+/// Backing page allocator.
+page_allocator: PageAllocator,
+/// Heads of the chunk lists.
+list_heads: [bin_sizes.len]ChunkMetaPointer,
+/// Spin lock.
+lock: SpinLock,
+
+const vtable = Allocator.VTable{
     .alloc = allocate,
     .free = free,
     .resize = resize,
@@ -27,13 +34,6 @@ comptime {
         @compileError("The largest bin size exceeds a 4KiB page size");
     }
 }
-
-/// Backing page allocator.
-page_allocator: PageAllocator,
-/// Heads of the chunk lists.
-list_heads: [bin_sizes.len]ChunkMetaPointer,
-/// Spin lock.
-lock: SpinLock,
 
 /// Metadata of free chunk.
 /// NOTE: In zig, we don't need to store the size of the in-use chunk.
