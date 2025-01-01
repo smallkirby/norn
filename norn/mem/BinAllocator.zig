@@ -139,7 +139,10 @@ fn allocate(ctx: *anyopaque, n: usize, log2_align: u8, _: usize) ?[*]u8 {
         // Requested size including alignment exceeds a 4KiB page size.
         // Zig's Allocator does not assume an align larger than a page size.
         // So we can safely ignore the alignment, ang just return for requested size.
-        const ret = self.page_allocator.allocPages(n / mem.size_4kib, .normal) catch return null;
+        const num_pages = std.math.divCeil(usize, n, mem.size_4kib) catch {
+            @panic("BinAllocator: Unexpected division.");
+        };
+        const ret = self.page_allocator.allocPages(num_pages, .normal) catch return null;
         return @ptrCast(ret.ptr);
     }
 }
