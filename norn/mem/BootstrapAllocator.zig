@@ -35,12 +35,8 @@ const Page = packed struct {
     /// Status of the page.
     in_use: bool,
 
-    fn newUsed(phys: Phys) Page {
-        return .{ .phys = phys, .in_use = true };
-    }
-
-    fn newUnused(phys: Phys) Page {
-        return .{ .phys = phys, .in_use = false };
+    pub fn new(phys: Phys, in_use: bool) Page {
+        return .{ .phys = phys, .in_use = in_use };
     }
 };
 
@@ -89,13 +85,13 @@ pub fn init(self: *Self, map: MemoryMap) void {
         // Initialize the management structure.
         self.pages = @ptrFromInt(phys_start);
         for (0..meta_total_pages) |i| {
-            self.pages[i] = Page.newUsed(phys_start + i * mem.size_4kib);
+            self.pages[i] = Page.new(phys_start + i * mem.size_4kib, true);
         }
         phys_start += meta_total_pages * mem.size_4kib;
 
         // Mark the pages as available.
         for (0..num_max_pages - meta_total_pages) |i| {
-            self.pages[i + meta_total_pages] = Page.newUnused(phys_start);
+            self.pages[i + meta_total_pages] = Page.new(phys_start, false);
             phys_start += mem.size_4kib;
         }
 
