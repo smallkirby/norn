@@ -40,6 +40,7 @@ const SizeOrder = u8;
 const FreeList = struct {
     /// Pointer to the first free page.
     /// The list must be sorted in ascending order of physical addresses.
+    /// Each page is ensured to be aligned to the order.
     head: ?*FreePage = null,
     /// Number of blocks used by the free list.
     num_in_use: usize = undefined,
@@ -156,14 +157,23 @@ const Arena = struct {
     }
 
     /// Add a memory region to the free list.
-    /// TODO: MUST check alignment
     pub fn addRegion(self: *Arena, start: Phys, end: Phys) void {
         var cur_start = start;
 
         while (true) {
             const size = end - cur_start;
-            const order, const remaining = orderFloor(size / mem.size_4kib);
+            const orig_order, var remaining = orderFloor(size / mem.size_4kib);
 
+            // Find the order that matches the alignment.
+            var order = orig_order;
+            while (order != 0) {
+                const mask = getOrderMask(order);
+                if (cur_start & mask == 0) break;
+                order -= 1;
+            }
+            remaining += orderToInt(order) - orderToInt(orig_order);
+
+            // Add the region to the free list.
             self.getList(order).addRegion(cur_start);
 
             cur_start += orderToInt(order) * mem.size_4kib;
