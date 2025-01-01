@@ -177,11 +177,9 @@ pub fn getUsedRegion(self: *Self) struct { region: Phys, num_pages: usize } {
 const rtt = norn.rtt;
 
 inline fn rttExpectOldMap() void {
-    if (norn.is_runtime_test) {
-        if (mem.isPgtblInitialized()) {
-            log.err("Page table must be uninitialized before calling the function.", .{});
-            norn.endlessHalt();
-        }
+    if (norn.is_runtime_test and mem.isPgtblInitialized()) {
+        log.err("Page table must not be initialized before calling the function.", .{});
+        norn.endlessHalt();
     }
 }
 
