@@ -1,5 +1,6 @@
 const std = @import("std");
 const atomic = std.atomic;
+const meta = std.meta;
 const Allocator = std.mem.Allocator;
 
 const surtr = @import("surtr");
@@ -7,6 +8,37 @@ const MemoryMap = surtr.MemoryMap;
 
 const norn = @import("norn");
 const arch = norn.arch;
+
+/// Allocator interface to get free pages.
+pub const PageAllocator = @import("mem/PageAllocator.zig");
+
+/// Memory zone.
+pub const Zone = enum(u8) {
+    /// DMA region
+    dma,
+    /// Normal region
+    normal,
+
+    /// Get the physical range of the memory zone.
+    pub fn range(self: Zone) struct { Phys, ?Phys } {
+        switch (self) {
+            .dma => return .{ 0x0, 16 * mib },
+            .normal => return .{ 16 * mib, null },
+        }
+    }
+
+    /// Get the zone mapped to the physical address.
+    pub fn from(phys: Phys) Zone {
+        inline for (meta.fields(Zone)) |T| {
+            const zone: Zone = @enumFromInt(T.value);
+            const start, const end = zone.range();
+            if (start <= phys and (end == null or phys < end.?)) {
+                return zone;
+            }
+        }
+        @panic("Zone is not exhaustive.");
+    }
+};
 
 /// Physical address.
 pub const Phys = u64;
@@ -49,38 +81,45 @@ pub const direct_map_size = 512 * gib;
 /// The virtual address strating from the address is directly mapped to the physical address at 0x0.
 pub const kernel_base = 0xFFFF_FFFF_8000_0000;
 
-/// Page allocator.
-pub const page_allocator = page_allocator_instance.getAllocator();
+const BootstrapAllocator = @import("mem/BootstrapAllocator.zig");
+const BuddyAllocator = @import("mem/BuddyAllocator.zig");
+const BinAllocator = @import("mem/BinAllocator.zig");
+var bootstrap_allocator_instance = BootstrapAllocator.new();
+var buddy_allocator_instance = BuddyAllocator.new();
+var bin_allocator_instance = BinAllocator.newUninit();
+
 /// General memory allocator.
 pub const general_allocator = bin_allocator_instance.getAllocator();
-
-/// Raw page allocator.
-/// You should use `Allocator` instead of this.
-pub const PageAllocator = @import("mem/PageAllocator.zig");
-var page_allocator_instance = PageAllocator.newUninit();
-
-const BinAllocator = @import("mem/BinAllocator.zig");
-var bin_allocator_instance = BinAllocator.newUninit();
+/// General page allocator that can be used to allocate physically contiguous pages.
+pub const page_allocator = buddy_allocator_instance.getAllocator();
 
 /// Whether the page table is initialized.
 var pgtbl_initialized = atomic.Value(bool).init(false);
 
-/// Initialize the page allocator.
+/// Initialize the bootstrap allocator.
 /// You MUST call this function before using `page_allocator`.
-pub fn initPageAllocator(map: MemoryMap) void {
-    page_allocator_instance.init(map);
+pub fn initBootstrapAllocator(map: MemoryMap) void {
+    norn.rtt.expect(!pgtbl_initialized.load(.acquire));
+    bootstrap_allocator_instance.init(map);
 }
 
-/// Get the raw instance of the page allocator.
-/// This function is available only before page table is initialized.
-pub fn getPageAllocatorInstance() *PageAllocator {
-    return &page_allocator_instance;
+/// Initialize the buddy allocator.
+/// You MUST call this function before using `buddy_allocator`.
+pub fn initBuddyAllocator() void {
+    buddy_allocator_instance.init(&bootstrap_allocator_instance);
 }
 
 /// Initialize the general allocator.
 /// You MUST call this function before using `general_allocator`.
 pub fn initGeneralAllocator() void {
     bin_allocator_instance.init(page_allocator);
+}
+
+/// Get the raw instance of the bootstrap allocator.
+/// This function is available only before page table is initialized.
+pub fn getBootstrapAllocator() *BootstrapAllocator {
+    norn.rtt.expect(!pgtbl_initialized.load(.acquire));
+    return &bootstrap_allocator_instance;
 }
 
 /// Check if the page table is initialized.
@@ -96,11 +135,8 @@ pub fn reconstructMapping() !void {
     defer arch.enableIrq();
 
     // Remap pages.
-    try arch.bootReconstructPageTable(getPageAllocatorInstance());
+    try arch.bootReconstructPageTable(getBootstrapAllocator().getAllocator());
     pgtbl_initialized.store(true, .release);
-
-    // Notify that BootServicesData region is no longer needed.
-    page_allocator_instance.discardBootService();
 }
 
 /// Translate the given virtual address to physical address.

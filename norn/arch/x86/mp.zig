@@ -28,10 +28,10 @@ const num_ap_stack_pages = 5;
 /// Spin lock shared by all APs while booting.
 var lock = SpinLock{};
 /// Page allocator used by APs while booting.
-var ap_page_allocator: *PageAllocator = undefined;
+var ap_page_allocator: PageAllocator = undefined;
 
 /// Boot all APs.
-pub fn bootAllAps(allocator: *PageAllocator) Error!void {
+pub fn bootAllAps(allocator: PageAllocator) Error!void {
     const ie = arch.isIrqEnabled();
     arch.disableIrq();
     defer if (ie) arch.enableIrq();
@@ -47,7 +47,7 @@ pub fn bootAllAps(allocator: *PageAllocator) Error!void {
     const trampoline: [*]const u8 = @ptrCast(&__ap_trampoline);
     const trampoline_end: [*]const u8 = @ptrCast(&__ap_trampoline_end);
     const trampoline_size = @intFromPtr(trampoline_end) - @intFromPtr(trampoline);
-    const trampoline_page = allocator.allocPages(1) orelse return Error.OutOfMemory;
+    const trampoline_page = try allocator.allocPages(1, .dma);
     const trampoline_page_phys = mem.virt2phys(trampoline_page.ptr);
     @memcpy(trampoline_page[0..trampoline_size], trampoline[0..trampoline_size]);
     norn.rtt.expectEqual(0, @intFromPtr(trampoline_page.ptr) % mem.size_4kib);
@@ -57,16 +57,16 @@ pub fn bootAllAps(allocator: *PageAllocator) Error!void {
     try pg.boot.map4kPageDirect(
         trampoline_page_phys,
         trampoline_page_phys,
-        allocator.getAllocator(),
+        allocator,
     );
 
     // Prepare temporary stack for APs.
-    const ap_stack = allocator.allocPages(1) orelse return Error.OutOfMemory;
+    const ap_stack = try allocator.allocPages(1, .dma);
     @memset(ap_stack, 0);
     try pg.boot.map4kPageDirect(
         mem.virt2phys(ap_stack.ptr),
         mem.virt2phys(ap_stack.ptr),
-        allocator.getAllocator(),
+        allocator,
     );
 
     // Relocate boot code.
@@ -194,7 +194,7 @@ fn apEntry64() callconv(.C) noreturn {
 
     // Allocate stack.
     // TODO: set guard page.
-    const stack_top = ap_page_allocator.allocPages(num_ap_stack_pages + 1) orelse @panic("Failed to allocate stack for AP");
+    const stack_top = ap_page_allocator.allocPages(num_ap_stack_pages + 1, .normal) catch @panic("Failed to allocate stack for AP");
     const stack = @intFromPtr(stack_top.ptr) + (num_ap_stack_pages + 1) * mem.size_4kib - 0x10;
 
     // Set stack pointer.

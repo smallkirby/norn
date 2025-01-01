@@ -75,14 +75,17 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     arch.enableIrq();
     log.info("Initialized IDT.", .{});
 
-    // Initialize page allocator.
-    norn.mem.initPageAllocator(boot_info.memory_map);
-    log.info("Initialized page allocator.", .{});
+    // Initialize bootstrap allocator.
+    norn.mem.initBootstrapAllocator(boot_info.memory_map);
+    log.info("Initialized bootstrap allocator.", .{});
 
     // Reconstruct memory mapping from the one provided by UEFI and Sutr.
     log.info("Reconstructing memory mapping...", .{});
     try norn.mem.reconstructMapping();
     log.info("Memory mapping is reconstructed.", .{});
+
+    norn.mem.initBuddyAllocator();
+    log.info("Initialized buddy allocator.", .{});
 
     // Initialize general allocator.
     norn.mem.initGeneralAllocator();
@@ -100,7 +103,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 
     // Boot APs.
     log.info("Booting APs...", .{});
-    try arch.mp.bootAllAps(norn.mem.getPageAllocatorInstance());
+    try arch.mp.bootAllAps(norn.mem.page_allocator);
 
     // EOL
     if (norn.is_runtime_test) {

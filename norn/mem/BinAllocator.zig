@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const mem = norn.mem;
+const PageAllocator = mem.PageAllocator;
 const SpinLock = norn.SpinLock;
 
 const Self = @This();
@@ -28,7 +29,7 @@ comptime {
 }
 
 /// Backing page allocator.
-page_allocator: Allocator,
+page_allocator: PageAllocator,
 /// Heads of the chunk lists.
 list_heads: [bin_sizes.len]ChunkMetaPointer,
 /// Spin lock.
@@ -51,7 +52,7 @@ pub fn newUninit() Self {
 }
 
 /// Initialize the BinAllocator.
-pub fn init(self: *Self, page_allocator: Allocator) void {
+pub fn init(self: *Self, page_allocator: PageAllocator) void {
     self.page_allocator = page_allocator;
     @memset(self.list_heads[0..self.list_heads.len], null);
     self.lock = SpinLock{};
@@ -95,7 +96,7 @@ fn freeToBin(self: *Self, bin_index: usize, ptr: [*]u8) void {
 }
 
 fn initBinPage(self: *Self, bin_index: usize) ?void {
-    const new_page = self.page_allocator.alloc(u8, mem.size_4kib) catch return null;
+    const new_page = self.page_allocator.allocPages(1, .normal) catch return null;
     const bin_size = bin_sizes[bin_index];
 
     var i: usize = mem.size_4kib / bin_size - 1;
@@ -138,7 +139,7 @@ fn allocate(ctx: *anyopaque, n: usize, log2_align: u8, _: usize) ?[*]u8 {
         // Requested size including alignment exceeds a 4KiB page size.
         // Zig's Allocator does not assume an align larger than a page size.
         // So we can safely ignore the alignment, ang just return for requested size.
-        const ret = self.page_allocator.alloc(u8, n) catch return null;
+        const ret = self.page_allocator.allocPages(n / mem.size_4kib, .normal) catch return null;
         return @ptrCast(ret.ptr);
     }
 }
@@ -152,7 +153,7 @@ fn free(ctx: *anyopaque, slice: []u8, log2_align: u8, _: usize) void {
     if (bin_index) |index| {
         self.freeToBin(index, @ptrCast(slice.ptr));
     } else {
-        self.page_allocator.free(slice);
+        self.page_allocator.freePages(slice);
     }
 }
 

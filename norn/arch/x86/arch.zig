@@ -5,7 +5,8 @@ const log = std.log.scoped(.arch);
 
 const norn = @import("norn");
 const bits = norn.bits;
-const PageAllocator = norn.mem.PageAllocator;
+const mem = norn.mem;
+const PageAllocator = mem.PageAllocator;
 
 const am = @import("asm.zig");
 const cpuid = @import("cpuid.zig");
@@ -19,7 +20,7 @@ const Msr = regs.Msr;
 
 /// Reconstruct the page tables
 /// This function MUST be called only once.
-pub fn bootReconstructPageTable(allocator: *PageAllocator) pg.PageError!void {
+pub fn bootReconstructPageTable(allocator: PageAllocator) pg.PageError!void {
     try pg.boot.reconstruct(allocator);
 }
 

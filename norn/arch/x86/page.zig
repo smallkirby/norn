@@ -1,5 +1,4 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const mem = norn.mem;
@@ -176,7 +175,7 @@ pub const boot = struct {
     /// Directly map all memory with offset.
     /// After calling this function, it is safe to unmap direct mappings of UEFI.
     /// This function must be called only once.
-    pub fn reconstruct(allocator: *PageAllocator) PageError!void {
+    pub fn reconstruct(allocator: PageAllocator) PageError!void {
         // We cannot use virt2phys and phys2virt here since page tables are not initialized yet.
 
         const lv4tbl_ptr: [*]Lv4Entry = @ptrCast(try boot.allocatePage(allocator));
@@ -243,7 +242,7 @@ pub const boot = struct {
     /// - `virt` is not page-aligned.
     /// - `phys` is not page-aligned.
     /// - `virt` is already mapped.
-    pub fn map4kPageDirect(virt: Virt, phys: Phys, allocator: Allocator) PageError!void {
+    pub fn map4kPageDirect(virt: Virt, phys: Phys, allocator: PageAllocator) PageError!void {
         if ((virt & page_mask_4k) != 0) return PageError.InvalidAddress;
         if ((phys & page_mask_4k) != 0) return PageError.InvalidAddress;
 
@@ -283,7 +282,7 @@ pub const boot = struct {
         lv1ent.present = false;
     }
 
-    fn cloneLevel3Table(lv3_table: []Lv3Entry, allocator: *PageAllocator) PageError![]Lv3Entry {
+    fn cloneLevel3Table(lv3_table: []Lv3Entry, allocator: PageAllocator) PageError![]Lv3Entry {
         const new_lv3ptr: [*]Lv3Entry = @ptrCast(try allocatePage(allocator));
         const new_lv3tbl = new_lv3ptr[0..num_table_entries];
         @memcpy(new_lv3tbl, lv3_table);
@@ -299,7 +298,7 @@ pub const boot = struct {
         return new_lv3tbl;
     }
 
-    fn cloneLevel2Table(lv2_table: []Lv2Entry, allocator: *PageAllocator) PageError![]Lv2Entry {
+    fn cloneLevel2Table(lv2_table: []Lv2Entry, allocator: PageAllocator) PageError![]Lv2Entry {
         const new_lv2ptr: [*]Lv2Entry = @ptrCast(try allocatePage(allocator));
         const new_lv2tbl = new_lv2ptr[0..num_table_entries];
         @memcpy(new_lv2tbl, lv2_table);
@@ -315,7 +314,7 @@ pub const boot = struct {
         return new_lv2tbl;
     }
 
-    fn cloneLevel1Table(lv1_table: []Lv1Entry, allocator: *PageAllocator) PageError![]Lv1Entry {
+    fn cloneLevel1Table(lv1_table: []Lv1Entry, allocator: PageAllocator) PageError![]Lv1Entry {
         const new_lv1ptr: [*]Lv1Entry = @ptrCast(try allocatePage(allocator));
         const new_lv1tbl = new_lv1ptr[0..num_table_entries];
         @memcpy(new_lv1tbl, lv1_table);
@@ -336,9 +335,9 @@ pub const boot = struct {
     }
 
     /// Helper function to allocate a 4KiB page using the page allocator.
-    fn allocatePage(allocator: *PageAllocator) PageError![*]align(size_4k) u8 {
-        const ret = allocator.allocPages(1) orelse return PageError.OutOfMemory;
-        return @ptrFromInt(virt2phys(ret.ptr));
+    fn allocatePage(allocator: PageAllocator) PageError![*]align(size_4k) u8 {
+        const ret = try allocator.allocPages(1, .normal);
+        return ret.ptr;
     }
 
     fn getTable(T: type, addr: Phys, offset: usize) []T {
@@ -495,8 +494,8 @@ fn EntryBase(table_level: TableLevel) type {
         }
 
         /// Create a new empty page table.
-        pub fn newTable(allocator: Allocator) PageError![*]Self {
-            const table = try allocator.alignedAlloc(Self, size_4k, num_table_entries);
+        pub fn newTable(allocator: PageAllocator) PageError![*]Self {
+            const table = try allocator.allocPages(1, .normal);
             @memset(@as([*]u8, @ptrCast(table.ptr))[0..size_4k], 0);
             return @ptrCast(table.ptr);
         }
