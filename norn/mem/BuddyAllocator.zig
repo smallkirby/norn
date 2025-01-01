@@ -102,6 +102,14 @@ const FreeList = struct {
         } else return Error.OutOfMemory;
     }
 
+    /// Add a block of pages to the free list.
+    pub fn freeBlock(self: *FreeList, block: []u8) void {
+        const page: *FreePage = @alignCast(@ptrCast(block));
+        page.next = self.head;
+        self.head = page;
+        self.num_in_use -= 1;
+    }
+
     /// Detach a block of pages from the free list.
     /// Detached pages are no longer managed by the free list.
     pub fn detachBlock(self: *FreeList) Error!*FreePage {
@@ -196,6 +204,13 @@ const Arena = struct {
         return ptr[0 .. num_pages * mem.size_4kib];
     }
 
+    /// Free the given pages to the appropriate list.
+    pub fn freePages(self: *Arena, pages: []u8) void {
+        const order = roundUpToOrder(pages.len / mem.size_4kib);
+        rtt.expectEqual(0, @intFromPtr(pages.ptr) & getOrderMask(order));
+        self.getList(order).freeBlock(pages);
+    }
+
     /// Split pages in the `order`-th freelist the `order - 1`-th freelist.
     /// If the `order`-th freelist is empty, this function is called recursively for larger list.
     fn splitRecursive(self: *Arena, order: SizeOrder) void {
@@ -279,6 +294,18 @@ const ZoneList = struct {
     /// Allocate the given number of pages from the given memory zone.
     pub fn allocPagesFrom(self: *ZoneList, num_pages: usize, zone: Zone) Error![]align(mem.size_4kib) u8 {
         return self.getArena(zone).allocPages(num_pages);
+    }
+
+    /// Free the given pages to the appropriate zone list.
+    pub fn freePagesTo(self: *ZoneList, pages: []u8) void {
+        const phys_start = mem.virt2phys(pages.ptr);
+        const zone = Zone.from(phys_start);
+        self.getArena(zone).freePages(pages);
+
+        // Check if the pages are over the zone boundary.
+        const phys_end = phys_start + pages.len;
+        _, const zone_end = zone.range();
+        rtt.expect(phys_end < (zone_end orelse std.math.maxInt(Phys)));
     }
 
     /// Get the arena for the given zone.
@@ -392,9 +419,7 @@ fn freePages(ctx: *anyopaque, pages: []u8) void {
     const ie = self.lock.lockDisableIrq();
     defer self.lock.unlockRestoreIrq(ie);
 
-    _ = pages; // autofix
-
-    norn.unimplemented("freePages()");
+    self.zones.freePagesTo(pages);
 }
 
 /// Check if the memory region described by the descriptor is usable for norn kernel.
