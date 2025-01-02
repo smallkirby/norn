@@ -30,7 +30,7 @@ pub const Zone = enum(u8) {
     /// Get the zone mapped to the physical address.
     pub fn from(phys: Phys) Zone {
         inline for (meta.fields(Zone)) |T| {
-            const zone: Zone = @enumFromInt(T.value);
+            const zone: Zone = comptime @enumFromInt(T.value);
             const start, const end = zone.range();
             if (start <= phys and (end == null or phys < end.?)) {
                 return zone;
