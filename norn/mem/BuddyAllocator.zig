@@ -48,10 +48,10 @@ const FreeList = struct {
     num_total: usize,
 
     /// Doubly linked list of free pages.
-    const FreePageLink = DoublyLinkedList(void);
+    pub const FreePageLink = DoublyLinkedList(void);
     /// Free page.
     /// This struct is placed at the beginning of the free pages.
-    const FreePage = FreePageLink.Node;
+    pub const FreePage = FreePageLink.Node;
 
     /// Create a new empty free list.
     pub fn new() FreeList {
@@ -62,10 +62,11 @@ const FreeList = struct {
     }
 
     /// Add a memory region to this free list.
-    pub fn addRegion(self: *FreeList, phys: Phys) void {
+    pub fn addRegion(self: *FreeList, phys: Phys) *FreePage {
         const new_page: *FreePage = @ptrFromInt(mem.phys2virt(phys));
         self.insertSorted(new_page);
         self.num_total += 1;
+        return new_page;
     }
 
     /// Allocate a block of pages from the free list.
@@ -73,19 +74,27 @@ const FreeList = struct {
         return self.link.popFirst() orelse Error.OutOfMemory;
     }
 
-    /// Detach a block of pages from the free list.
+    /// Detach the given block from the freelist.
     /// Detached pages are no longer managed by the free list.
-    pub fn detachBlock(self: *FreeList) Error!*FreePage {
-        if (self.link.popFirst()) |node| {
-            self.num_total -= 1;
-            return node;
-        } else return Error.OutOfMemory;
+    /// Caller MUST ensure that the block is in the list.
+    pub fn detachBlock(self: *FreeList, block: *FreePage) void {
+        self.link.remove(block);
+        self.num_total -= 1;
+    }
+
+    /// Detach the first block in the freelist.
+    /// Detached pages are no longer managed by the free list.
+    pub fn detachFirstBlock(self: *FreeList) Error!*FreePage {
+        const page = self.link.first orelse return Error.OutOfMemory;
+        self.detachBlock(page);
+        return page;
     }
 
     /// Add a block of pages to the free list.
-    pub fn freeBlock(self: *FreeList, block: []u8) void {
+    pub fn freeBlock(self: *FreeList, block: []u8) *FreePage {
         const page: *FreePage = @alignCast(@ptrCast(block));
         self.insertSorted(page);
+        return page;
     }
 
     /// Insert the block to the freelist keeping list sorted.
@@ -100,7 +109,7 @@ const FreeList = struct {
         if (cur) |c| {
             self.link.insertAfter(c, new_page);
         } else {
-            self.link.append(new_page);
+            self.link.prepend(new_page);
         }
     }
 
@@ -157,10 +166,11 @@ const Arena = struct {
                 if (cur_start & mask == 0) break;
                 order -= 1;
             }
-            remaining += orderToInt(order) - orderToInt(orig_order);
+            remaining += orderToInt(orig_order) - orderToInt(order);
 
             // Add the region to the free list.
-            self.getList(order).addRegion(cur_start);
+            const new_page = self.getList(order).addRegion(cur_start);
+            self.maybeMergeRecursive(new_page, order);
 
             cur_start += orderToInt(order) * mem.size_4kib;
             if (remaining == 0) break;
@@ -186,7 +196,9 @@ const Arena = struct {
     pub fn freePages(self: *Arena, pages: []u8) void {
         const order = roundUpToOrder(pages.len / mem.size_4kib);
         rtt.expectEqual(0, @intFromPtr(pages.ptr) & getOrderMask(order));
-        self.getList(order).freeBlock(pages);
+
+        const new_page = self.getList(order).freeBlock(pages);
+        self.maybeMergeRecursive(new_page, order);
     }
 
     /// Split pages in the `order`-th freelist the `order - 1`-th freelist.
@@ -203,7 +215,7 @@ const Arena = struct {
             rtt.expectEqual(false, free_list.isEmpty());
         }
 
-        const block = free_list.detachBlock() catch {
+        const block = free_list.detachFirstBlock() catch {
             @panic("BuddyAllocator: failed to split the free list.");
         };
 
@@ -211,7 +223,51 @@ const Arena = struct {
         const num_blocks = (orderToInt(order) * mem.size_4kib) / block_size;
         rtt.expectEqual(2, num_blocks);
         for (0..2) |i| {
-            self.getList(lower_order).addRegion(mem.virt2phys(block) + i * block_size);
+            // We dont't merge here.
+            _ = self.getList(lower_order).addRegion(mem.virt2phys(block) + i * block_size);
+        }
+    }
+
+    /// Try ty merge blocks adjacent to the given block recursively.
+    fn maybeMergeRecursive(self: *Arena, page: *FreeList.FreePage, order: SizeOrder) void {
+        // If the order is the largest, we can't merge anymore.
+        if (order == avail_orders - 1) return;
+
+        const higer_order = order + 1;
+        const higer_mask = getOrderMask(higer_order);
+        const adjacent_distance = orderToInt(order) * mem.size_4kib;
+
+        // Find the adjacent block.
+        const t1, const t2 = if (@intFromPtr(page) & higer_mask == 0) blk: {
+            // The given block is the lower one.
+            break :blk if (page.next != null and @intFromPtr(page.next.?) == @intFromPtr(page) + adjacent_distance) .{
+                page,
+                page.next.?,
+            } else .{
+                null,
+                null,
+            };
+        } else blk: {
+            // The given block is the higher one.
+            break :blk if (page.prev != null and @intFromPtr(page.prev.?) == @intFromPtr(page) - adjacent_distance) .{
+                page.prev.?,
+                page,
+            } else .{
+                null,
+                null,
+            };
+        };
+
+        // If we find the adjacent block, merge them recursively.
+        if (t1 != null and t2 != null) {
+            const lower_list = self.getList(order);
+            const higher_list = self.getList(higer_order);
+
+            lower_list.detachBlock(t1.?);
+            lower_list.detachBlock(t2.?);
+
+            const new_page = higher_list.addRegion(mem.virt2phys(t1.?));
+            self.maybeMergeRecursive(new_page, higer_order);
         }
     }
 
@@ -221,8 +277,8 @@ const Arena = struct {
     }
 
     /// Get the address mask for the order.
-    inline fn getOrderMask(order: SizeOrder) u64 {
-        return (@as(usize, 1) << @intCast(order)) - 1;
+    fn getOrderMask(order: SizeOrder) u64 {
+        return ((@as(usize, 1) << mem.page_shift_4kib) << @as(u6, @intCast(order))) - 1;
     }
 
     /// Convert the number of pages to the order.
@@ -230,6 +286,8 @@ const Arena = struct {
     /// If the order exceeds the available orders, the order is clamped to the max.
     /// Returnes the pair of the order and the remaining number of pages.
     fn orderFloor(num_pages: usize) struct { SizeOrder, usize } {
+        rtt.expect(num_pages != 0);
+
         var order = std.math.log2_int(usize, num_pages);
         if (order >= avail_orders) {
             order = avail_orders - 1;
@@ -246,6 +304,7 @@ const Arena = struct {
 
     /// Align the number of pages to the order.
     inline fn roundUpToOrder(num_pages: usize) SizeOrder {
+        rtt.expect(num_pages != 0);
         return std.math.log2_int_ceil(usize, num_pages);
     }
 };
@@ -426,7 +485,13 @@ inline fn isUsableMemory(descriptor: *MemoryDescriptor) bool {
 
 // ====================================================
 
+const testing = std.testing;
 const rtt = norn.rtt;
+
+const TestingAllocatedPage = packed struct {
+    next: TestingPagePointer,
+};
+const TestingPagePointer = ?*TestingAllocatedPage;
 
 inline fn rttExpectNewMap() void {
     if (norn.is_runtime_test and !mem.isPgtblInitialized()) {
@@ -434,11 +499,6 @@ inline fn rttExpectNewMap() void {
         norn.endlessHalt();
     }
 }
-
-const TestingAllocatedPage = packed struct {
-    next: TestingPagePointer,
-};
-const TestingPagePointer = ?*TestingAllocatedPage;
 
 /// Runtime test for BuddyAllocator.
 fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
@@ -448,9 +508,14 @@ fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
     const arena = buddy_allocator.zones.getArena(.normal);
 
     var allocated_pages_order0: TestingPagePointer = null;
-    const num_pages_order0 = arena.lists[0].numFree() * Arena.orderToInt(0);
+    const num_free_order0 = arena.lists[0].numFree();
+    const num_inuse_order0 = arena.lists[0].numInUse();
+    const num_free_order1 = arena.lists[1].numFree();
+    const num_inuse_order1 = arena.lists[1].numInUse();
+    const num_free_order2 = arena.lists[2].numFree();
+    const num_inuse_order2 = arena.lists[2].numInUse();
 
-    // Allocate 3 pages and check the alignment.
+    // Allocate 3 pages (from 2-th freelist) and check the alignment.
     {
         const page = allocator.allocPages(3, .normal) catch {
             @panic("Unexpected failure in rttTestBuddyAllocator()");
@@ -463,10 +528,12 @@ fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
     // Consume all pages from 0-th freelist.
     {
         var prev: [*]allowzero u8 = @ptrFromInt(0);
-        for (0..num_pages_order0) |_| {
+        for (0..num_free_order0) |_| {
             const page = rttAllocatePage(&allocated_pages_order0, allocator);
             // Blocks in the freelist must be sorted.
             rtt.expect(@intFromPtr(prev) < @intFromPtr(page.ptr));
+            // If prev is 8KiB aligned, the blocks must not be adjacent. If they're, they must be merged.
+            rtt.expect((@intFromPtr(prev) & 0x1FFF != 0) or (@intFromPtr(prev) + mem.size_4kib != @intFromPtr(page.ptr)));
             prev = page.ptr;
         }
         rtt.expectEqual(0, arena.lists[0].link.len);
@@ -481,6 +548,35 @@ fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
         // Two pages must be contiguous because they are split from the same block.
         rtt.expectEqual(@intFromPtr(page1.ptr) + mem.size_4kib, @intFromPtr(page2.ptr));
     }
+
+    // Free all pages and see if they are merged.
+    // The state of the arena must be restored.
+    {
+        var cur: TestingPagePointer = allocated_pages_order0;
+        while (cur != null) {
+            const next = cur.?.next;
+            const page: [*]u8 = @ptrCast(cur.?);
+            allocator.freePages(page[0..mem.size_4kib]);
+            cur = next;
+        }
+
+        rtt.expectEqual(num_inuse_order0, arena.lists[0].numInUse());
+        rtt.expectEqual(num_free_order0, arena.lists[0].numFree());
+        rtt.expectEqual(num_inuse_order1, arena.lists[1].numInUse());
+        rtt.expectEqual(num_free_order1, arena.lists[1].numFree());
+        rtt.expectEqual(num_inuse_order2, arena.lists[2].numInUse());
+        rtt.expectEqual(num_free_order2, arena.lists[2].numFree());
+    }
+
+    // Check if they're still sorted.
+    {
+        var prev: *allowzero FreeList.FreePage = @ptrFromInt(0);
+        var cur = arena.lists[0].link.first;
+        while (cur) |c| : (cur = cur.?.next) {
+            rtt.expect(@intFromPtr(prev) < @intFromPtr(c));
+            prev = c;
+        }
+    }
 }
 
 fn rttAllocatePage(list: *TestingPagePointer, allocator: PageAllocator) []align(mem.size_4kib) u8 {
@@ -491,4 +587,43 @@ fn rttAllocatePage(list: *TestingPagePointer, allocator: PageAllocator) []align(
     new_page.next = list.*;
     list.* = new_page;
     return page;
+}
+
+test "Arena.getOrderMask" {
+    try testing.expectEqual(0xFFF, Arena.getOrderMask(0));
+    try testing.expectEqual(0x1FFF, Arena.getOrderMask(1));
+    try testing.expectEqual(0x3FFF, Arena.getOrderMask(2));
+    try testing.expectEqual(0x7FFF, Arena.getOrderMask(3));
+    try testing.expectEqual(0xFFFF, Arena.getOrderMask(4));
+    try testing.expectEqual(0x1FFFF, Arena.getOrderMask(5));
+    try testing.expectEqual(0x3FFFF, Arena.getOrderMask(6));
+    try testing.expectEqual(0x7FFFF, Arena.getOrderMask(7));
+    try testing.expectEqual(0xFFFFF, Arena.getOrderMask(8));
+    try testing.expectEqual(0x1FFFFF, Arena.getOrderMask(9));
+    try testing.expectEqual(0x3FFFFF, Arena.getOrderMask(10));
+}
+
+test "Arena.orderFloor" {
+    try testing.expectEqual(.{ 0, 0 }, Arena.orderFloor(1));
+    try testing.expectEqual(.{ 1, 0 }, Arena.orderFloor(2));
+    try testing.expectEqual(.{ 1, 1 }, Arena.orderFloor(3));
+    try testing.expectEqual(.{ 2, 0 }, Arena.orderFloor(4));
+}
+
+test "Arena.orderToInt" {
+    try testing.expectEqual(1, Arena.orderToInt(0));
+    try testing.expectEqual(2, Arena.orderToInt(1));
+    try testing.expectEqual(4, Arena.orderToInt(2));
+    try testing.expectEqual(8, Arena.orderToInt(3));
+}
+
+test "Arena.roundUpToOrder" {
+    try testing.expectEqual(0, Arena.roundUpToOrder(1));
+    try testing.expectEqual(1, Arena.roundUpToOrder(2));
+    try testing.expectEqual(2, Arena.roundUpToOrder(3));
+    try testing.expectEqual(2, Arena.roundUpToOrder(4));
+    try testing.expectEqual(3, Arena.roundUpToOrder(5));
+    try testing.expectEqual(3, Arena.roundUpToOrder(8));
+    try testing.expectEqual(4, Arena.roundUpToOrder(9));
+    try testing.expectEqual(4, Arena.roundUpToOrder(16));
 }
