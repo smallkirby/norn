@@ -5,3 +5,7 @@
 ![Lint](https://github.com/smallkirby/norn/actions/workflows/lint.yml/badge.svg)
 ![Unit Tests](https://github.com/smallkirby/norn/actions/workflows/unittest.yml/badge.svg)
 ![Runtime Tests](https://github.com/smallkirby/norn/actions/workflows/runtimetest.yml/badge.svg)
+
+## LICENSE
+
+[Licnesed under the MIT License](LICENSE) unless otherwise specified.
