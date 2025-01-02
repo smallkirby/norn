@@ -105,8 +105,8 @@ pub fn initBootstrapAllocator(map: MemoryMap) void {
 
 /// Initialize the buddy allocator.
 /// You MUST call this function before using `buddy_allocator`.
-pub fn initBuddyAllocator() void {
-    buddy_allocator_instance.init(&bootstrap_allocator_instance);
+pub fn initBuddyAllocator(log_fn: ?norn.LogFn) void {
+    buddy_allocator_instance.init(&bootstrap_allocator_instance, log_fn);
 }
 
 /// Initialize the general allocator.

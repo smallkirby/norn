@@ -5,13 +5,8 @@ const option = @import("option");
 const norn = @import("norn");
 const Serial = norn.Serial;
 
-const LogError = error{};
-
-const Writer = std.io.Writer(
-    void,
-    LogError,
-    write,
-);
+/// Logger function type
+pub const LogFn = *const fn (comptime format: []const u8, args: anytype) void;
 
 /// Log level.
 /// Can be configured by compile-time options. See build.zig.
@@ -21,6 +16,14 @@ pub const log_level = switch (option.log_level) {
     .warn => .warn,
     .err => .err,
 };
+
+const LogError = error{};
+
+const Writer = std.io.Writer(
+    void,
+    LogError,
+    write,
+);
 
 /// Serial console for logging.
 var serial: *Serial = undefined;

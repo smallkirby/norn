@@ -9,6 +9,7 @@ pub usingnamespace @import("typing.zig");
 pub const rtt = @import("rtt.zig");
 
 pub const is_runtime_test = @import("option").is_runtime_test;
+pub const LogFn = klog.LogFn;
 pub const Serial = @import("Serial.zig");
 pub const SpinLock = @import("SpinLock.zig");
 

@@ -1,5 +1,4 @@
 const std = @import("std");
-const log = std.log.scoped(.buddy);
 const uefi = std.os.uefi;
 const DoublyLinkedList = std.DoublyLinkedList;
 const MemoryDescriptor = uefi.tables.MemoryDescriptor;
@@ -370,7 +369,7 @@ pub fn new() Self {
 
 /// Initialize buddy allocator.
 /// This function must be called after the memory map is initialized.
-pub fn init(self: *Self, bs: *BootstrapAllocator) void {
+pub fn init(self: *Self, bs: *BootstrapAllocator, log_fn: ?norn.LogFn) void {
     rttExpectNewMap();
 
     const ie = self.lock.lockDisableIrq();
@@ -410,34 +409,8 @@ pub fn init(self: *Self, bs: *BootstrapAllocator) void {
         }
     }
 
-    // Debug print the managed regions.
-    log.debug("Statistics of Buddy Allocator's initial state:", .{});
-    for ([_]Zone{ .dma, .normal }) |zone| {
-        const arena = self.zones.getArena(zone);
-        const name = @tagName(zone);
-        log.debug(
-            "{s: <7}                   Used / Total",
-            .{name},
-        );
-
-        var total_pages: usize = 0;
-        var total_inuse_pages: usize = 0;
-        for (arena.lists, 0..) |list, order| {
-            const page_unit = Arena.orderToInt(@intCast(order));
-            const pages = page_unit * list.numTotal();
-            const inuse_pages = page_unit * list.numInUse();
-            total_pages += pages;
-            total_inuse_pages += inuse_pages;
-            log.debug(
-                "   {d: >2}: {d: >7} ({d: >7} pages) / {d: >7} ({d: >7} pages)",
-                .{ order, list.numInUse(), inuse_pages, list.numTotal(), pages },
-            );
-        }
-
-        log.debug(
-            "    >             {d:>8} MiB / {d: >8} MiB",
-            .{ total_inuse_pages * mem.size_4kib / mem.mib, total_pages * mem.size_4kib / mem.mib },
-        );
+    if (log_fn) |f| {
+        self.debugPrintStatistics(f);
     }
 
     // Runtime test.
@@ -487,6 +460,38 @@ inline fn isUsableMemory(descriptor: *MemoryDescriptor) bool {
     };
 }
 
+// Debug print the statistics of managed regions.
+fn debugPrintStatistics(self: *Self, log_fn: norn.LogFn) void {
+    log_fn("Statistics of Buddy Allocator's initial state:", .{});
+    for ([_]Zone{ .dma, .normal }) |zone| {
+        const arena = self.zones.getArena(zone);
+        const name = @tagName(zone);
+        log_fn(
+            "{s: <7}                   Used / Total",
+            .{name},
+        );
+
+        var total_pages: usize = 0;
+        var total_inuse_pages: usize = 0;
+        for (arena.lists, 0..) |list, order| {
+            const page_unit = Arena.orderToInt(@intCast(order));
+            const pages = page_unit * list.numTotal();
+            const inuse_pages = page_unit * list.numInUse();
+            total_pages += pages;
+            total_inuse_pages += inuse_pages;
+            log_fn(
+                "   {d: >2}: {d: >7} ({d: >7} pages) / {d: >7} ({d: >7} pages)",
+                .{ order, list.numInUse(), inuse_pages, list.numTotal(), pages },
+            );
+        }
+
+        log_fn(
+            "    >             {d:>8} MiB / {d: >8} MiB",
+            .{ total_inuse_pages * mem.size_4kib / mem.mib, total_pages * mem.size_4kib / mem.mib },
+        );
+    }
+}
+
 // ====================================================
 
 const testing = std.testing;
@@ -497,8 +502,7 @@ const TestingAllocatedNode = TestingAllocatedList.Node;
 
 inline fn rttExpectNewMap() void {
     if (norn.is_runtime_test and !mem.isPgtblInitialized()) {
-        log.err("Page table must be initialized before calling the function.", .{});
-        norn.endlessHalt();
+        @panic("Page table must be initialized before calling the function.");
     }
 }
 

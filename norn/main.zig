@@ -84,7 +84,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     try norn.mem.reconstructMapping();
     log.info("Memory mapping is reconstructed.", .{});
 
-    norn.mem.initBuddyAllocator();
+    norn.mem.initBuddyAllocator(log.debug);
     log.info("Initialized buddy allocator.", .{});
 
     // Initialize general allocator.
