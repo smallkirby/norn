@@ -50,7 +50,10 @@ pub fn bootAllAps(allocator: PageAllocator) Error!void {
     const trampoline_page = try allocator.allocPages(1, .dma);
     const trampoline_page_phys = mem.virt2phys(trampoline_page.ptr);
     @memcpy(trampoline_page[0..trampoline_size], trampoline[0..trampoline_size]);
-    norn.rtt.expectEqual(0, @intFromPtr(trampoline_page.ptr) % mem.size_4kib);
+
+    // Physical address of the trampoline code must be located at address lower than 1MiB and 4KiB aligned,
+    // so that we can put the address into the SIPI vector field.
+    norn.rtt.expectEqual(0, trampoline_page_phys & ~@as(Phys, 0xF_F000));
 
     // Direct map the trampoline page.
     // This is required when AP enables paging.
@@ -254,7 +257,8 @@ fn relocateGdtr(trampoline: []u8) void {
     const gdt_addr = mem.virt2phys(trampoline.ptr) + gdt_offset;
     const reloc: [*]volatile u16 = @ptrFromInt(@intFromPtr(trampoline.ptr) + gdtr_offset + 2); // +2 for `Base` field of GDTR
 
-    norn.rtt.expectEqual(0, gdt_addr & ~@as(u64, 0xFFFF));
+    // GDT must be addressable by 4-byte physical address.
+    norn.rtt.expectEqual(0, gdt_addr & ~@as(u64, 0xFFFF_FFFF));
 
     // GDTR.Base is not 4-byte aligned. So we have to set it by 2-byte chunks to suppress Zig's runtime check.
     for (0..2) |i| {

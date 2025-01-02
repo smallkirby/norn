@@ -139,6 +139,8 @@ const FreeList = struct {
 const Arena = struct {
     /// Available number of page orders.
     const avail_orders: usize = 11;
+    /// If the number of free blocks is larger than this threshold, try merge adjacent blocks.
+    const merge_threshold: usize = 10;
 
     /// Free list for each order.
     lists: [avail_orders]FreeList,
@@ -232,6 +234,8 @@ const Arena = struct {
     fn maybeMergeRecursive(self: *Arena, page: *FreeList.FreePage, order: SizeOrder) void {
         // If the order is the largest, we can't merge anymore.
         if (order == avail_orders - 1) return;
+        // If the number of free blocks is small, we don't merge.
+        if (self.getList(order).numFree() < merge_threshold) return;
 
         const higer_order = order + 1;
         const higer_mask = getOrderMask(higer_order);
@@ -488,10 +492,8 @@ inline fn isUsableMemory(descriptor: *MemoryDescriptor) bool {
 const testing = std.testing;
 const rtt = norn.rtt;
 
-const TestingAllocatedPage = packed struct {
-    next: TestingPagePointer,
-};
-const TestingPagePointer = ?*TestingAllocatedPage;
+const TestingAllocatedList = DoublyLinkedList(void);
+const TestingAllocatedNode = TestingAllocatedList.Node;
 
 inline fn rttExpectNewMap() void {
     if (norn.is_runtime_test and !mem.isPgtblInitialized()) {
@@ -507,7 +509,7 @@ fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
     const allocator = buddy_allocator.getAllocator();
     const arena = buddy_allocator.zones.getArena(.normal);
 
-    var allocated_pages_order0: TestingPagePointer = null;
+    var allocated_pages_order0 = TestingAllocatedList{};
     const num_free_order0 = arena.lists[0].numFree();
     const num_inuse_order0 = arena.lists[0].numInUse();
     const num_free_order1 = arena.lists[1].numFree();
@@ -533,7 +535,7 @@ fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
             // Blocks in the freelist must be sorted.
             rtt.expect(@intFromPtr(prev) < @intFromPtr(page.ptr));
             // If prev is 8KiB aligned, the blocks must not be adjacent. If they're, they must be merged.
-            rtt.expect((@intFromPtr(prev) & 0x1FFF != 0) or (@intFromPtr(prev) + mem.size_4kib != @intFromPtr(page.ptr)));
+            rtt.expect((arena.lists[0].numFree() < Arena.merge_threshold) or (@intFromPtr(prev) & 0x1FFF != 0) or (@intFromPtr(prev) + mem.size_4kib != @intFromPtr(page.ptr)));
             prev = page.ptr;
         }
         rtt.expectEqual(0, arena.lists[0].link.len);
@@ -552,12 +554,12 @@ fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
     // Free all pages and see if they are merged.
     // The state of the arena must be restored.
     {
-        var cur: TestingPagePointer = allocated_pages_order0;
-        while (cur != null) {
-            const next = cur.?.next;
-            const page: [*]u8 = @ptrCast(cur.?);
+        // Free pages in the order of allocation.
+        var cur = allocated_pages_order0.first;
+        while (cur) |c| {
+            const page: [*]u8 = @ptrCast(c);
+            cur = c.next; // We have to store the value here before the page is freed.
             allocator.freePages(page[0..mem.size_4kib]);
-            cur = next;
         }
 
         rtt.expectEqual(num_inuse_order0, arena.lists[0].numInUse());
@@ -579,13 +581,12 @@ fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
     }
 }
 
-fn rttAllocatePage(list: *TestingPagePointer, allocator: PageAllocator) []align(mem.size_4kib) u8 {
+fn rttAllocatePage(list: *TestingAllocatedList, allocator: PageAllocator) []align(mem.size_4kib) u8 {
     const page = allocator.allocPages(1, .normal) catch {
         @panic("Unexpected failure in rttAllocatePage()");
     };
-    const new_page: *TestingAllocatedPage = @ptrCast(page.ptr);
-    new_page.next = list.*;
-    list.* = new_page;
+    const new_page: *TestingAllocatedNode = @ptrCast(page.ptr);
+    list.append(new_page);
     return page;
 }
 
