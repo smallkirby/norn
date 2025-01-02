@@ -1,6 +1,7 @@
 const std = @import("std");
 const log = std.log.scoped(.buddy);
 const uefi = std.os.uefi;
+const DoublyLinkedList = std.DoublyLinkedList;
 const MemoryDescriptor = uefi.tables.MemoryDescriptor;
 
 const surtr = @import("surtr");
@@ -37,117 +38,92 @@ const vtable = PageAllocator.Vtable{
 const SizeOrder = u8;
 
 /// Manages free lists of each order for single memory zone.
+/// The list must be sorted in ascending order of physical addresses.
+/// Each page is ensured to be aligned to the order.
 const FreeList = struct {
-    /// Pointer to the first free page.
-    /// The list must be sorted in ascending order of physical addresses.
-    /// Each page is ensured to be aligned to the order.
-    head: ?*FreePage = null,
-    /// Number of blocks used by the free list.
-    num_in_use: usize = undefined,
+    /// Doubly linked list of free pages.
+    link: FreePageLink,
     /// Total number of blocks for the free list.
     /// This contains both used and free blocks.
-    num_total: usize = 0,
+    num_total: usize,
 
+    /// Doubly linked list of free pages.
+    const FreePageLink = DoublyLinkedList(void);
     /// Free page.
     /// This struct is placed at the beginning of the free pages.
-    const FreePage = packed struct {
-        /// Next free page.
-        next: ?*FreePage,
-    };
+    const FreePage = FreePageLink.Node;
 
     /// Create a new empty free list.
     pub fn new() FreeList {
-        return FreeList{};
+        return FreeList{
+            .link = FreePageLink{},
+            .num_total = 0,
+        };
     }
 
     /// Add a memory region to this free list.
     pub fn addRegion(self: *FreeList, phys: Phys) void {
         const new_page: *FreePage = @ptrFromInt(mem.phys2virt(phys));
-
-        // If the list is empty, just put the page into the head.
-        if (self.head == null) {
-            new_page.next = null;
-            self.head = new_page;
-            self.num_total += 1;
-            return;
-        }
-
-        // Find the position to insert the page.
-        var iter = Iterator.new(self);
-        var prev: ?*FreePage = null;
-        while (iter.next()) |cur| {
-            const phys_cur = mem.virt2phys(cur);
-            if (phys_cur < phys_cur) break;
-            prev = cur;
-        }
-
-        // Insert the page.
-        if (prev) |p| {
-            new_page.next = p.next;
-            p.next = new_page;
-        } else {
-            new_page.next = self.head;
-            self.head = new_page;
-        }
-
+        self.insertSorted(new_page);
         self.num_total += 1;
     }
 
     /// Allocate a block of pages from the free list.
     pub fn allocBlock(self: *FreeList) Error!*FreePage {
-        if (self.head != null) {
-            const ret = self.head.?;
-            self.head = ret.next;
-            self.num_in_use += 1;
-            return ret;
+        return self.link.popFirst() orelse Error.OutOfMemory;
+    }
+
+    /// Detach a block of pages from the free list.
+    /// Detached pages are no longer managed by the free list.
+    pub fn detachBlock(self: *FreeList) Error!*FreePage {
+        if (self.link.popFirst()) |node| {
+            self.num_total -= 1;
+            return node;
         } else return Error.OutOfMemory;
     }
 
     /// Add a block of pages to the free list.
     pub fn freeBlock(self: *FreeList, block: []u8) void {
         const page: *FreePage = @alignCast(@ptrCast(block));
-        page.next = self.head;
-        self.head = page;
-        self.num_in_use -= 1;
+        self.insertSorted(page);
     }
 
-    /// Detach a block of pages from the free list.
-    /// Detached pages are no longer managed by the free list.
-    pub fn detachBlock(self: *FreeList) Error!*FreePage {
-        if (self.head != null) {
-            const ret = self.head.?;
-            self.head = ret.next;
-            self.num_total -= 1;
-            return ret;
-        } else return Error.OutOfMemory;
+    /// Insert the block to the freelist keeping list sorted.
+    /// Note that this function does not increment the counter.
+    /// TODO: Use binary search.
+    fn insertSorted(self: *FreeList, new_page: *FreePage) void {
+        // Starting from the last block, find the first block whose address is smaller than the new block.
+        var cur: ?*FreePage = self.link.last;
+        while (cur) |page| : (cur = page.prev) {
+            if (@intFromPtr(page) < @intFromPtr(new_page)) break;
+        }
+        if (cur) |c| {
+            self.link.insertAfter(c, new_page);
+        } else {
+            self.link.append(new_page);
+        }
     }
 
     /// Check if the list does not have any free pages.
     pub fn isEmpty(self: *FreeList) bool {
-        return self.head == null;
+        return self.numFree() == 0;
     }
 
-    /// Iterator for the free list.
-    const Iterator = struct {
-        list: *FreeList,
-        next_page: ?*FreePage,
+    /// Get the number of blocks in the freelist.
+    /// Blocks in use are included.
+    pub inline fn numTotal(self: FreeList) usize {
+        return self.num_total;
+    }
 
-        fn new(list: *FreeList) Iterator {
-            return Iterator{
-                .list = list,
-                .next_page = list.head,
-            };
-        }
+    /// Get the number of blocks in the freelist.
+    pub inline fn numFree(self: FreeList) usize {
+        return self.link.len;
+    }
 
-        fn next(self: *Iterator) ?*FreePage {
-            if (self.next_page) |page| {
-                self.next_page = page.next;
-                return page;
-            } else {
-                return null;
-            }
-        }
-    };
+    /// Get the number of blocks in use.
+    pub inline fn numInUse(self: FreeList) usize {
+        return self.num_total - self.numFree();
+    }
 };
 
 /// Manages free lists of each order for single memory zone.
@@ -385,13 +361,13 @@ pub fn init(self: *Self, bs: *BootstrapAllocator) void {
         var total_inuse_pages: usize = 0;
         for (arena.lists, 0..) |list, order| {
             const page_unit = Arena.orderToInt(@intCast(order));
-            const pages = page_unit * list.num_total;
-            const inuse_pages = page_unit * list.num_in_use;
+            const pages = page_unit * list.numTotal();
+            const inuse_pages = page_unit * list.numInUse();
             total_pages += pages;
             total_inuse_pages += inuse_pages;
             log.debug(
                 "   {d: >2}: {d: >7} ({d: >7} pages) / {d: >7} ({d: >7} pages)",
-                .{ order, list.num_in_use, inuse_pages, list.num_total, pages },
+                .{ order, list.numInUse(), inuse_pages, list.numTotal(), pages },
             );
         }
 
@@ -472,7 +448,7 @@ fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
     const arena = buddy_allocator.zones.getArena(.normal);
 
     var allocated_pages_order0: TestingPagePointer = null;
-    const num_pages_order0 = (arena.lists[0].num_total - arena.lists[0].num_in_use) * Arena.orderToInt(0);
+    const num_pages_order0 = arena.lists[0].numFree() * Arena.orderToInt(0);
 
     // Allocate 3 pages and check the alignment.
     {
@@ -493,7 +469,9 @@ fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
             rtt.expect(@intFromPtr(prev) < @intFromPtr(page.ptr));
             prev = page.ptr;
         }
-        rtt.expectEqual(null, arena.lists[0].head);
+        rtt.expectEqual(0, arena.lists[0].link.len);
+        rtt.expectEqual(null, arena.lists[0].link.first);
+        rtt.expectEqual(null, arena.lists[0].link.last);
     }
 
     // Split pages in the 1-st freelist to the 0-th.
