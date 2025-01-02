@@ -250,13 +250,11 @@ const Madt = extern struct {
             self._offset += header.length;
 
             return switch (header.entry_type) {
-                .local_apic => .{ .local_apic = @alignCast(@ptrCast(header)) },
-                .io_apic => .{ .io_apic = @alignCast(@ptrCast(header)) },
-                .io_apic_src_override => .{ .io_apic_src_override = @alignCast(@ptrCast(header)) },
-                .io_apic_nmi_src => .{ .io_apic_nmi_src = @alignCast(@ptrCast(header)) },
-                .local_apic_nmi_src => .{ .local_apic_nmi_src = @alignCast(@ptrCast(header)) },
-                .local_apic_address_override => .{ .local_apic_address_override = @alignCast(@ptrCast(header)) },
-                .local_x2apic => .{ .local_x2apic = @alignCast(@ptrCast(header)) },
+                inline else => |t| @unionInit(
+                    Entry,
+                    @tagName(t),
+                    @alignCast(@ptrCast(header)),
+                ),
             };
         }
     };
