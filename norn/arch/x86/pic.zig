@@ -11,6 +11,8 @@
 
 const std = @import("std");
 
+const VectorTable = @import("norn").interrupt.VectorTable;
+
 const am = @import("asm.zig");
 
 const icw = enum { icw1, icw2, icw3, icw4 };
@@ -28,7 +30,7 @@ const secondary_data_port: u16 = secondary_command_port + 1;
 /// Offset to remap the interrupt vectors.
 /// We don't want any interrupts from the old PIC,
 /// so we remap them to unused vector space to avoid conflicts in case spurious interrupts occur.
-const remap_offset: u8 = 0xFF;
+const remap_offset: u8 = @intFromEnum(VectorTable.spurious);
 
 /// Initialization command words.
 const Icw = union(icw) {
