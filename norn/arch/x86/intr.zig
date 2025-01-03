@@ -3,15 +3,20 @@ const log = std.log.scoped(.intr);
 
 const norn = @import("norn");
 const mem = norn.mem;
+const interrupt = norn.interrupt;
+
 const am = @import("asm.zig");
+const arch = @import("arch.zig");
 const gdt = @import("gdt.zig");
 const isr = @import("isr.zig");
 
-/// Context for interrupt handlers.
-pub const Context = isr.Context;
+const Context = interrupt.Context;
+const Handler = interrupt.Handler;
 
-/// Interrupt handler function signature.
-pub const Handler = *const fn (*Context) void;
+pub const Error = error{
+    /// Handler is already registered for the vector.
+    AlreadyRegistered,
+};
 
 /// Maximum number of gates in the IDT.
 pub const max_num_gates = 256;
@@ -88,11 +93,20 @@ pub fn dispatch(context: *Context) void {
     handlers[context.vector](context);
 }
 
+/// Set an interrupt handler for the given vector.
+pub fn setHandler(vector: u8, handler: Handler) Error!void {
+    if (handlers[vector] != unhandledHandler) {
+        return Error.AlreadyRegistered;
+    }
+    handlers[vector] = handler;
+}
+
 fn unhandledHandler(context: *Context) void {
     @setCold(true);
 
     const exception: Exception = @enumFromInt(context.vector);
     log.err("============ Oops! ===================", .{});
+    // TODO Print the CPU ID
     log.err("Unhandled interrupt: {s} ({})", .{
         exception.name(),
         context.vector,

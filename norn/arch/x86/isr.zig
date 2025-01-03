@@ -59,7 +59,7 @@ pub const Context = packed struct {
 };
 
 /// Structure holding general purpose registers as saved by PUSHA.
-const Registers = packed struct {
+pub const Registers = packed struct {
     r8: u64,
     r9: u64,
     r10: u64,

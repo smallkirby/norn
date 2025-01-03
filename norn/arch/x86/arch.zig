@@ -1,11 +1,15 @@
 pub const mp = @import("mp.zig");
 
+pub const InterruptContext = isr.Context;
+pub const InterruptRegisters = isr.Registers;
+
 const std = @import("std");
 const log = std.log.scoped(.arch);
 
 const norn = @import("norn");
 const bits = norn.bits;
 const mem = norn.mem;
+const interrupt = norn.interrupt;
 const PageAllocator = mem.PageAllocator;
 const Phys = mem.Phys;
 
@@ -19,6 +23,8 @@ const pg = @import("page.zig");
 const regs = @import("registers.zig");
 
 const Msr = regs.Msr;
+
+pub const Error = apic.Error || intr.Error;
 
 /// Reconstruct the page tables
 /// This function MUST be called only once.
@@ -101,6 +107,11 @@ pub fn queryBspId() u8 {
 /// Pause a CPU for a short period of time.
 pub fn relax() void {
     am.relax();
+}
+
+/// Set the interrupt handler.
+pub fn setInterruptHandler(vector: u8, handler: interrupt.Handler) Error!void {
+    return intr.setHandler(vector, handler);
 }
 
 // ========================================

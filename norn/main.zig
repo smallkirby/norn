@@ -99,13 +99,14 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         try norn.acpi.spinForUsec(1000); // test if PM timer is working
     }
 
+    // Set spurious interrupt handler.
+    try arch.setInterruptHandler(@intFromEnum(norn.interrupt.VectorTable.spurious), spriousInterruptHandler);
+    try arch.initApic();
+    log.info("Initialized APIC.", .{});
+
     // Boot APs.
     log.info("Booting APs...", .{});
     try arch.mp.bootAllAps(norn.mem.page_allocator);
-
-    // Initialize APIC.
-    try arch.initApic();
-    log.info("Initialized APIC.", .{});
 
     // EOL
     if (norn.is_runtime_test) {
@@ -119,4 +120,9 @@ fn validateBootInfo(boot_info: BootInfo) !void {
     if (boot_info.magic != surtr.magic) {
         return error.InvalidMagic;
     }
+}
+
+/// Interrupt handler for spurious interrupts.
+fn spriousInterruptHandler(_: *norn.interrupt.Context) void {
+    std.log.scoped(.spurious).warn("Detected a spurious interrupt.", .{});
 }
