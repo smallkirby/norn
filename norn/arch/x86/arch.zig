@@ -10,6 +10,7 @@ const PageAllocator = mem.PageAllocator;
 const Phys = mem.Phys;
 
 const am = @import("asm.zig");
+const apic = @import("apic.zig");
 const cpuid = @import("cpuid.zig");
 const gdt = @import("gdt.zig");
 const intr = @import("intr.zig");
@@ -50,11 +51,6 @@ pub fn isIrqEnabled() bool {
     return am.readRflags().ie;
 }
 
-/// Initialize the GDT.
-pub fn initGdt() void {
-    gdt.init();
-}
-
 /// Read a data from an I/O port.
 pub inline fn in(T: type, port: u16) T {
     return switch (T) {
@@ -65,10 +61,20 @@ pub inline fn in(T: type, port: u16) T {
     };
 }
 
+/// Initialize the GDT.
+pub fn initGdt() void {
+    gdt.init();
+}
+
 /// Initialize interrupt and exception handling.
 /// Note that this function does not enable interrupts.
 pub fn initInterrupt() void {
     intr.init();
+}
+
+/// Initialize APIC.
+pub fn initApic() !void {
+    return apic.init();
 }
 
 /// Check if the current CPU is the BSP.

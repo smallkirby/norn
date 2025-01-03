@@ -1,7 +1,20 @@
 const norn = @import("norn");
 const mem = norn.mem;
+const Phys = mem.Phys;
+const VectorTable = norn.interrupt.VectorTable;
 
 const Partialable = norn.Partialable;
+
+const am = @import("asm.zig");
+const arch = @import("arch.zig");
+const cpuid = @import("cpuid.zig");
+const pic = @import("pic.zig");
+const regs = @import("registers.zig");
+
+pub const Error = error{
+    /// APIC is not on the chip.
+    ApicNotAvailable,
+};
 
 /// Local APIC interface.
 pub const LocalApic = struct {
@@ -22,6 +35,8 @@ pub const LocalApic = struct {
         ppr = 0xA0,
         /// EOI
         eoi = 0xB0,
+        /// SVR
+        svr = 0xF0,
         /// Interrupt Command, low 32 bits
         icr_low = 0x300,
         /// Interrupt Command, high 32 bits
@@ -33,8 +48,28 @@ pub const LocalApic = struct {
     /// Virtual address of the local APIC base
     _base: *void,
 
+    /// Spurious-Intrrupt Vector Register.
+    pub const Svr = packed struct(u32) {
+        /// Spurious Vector.
+        /// Determines the vector number to be delivered when the local APIC generates a spurious vector.
+        vector: u8,
+        /// APIC Software Enable/Disable.
+        /// If set, the local APIC is enabled.
+        apic_enabled: bool,
+        /// Focus Processor Checking.
+        /// If set, focus processor checking is disabled when using the lowest-priority delivery mode.
+        focus_checking: bool,
+        /// Reserved.
+        _reserved1: u2,
+        /// EOI-Broadcast Suppression.
+        /// If set, EOI messages are not broadcasted to the I/O APICs.
+        eoi_no_broadcast: bool,
+        /// Reserved.
+        _reserved2: u19,
+    };
+
     /// Instantiate an interface to access the local APIC.
-    pub fn new(base: u32) Self {
+    pub fn new(base: Phys) Self {
         return .{ ._base = @ptrFromInt(mem.phys2virt(base)) };
     }
 
@@ -62,7 +97,7 @@ pub const LocalApic = struct {
     }
 };
 
-/// Low 32-bits of Interrupt Command Register.
+/// Low 32-bits of Interrupt Command Register of Local APIC.
 pub const IcrLow = Partialable(packed struct(u32) {
     /// Vector number of the interrupt being sent.
     vector: u8,
@@ -131,3 +166,26 @@ pub const IcrHigh = Partialable(packed struct(u32) {
     /// Destination. Target processor(s).
     dest: u8,
 });
+
+/// Init the local APIC on this core.
+/// This function disables the old PIC, then enables the local APIC.
+pub fn init() Error!void {
+    // Check if APIC is available.
+    const is_available = cpuid.Leaf.from(1).query(null).edx & 0b0010_0000_0000 != 0;
+    if (!is_available) return Error.ApicNotAvailable;
+
+    // Disable old PIC.
+    pic.initDisabled();
+
+    // Set the APIC base again.
+    var apic_addr = am.rdmsr(regs.MsrApicBase, .apic_base);
+    apic_addr.enable = true;
+    am.wrmsr(.apic_base, apic_addr);
+
+    // Enable the local APIC.
+    const lapic = LocalApic.new(apic_addr.getAddress());
+    var svr = lapic.read(LocalApic.Svr, .svr);
+    svr.vector = comptime @intFromEnum(VectorTable.spurious);
+    svr.apic_enabled = true;
+    lapic.write(LocalApic.Svr, .svr, svr);
+}

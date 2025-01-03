@@ -218,6 +218,9 @@ export fn apTrampolineToMain() callconv(.C) noreturn {
     // Unlock the lock for BSP to continue booting other APs.
     lock.unlock();
 
+    // Initialize APIC.
+    arch.initApic() catch @panic("Failed to initialize APIC");
+
     // Greeting
     const lapic = apic.LocalApic.new(acpi.getSystemInfo().local_apic_address);
     const lapic_id = lapic.id();

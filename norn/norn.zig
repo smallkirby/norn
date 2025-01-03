@@ -2,6 +2,7 @@ pub const acpi = @import("acpi.zig");
 pub const arch = @import("arch.zig");
 pub const bits = @import("bits.zig");
 pub const drivers = @import("drivers.zig");
+pub const interrupt = @import("interrupt.zig");
 pub const klog = @import("log.zig");
 pub const mem = @import("mem.zig");
 pub usingnamespace @import("typing.zig");
