@@ -463,9 +463,9 @@ inline fn isUsableMemory(descriptor: *MemoryDescriptor) bool {
 // Debug print the statistics of managed regions.
 fn debugPrintStatistics(self: *Self, log_fn: norn.LogFn) void {
     log_fn("Statistics of Buddy Allocator's initial state:", .{});
-    for ([_]Zone{ .dma, .normal }) |zone| {
-        const arena = self.zones.getArena(zone);
-        const name = @tagName(zone);
+    inline for (std.meta.fields(Zone)) |zone| {
+        const arena = self.zones.getArena(@enumFromInt(zone.value));
+        const name = zone.name;
         log_fn(
             "{s: <7}                   Used / Total",
             .{name},
