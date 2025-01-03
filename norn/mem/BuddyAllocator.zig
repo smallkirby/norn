@@ -353,7 +353,7 @@ const ZoneList = struct {
     }
 
     /// Get the arena for the given zone.
-    fn getArena(self: *ZoneList, zone: Zone) *Arena {
+    inline fn getArena(self: *ZoneList, zone: Zone) *Arena {
         return &self.arenas[@intFromEnum(zone)];
     }
 };
