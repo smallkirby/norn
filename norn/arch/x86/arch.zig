@@ -7,6 +7,7 @@ const norn = @import("norn");
 const bits = norn.bits;
 const mem = norn.mem;
 const PageAllocator = mem.PageAllocator;
+const Phys = mem.Phys;
 
 const am = @import("asm.zig");
 const cpuid = @import("cpuid.zig");
@@ -35,8 +36,8 @@ pub inline fn enableIrq() void {
 }
 
 /// Get the local APIC address by reading the MSR.
-pub fn getLocalApicAddress() u32 {
-    return @truncate(am.rdmsr(.apic_base) & 0xFFFF_FFFF_FFFF_F000);
+pub fn getLocalApicAddress() Phys {
+    return am.rdmsr(regs.MsrApicBase, .apic_base).getAddress();
 }
 
 /// Halt the current CPU.
@@ -72,7 +73,7 @@ pub fn initInterrupt() void {
 
 /// Check if the current CPU is the BSP.
 pub fn isCurrentBsp() bool {
-    return bits.isset(am.rdmsr(.apic_base), 8);
+    return am.rdmsr(regs.MsrApicBase, .apic_base).is_bsp;
 }
 
 /// Write a byte to an I/O port.

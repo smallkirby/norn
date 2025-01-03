@@ -144,7 +144,7 @@ pub inline fn relax() void {
     asm volatile ("rep; nop");
 }
 
-pub inline fn rdmsr(comptime msr: Msr) u64 {
+pub inline fn rdmsr(T: type, comptime msr: Msr) T {
     var eax: u32 = undefined;
     var edx: u32 = undefined;
     asm volatile (
@@ -154,7 +154,13 @@ pub inline fn rdmsr(comptime msr: Msr) u64 {
         : [msr] "{ecx}" (@intFromEnum(msr)),
         : "eax", "edx", "ecx"
     );
-    return bits.concat(u64, edx, eax);
+
+    const value = bits.concat(u64, edx, eax);
+    return switch (@typeInfo(T)) {
+        .Int, .ComptimeInt => value,
+        .Struct => @bitCast(value),
+        else => @compileError("rdmsr: invalid type"),
+    };
 }
 
 pub inline fn sti() void {

@@ -1,4 +1,7 @@
 const norn = @import("norn");
+const mem = norn.mem;
+
+const Phys = mem.Phys;
 
 pub const Rflags = packed struct(u64) {
     /// Carry flag.
@@ -152,4 +155,31 @@ pub const Msr = enum(u64) {
     apic_base = 0x1B,
 
     _,
+};
+
+/// IA32_APIC_BASE_MSR
+pub const MsrApicBase = packed struct(u64) {
+    /// Reserved.
+    _reserved1: u8,
+    /// Whether the processor is the BSP.
+    is_bsp: bool,
+    /// Reserved.
+    _reserved2: u2,
+    /// APIC global enable.
+    enable: bool,
+    /// APIC base physical address
+    base: u40,
+    /// Reserved.
+    _reserved3: u12 = 0,
+
+    /// Set the physical base of the local APIC.
+    /// Note that this function does not set the value to the MSR.
+    pub fn setAddress(self: *MsrApicBase, phys: Phys) void {
+        self.base = phys >> 12;
+    }
+
+    /// Get the physical base of the local APIC.
+    pub fn getAddress(self: MsrApicBase) Phys {
+        return self.base << 12;
+    }
 };
