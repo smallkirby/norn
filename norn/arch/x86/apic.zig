@@ -1,9 +1,9 @@
 const norn = @import("norn");
+const acpi = norn.acpi;
 const mem = norn.mem;
+const Partialable = norn.Partialable;
 const Phys = mem.Phys;
 const VectorTable = norn.interrupt.VectorTable;
-
-const Partialable = norn.Partialable;
 
 const am = @import("asm.zig");
 const arch = @import("arch.zig");
@@ -43,6 +43,14 @@ pub const LocalApic = struct {
         icr_high = 0x310,
         /// Error Status
         esr = 0x280,
+        /// LVT Timer Register
+        lvt_timer = 0x320,
+        /// Initial Count Register
+        initial_count = 0x380,
+        /// Current Count Register
+        current_count = 0x390,
+        /// Divide Configuration Register
+        dcr_timer = 0x3E0,
     };
 
     /// Virtual address of the local APIC base
@@ -135,10 +143,6 @@ pub const IcrLow = Partialable(packed struct(u32) {
         physical = 0,
         logical = 1,
     };
-    const DeliveryStatus = enum(u1) {
-        idle = 0,
-        pending = 1,
-    };
     const Level = enum(u1) {
         deassert = 0,
         assert = 1,
@@ -166,6 +170,123 @@ pub const IcrHigh = Partialable(packed struct(u32) {
     /// Destination. Target processor(s).
     dest: u8,
 });
+
+/// Local APIC Timer.
+pub const Timer = struct {
+    /// Local Vector Table for Local APIC Timer.
+    const Lvt = packed struct(u32) {
+        /// Interrupt vector number.
+        vector: u8,
+        /// Reserved.
+        _reserved1: u4 = 0,
+        /// Delivery status.
+        delivery_status: DeliveryStatus = .pending,
+        /// Reserved.
+        _reserved2: u3 = 0,
+        /// Interrupt mask.
+        mask: bool = false,
+        /// Timer mode.
+        mode: Mode,
+        /// Reserved.
+        _reserved3: u13 = 0,
+    };
+
+    /// Timer mode.
+    const Mode = enum(u2) {
+        /// One-shot mode using a count-down value.
+        oneshot = 0b00,
+        /// Periodic mode using a count-down value.
+        periodic = 0b01,
+        /// TSC-Deadline mode using absolute target value in IA32_TSC_DEADLINE MSR.
+        tsc_deadline = 0b10,
+        /// Reserved.
+        _reserved = 0b11,
+    };
+
+    /// Divide Configuration Register.
+    const Dcr = packed struct(u32) {
+        /// Frequency of the timer is core crystal clock frequency divided by this value.
+        divide: Divide,
+        /// Reserved
+        _reserved: u28 = 0,
+
+        /// Divide configuration.
+        const Divide = enum(u4) {
+            by_2 = 0b0000,
+            by_4 = 0b0001,
+            by_8 = 0b0010,
+            by_16 = 0b0011,
+            by_32 = 0b1000,
+            by_64 = 0b1001,
+            by_128 = 0b1010,
+            by_1 = 0b1011,
+        };
+
+        pub fn value(self: Dcr) u64 {
+            return switch (self.divide) {
+                .by_2 => 2,
+                .by_4 => 4,
+                .by_8 => 8,
+                .by_16 => 16,
+                .by_32 => 32,
+                .by_64 => 64,
+                .by_128 => 128,
+                .by_1 => 1,
+            };
+        }
+    };
+
+    /// Measure the frequency of the local APIC timer using ACPI PM timer.
+    /// The unit of the return value is Hz.
+    pub fn measureFreq() u64 {
+        const lapic = LocalApic.new(arch.getLocalApicAddress());
+
+        // Set divider to 8 to reduce the frequency and avoid overflow.
+        const divider = Dcr{ .divide = .by_8 };
+        lapic.write(Dcr, .dcr_timer, divider);
+
+        // Set initial count.
+        const initial = 0xFFFF_FFFF;
+        setInitialCount(lapic, initial);
+
+        // Start timer
+        const lvt = Lvt{
+            .vector = @intFromEnum(VectorTable.spurious),
+            .mask = false,
+            .mode = .oneshot,
+        };
+        lapic.write(Lvt, .lvt_timer, lvt);
+
+        // Sleep for 100ms.
+        const acpi_us = 100 * 1000;
+        acpi.spinForUsec(acpi_us) catch @panic("Unexpected failure in Timer.measureFreq()");
+
+        // Get the current count.
+        const current = getCurrentCount(lapic);
+
+        return (@as(u64, initial - current) * divider.value()) * (1_000_000 / acpi_us);
+    }
+
+    /// Set the initial count of the timer.
+    inline fn setInitialCount(lapic: LocalApic, count: u32) void {
+        lapic.write(u32, .initial_count, count);
+    }
+
+    /// Get the current count of the timer.
+    inline fn getCurrentCount(lapic: LocalApic) u32 {
+        return lapic.read(u32, .current_count);
+    }
+};
+
+/// Delivery status of the interrupt.
+const DeliveryStatus = enum(u1) {
+    /// Idle.
+    /// Indicates that there're no activity for this source, or the previous interrupt was delivered and accepted.
+    idle = 0,
+    /// Send Pending.
+    /// Indicates that the previous interrupt was delivered but not yet accepted.
+    pending = 1,
+};
 
 /// Init the local APIC on this core.
 /// This function disables the old PIC, then enables the local APIC.

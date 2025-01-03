@@ -1,5 +1,6 @@
 pub const mp = @import("mp.zig");
 
+pub const ApicTimer = apic.Timer;
 pub const InterruptContext = isr.Context;
 pub const InterruptRegisters = isr.Registers;
 
