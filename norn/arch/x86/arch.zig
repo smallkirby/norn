@@ -3,6 +3,7 @@ pub const mp = @import("mp.zig");
 pub const ApicTimer = apic.Timer;
 pub const InterruptContext = isr.Context;
 pub const InterruptRegisters = isr.Registers;
+pub const LocalApic = apic.LocalApic;
 
 const std = @import("std");
 const log = std.log.scoped(.arch);
@@ -43,9 +44,10 @@ pub inline fn enableIrq() void {
     am.sti();
 }
 
-/// Get the local APIC address by reading the MSR.
-pub fn getLocalApicAddress() Phys {
-    return am.rdmsr(regs.MsrApicBase, .apic_base).getAddress();
+/// Get the local APIC.
+pub fn getLocalApic() apic.LocalApic {
+    const base = am.rdmsr(regs.MsrApicBase, .apic_base).getAddress();
+    return apic.LocalApic.new(base);
 }
 
 /// Halt the current CPU.

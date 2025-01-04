@@ -40,8 +40,7 @@ pub fn bootAllAps(allocator: PageAllocator) Error!void {
 
     const system_info = acpi.getSystemInfo();
     const bsp_id = arch.queryBspId();
-    const local_apic_addr = system_info.local_apic_address;
-    const lapic = apic.LocalApic.new(local_apic_addr); // local APIC of the BSP
+    const lapic = arch.getLocalApic();
 
     // Copy AP trampoline code to the 4KiB aligned physical memory.
     const trampoline: [*]const u8 = @ptrCast(&__ap_trampoline);

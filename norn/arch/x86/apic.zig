@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const norn = @import("norn");
 const acpi = norn.acpi;
 const mem = norn.mem;
@@ -14,6 +16,8 @@ const regs = @import("registers.zig");
 pub const Error = error{
     /// APIC is not on the chip.
     ApicNotAvailable,
+    /// Specified value is out of range.
+    ValueOutOfRange,
 };
 
 /// Local APIC interface.
@@ -103,6 +107,23 @@ pub const LocalApic = struct {
         const n: u32 = self.read(u32, .id);
         return @truncate(n >> 24);
     }
+
+    /// Notify the end of interrupt.
+    pub fn eoi(self: Self) void {
+        self.write(u32, .eoi, 0);
+    }
+
+    /// Get the APIC timer.
+    pub fn timer(self: Self) Timer {
+        return Timer{
+            .lapic = self,
+        };
+    }
+
+    /// Get the physical address of the local APIC.
+    pub fn address(self: Self) Phys {
+        return mem.virt2phys(self._base);
+    }
 };
 
 /// Low 32-bits of Interrupt Command Register of Local APIC.
@@ -173,6 +194,9 @@ pub const IcrHigh = Partialable(packed struct(u32) {
 
 /// Local APIC Timer.
 pub const Timer = struct {
+    /// Local APIC this timer is associated with.
+    lapic: LocalApic,
+
     /// Local Vector Table for Local APIC Timer.
     const Lvt = packed struct(u32) {
         /// Interrupt vector number.
@@ -238,16 +262,14 @@ pub const Timer = struct {
 
     /// Measure the frequency of the local APIC timer using ACPI PM timer.
     /// The unit of the return value is Hz.
-    pub fn measureFreq() u64 {
-        const lapic = LocalApic.new(arch.getLocalApicAddress());
-
+    pub fn measureFreq(self: Timer) u64 {
         // Set divider to 8 to reduce the frequency and avoid overflow.
         const divider = Dcr{ .divide = .by_8 };
-        lapic.write(Dcr, .dcr_timer, divider);
+        self.lapic.write(Dcr, .dcr_timer, divider);
 
         // Set initial count.
         const initial = 0xFFFF_FFFF;
-        setInitialCount(lapic, initial);
+        setInitialCount(initial);
 
         // Start timer
         const lvt = Lvt{
@@ -255,21 +277,52 @@ pub const Timer = struct {
             .mask = false,
             .mode = .oneshot,
         };
-        lapic.write(Lvt, .lvt_timer, lvt);
+        self.lapic.write(Lvt, .lvt_timer, lvt);
 
         // Sleep for 100ms.
         const acpi_us = 100 * 1000;
         acpi.spinForUsec(acpi_us) catch @panic("Unexpected failure in Timer.measureFreq()");
 
         // Get the current count.
-        const current = getCurrentCount(lapic);
+        const current = getCurrentCount();
 
         return (@as(u64, initial - current) * divider.value()) * (1_000_000 / acpi_us);
     }
 
+    /// Start the periodic timer.
+    /// Each time the timer expires, the interrupt is delivered with the specified vector.
+    pub fn startPeriodic(self: Timer, vector: u8, nsec: u64, self_freq: u64) Error!void {
+        // Find the largest divider.
+        const divider: Dcr.Divide = blk: {
+            if (nsec % 128 == 0) break :blk .by_128;
+            if (nsec % 64 == 0) break :blk .by_64;
+            if (nsec % 32 == 0) break :blk .by_32;
+            if (nsec % 16 == 0) break :blk .by_16;
+            if (nsec % 8 == 0) break :blk .by_8;
+            if (nsec % 4 == 0) break :blk .by_4;
+            if (nsec % 2 == 0) break :blk .by_2;
+            break :blk .by_1;
+        };
+        const dcr = Dcr{ .divide = divider };
+
+        // Check if the count does not overflow.
+        const count = (self_freq / dcr.value()) * nsec / 1_000_000_000;
+        if (count > std.math.maxInt(u32)) return Error.ValueOutOfRange;
+        self.lapic.write(u32, .initial_count, @as(u32, @truncate(count)));
+        self.lapic.write(Dcr, .dcr_timer, dcr);
+
+        // Start the timer.
+        const lvt = Lvt{
+            .vector = vector,
+            .mask = false,
+            .mode = .periodic,
+        };
+        self.lapic.write(Lvt, .lvt_timer, lvt);
+    }
+
     /// Set the initial count of the timer.
-    inline fn setInitialCount(lapic: LocalApic, count: u32) void {
-        lapic.write(u32, .initial_count, count);
+    inline fn setInitialCount(self: Timer, count: u32) void {
+        self.lapic.write(u32, .initial_count, count);
     }
 
     /// Get the current count of the timer.

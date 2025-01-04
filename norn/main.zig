@@ -125,4 +125,5 @@ fn validateBootInfo(boot_info: BootInfo) !void {
 /// Interrupt handler for spurious interrupts.
 fn spriousInterruptHandler(_: *norn.interrupt.Context) void {
     std.log.scoped(.spurious).warn("Detected a spurious interrupt.", .{});
+    arch.getLocalApic().eoi();
 }

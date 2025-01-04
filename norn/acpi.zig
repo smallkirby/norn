@@ -626,7 +626,7 @@ pub fn init(rsdp_phys: *anyopaque, allocator: Allocator) Error!void {
         // Check if the local APIC address is same as one in MSR,
         // because the base address in the MADT can be overridden.
         norn.rtt.expectEqual(true, arch.isCurrentBsp());
-        norn.rtt.expectEqual(arch.getLocalApicAddress(), madt.local_apic_address);
+        norn.rtt.expectEqual(arch.getLocalApic().address(), madt.local_apic_address);
     }
 
     // Get system information.
