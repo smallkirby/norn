@@ -4,6 +4,7 @@ KERNEL_VADDR_TEXT = 0xFFFFFFFF80100000;
 STACK_SIZE = 0x5000;
 
 PHDRS {
+    percpu PT_LOAD FLAGS(6);
     text PT_LOAD;
     rodata PT_LOAD;
     data PT_LOAD;
@@ -14,6 +15,13 @@ PHDRS {
 
 SECTIONS {
     . = KERNEL_VADDR_TEXT;
+
+    __per_cpu_start = .;
+    .data..percpu ALIGN(4K) : AT (ADDR(.data..percpu) - KERNEL_VADDR_BASE) {
+        KEEP(*(.data..percpu))
+    } :percpu
+    __per_cpu_end = .;
+    . = __per_cpu_start + SIZEOF(.data..percpu);
 
     .text ALIGN(4K) : AT (ADDR(.text) - KERNEL_VADDR_BASE) {
         *(.text)

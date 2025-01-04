@@ -167,6 +167,14 @@ pub inline fn sti() void {
     asm volatile ("sti");
 }
 
+pub fn writeCr4(cr4: regs.Cr4) void {
+    asm volatile (
+        \\mov %[cr4], %%cr4
+        :
+        : [cr4] "r" (@as(u64, @bitCast(cr4))),
+    );
+}
+
 pub fn wrmsr(comptime msr: Msr, value: anytype) void {
     const val: u64 = switch (@typeInfo(@TypeOf(value))) {
         .Int, .ComptimeInt => value,

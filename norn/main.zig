@@ -104,6 +104,9 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     try arch.initApic();
     log.info("Initialized APIC.", .{});
 
+    // Initialize per-CPU data.
+    try norn.pcpu.init(norn.acpi.getSystemInfo().num_cpus, norn.mem.page_allocator);
+
     // Boot APs.
     log.info("Booting APs...", .{});
     try arch.mp.bootAllAps(norn.mem.page_allocator);

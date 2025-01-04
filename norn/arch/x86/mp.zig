@@ -219,9 +219,12 @@ export fn apTrampolineToMain() callconv(.C) noreturn {
 
     // Initialize APIC.
     arch.initApic() catch @panic("Failed to initialize APIC");
+    const lapic = apic.LocalApic.new(acpi.getSystemInfo().local_apic_address);
+
+    // Initialize per-CPU data.
+    norn.pcpu.initThisCpu(lapic.id());
 
     // Greeting
-    const lapic = apic.LocalApic.new(acpi.getSystemInfo().local_apic_address);
     const lapic_id = lapic.id();
     log.info("AP #{d} has been booted.", .{lapic_id});
 

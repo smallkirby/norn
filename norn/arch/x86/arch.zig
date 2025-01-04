@@ -50,6 +50,16 @@ pub fn getLocalApic() apic.LocalApic {
     return apic.LocalApic.new(base);
 }
 
+/// Get the per-CPU base address.
+pub fn getPerCpuBase() Phys {
+    return asm volatile (
+        \\rdfsbase %[base]
+        : [base] "={rax}" (-> Phys),
+        :
+        : "rax"
+    );
+}
+
 /// Halt the current CPU.
 pub inline fn halt() void {
     am.hlt();
@@ -115,6 +125,23 @@ pub fn relax() void {
 /// Set the interrupt handler.
 pub fn setInterruptHandler(vector: u8, handler: interrupt.Handler) Error!void {
     return intr.setHandler(vector, handler);
+}
+
+/// Set the per-CPU base address.
+pub fn setPerCpuBase(base: Phys) void {
+    // Enable fsgsbase if not enabled
+    var cr4 = am.readCr4();
+    if (!cr4.fsgsbase) {
+        cr4.fsgsbase = true;
+        am.writeCr4(cr4);
+    }
+
+    // Set the base address
+    asm volatile (
+        \\wrfsbase %[base]
+        :
+        : [base] "r" (base),
+    );
 }
 
 // ========================================
