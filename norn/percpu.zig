@@ -24,6 +24,9 @@ var cpu_offsets = [_]usize{0} ** norn.num_max_cpu;
 /// Per-CPU data instance.
 var percpu_instance: *void = undefined;
 
+/// Whether per-CPU data is initialized.
+var percpu_initialized: bool = false;
+
 /// Initialize per-CPU data.
 pub fn init(num_cpus: usize, allocator: PageAllocator) Error!void {
     const per_cpu_size = @intFromPtr(&__per_cpu_end) - @intFromPtr(&__per_cpu_start);
@@ -47,10 +50,13 @@ pub fn init(num_cpus: usize, allocator: PageAllocator) Error!void {
     for (0..num_cpus) |i| {
         @memcpy(rawGetCpuHead(i)[0..per_cpu_size], original_data[0..per_cpu_size]);
     }
+
+    percpu_initialized = true;
 }
 
 /// Initialize per-CPU data for this core.
 pub fn initThisCpu(cpu: usize) void {
+    if (!percpu_initialized) return;
     norn.arch.setPerCpuBase(@intFromPtr(rawGetCpuHead(cpu)));
 }
 
