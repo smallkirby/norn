@@ -4,6 +4,7 @@ const norn = @import("norn");
 const arch = norn.arch;
 const mem = norn.mem;
 const PageAllocator = mem.PageAllocator;
+const Virt = mem.Virt;
 
 /// Section name where per-CPU data is placed.
 pub const section = ".data..percpu";
@@ -28,7 +29,7 @@ var percpu_instance: *void = undefined;
 var percpu_initialized: bool = false;
 
 /// Initialize per-CPU data.
-pub fn init(num_cpus: usize, allocator: PageAllocator) Error!void {
+pub fn init(num_cpus: usize, percpu_base: Virt, allocator: PageAllocator) Error!void {
     const per_cpu_size = @intFromPtr(&__per_cpu_end) - @intFromPtr(&__per_cpu_start);
     if (per_cpu_size == 0) return;
 
@@ -46,7 +47,7 @@ pub fn init(num_cpus: usize, allocator: PageAllocator) Error!void {
     ));
 
     // Copy initial data to per-CPU data.
-    const original_data: [*]const u8 = @ptrCast(&__per_cpu_start);
+    const original_data: [*]const u8 = @ptrFromInt(percpu_base);
     for (0..num_cpus) |i| {
         @memcpy(rawGetCpuHead(i)[0..per_cpu_size], original_data[0..per_cpu_size]);
     }
@@ -63,7 +64,7 @@ pub fn initThisCpu(cpu: usize) void {
 /// Get the address of per-CPU data relative to the per-CPU address space for the current CPU.
 /// TODO disable preemption
 pub inline fn thisCpuGet(comptime pointer: anytype) *allowzero addrspace(percpu_addrspace) @typeInfo(@TypeOf(pointer)).Pointer.child {
-    return @ptrFromInt(@intFromPtr(pointer) - @intFromPtr(&__per_cpu_start));
+    return @addrSpaceCast(@ptrCast(pointer));
 }
 
 /// Get the virtual address of per-CPU data area for the given CPU.

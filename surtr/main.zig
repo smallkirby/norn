@@ -34,6 +34,9 @@ const SurtrError = error{
 };
 const Error = SurtrError || arch.page.PageError;
 
+// TODO: do not hardcode. Must be sync with norn.mem
+const percpu_base = 0xFFFF_FFFF_8010_0000;
+
 // Bootloader entry point.
 pub fn main() uefi.Status {
     boot() catch |e| {
@@ -106,6 +109,7 @@ pub fn boot() Error!void {
     var kernel_start_virt: Addr = std.math.maxInt(Addr);
     var kernel_start_phys: Addr align(page_size) = std.math.maxInt(Addr);
     var kernel_end_phys: Addr = 0;
+
     var iter = elf_header.program_header_iterator(kernel);
     while (true) {
         const phdr = iter.next() catch |err| {
@@ -113,9 +117,15 @@ pub fn boot() Error!void {
             return Error.Load;
         } orelse break;
         if (phdr.p_type != elf.PT_LOAD) continue;
-        if (phdr.p_paddr < kernel_start_phys) kernel_start_phys = phdr.p_paddr;
-        if (phdr.p_vaddr < kernel_start_virt) kernel_start_virt = phdr.p_vaddr;
-        if (phdr.p_paddr + phdr.p_memsz > kernel_end_phys) kernel_end_phys = phdr.p_paddr + phdr.p_memsz;
+
+        // If the virtual address is zero, regard the segment as per-CPU data.
+        const vaddr = if (phdr.p_vaddr != 0) phdr.p_vaddr else percpu_base;
+        const paddr = phdr.p_paddr;
+
+        // Record the start and end address of the segment.
+        if (paddr < kernel_start_phys) kernel_start_phys = paddr;
+        if (vaddr < kernel_start_virt) kernel_start_virt = vaddr;
+        if (paddr + phdr.p_memsz > kernel_end_phys) kernel_end_phys = paddr + phdr.p_memsz;
     }
     const pages_4kib = (kernel_end_phys - kernel_start_phys + (page_size - 1)) / page_size;
     log.info("Kernel image: 0x{X:0>16} - 0x{X:0>16} (0x{X} pages)", .{ kernel_start_phys, kernel_end_phys, pages_4kib });
@@ -158,7 +168,8 @@ pub fn boot() Error!void {
             log.err("Failed to set position for kernel image.", .{});
             return Error.Fs;
         }
-        const segment: [*]u8 = @ptrFromInt(phdr.p_vaddr);
+        const vaddr = if (phdr.p_vaddr != 0) phdr.p_vaddr else percpu_base;
+        const segment: [*]u8 = @ptrFromInt(vaddr);
         var mem_size = phdr.p_memsz;
         status = kernel.read(&mem_size, segment);
         if (status != .Success) {
@@ -170,18 +181,18 @@ pub fn boot() Error!void {
         const chr_r: u8 = if (phdr.p_flags & elf.PF_R != 0) 'R' else '-';
         log.info(
             "  Seg @ 0x{X:0>16} - 0x{X:0>16} [{c}{c}{c}]",
-            .{ phdr.p_vaddr, phdr.p_vaddr + phdr.p_memsz, chr_x, chr_w, chr_r },
+            .{ vaddr, vaddr + phdr.p_memsz, chr_x, chr_w, chr_r },
         );
 
         // Zero-clear the BSS section and uninitialized data.
         const zero_count = phdr.p_memsz - phdr.p_filesz;
         if (zero_count > 0) {
-            bs.setMem(@ptrFromInt(phdr.p_vaddr + phdr.p_filesz), zero_count, 0);
+            bs.setMem(@ptrFromInt(vaddr + phdr.p_filesz), zero_count, 0);
         }
 
         // Change memory protection.
-        const page_start = phdr.p_vaddr & ~page_mask;
-        const page_end = (phdr.p_vaddr + phdr.p_memsz + (page_size - 1)) & ~page_mask;
+        const page_start = vaddr & ~page_mask;
+        const page_end = (vaddr + phdr.p_memsz + (page_size - 1)) & ~page_mask;
         const size = (page_end - page_start) / page_size;
         const attribute = arch.page.PageAttribute.fromFlags(phdr.p_flags);
         for (0..size) |i| {
@@ -268,6 +279,7 @@ pub fn boot() Error!void {
         .magic = surtr.magic,
         .memory_map = map,
         .rsdp = rsdp,
+        .percpu_base = percpu_base,
     };
     kernel_entry(boot_info);
 

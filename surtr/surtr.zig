@@ -13,6 +13,8 @@ pub const BootInfo = extern struct {
     memory_map: MemoryMap,
     /// RSDP.
     rsdp: *anyopaque,
+    /// Virtual address where per-CPU data is loaded.
+    percpu_base: u64,
 };
 
 /// Memory map provided by UEFI.
