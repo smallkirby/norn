@@ -14,6 +14,7 @@ const mem = norn.mem;
 const interrupt = norn.interrupt;
 const PageAllocator = mem.PageAllocator;
 const Phys = mem.Phys;
+const Virt = mem.Virt;
 
 const am = @import("asm.zig");
 const apic = @import("apic.zig");
@@ -51,7 +52,7 @@ pub fn getLocalApic() apic.LocalApic {
 }
 
 /// Get the per-CPU base address.
-pub fn getPerCpuBase() Phys {
+pub fn getPerCpuBase() Virt {
     return asm volatile (
         \\rdfsbase %[base]
         : [base] "={rax}" (-> Phys),
@@ -128,7 +129,7 @@ pub fn setInterruptHandler(vector: u8, handler: interrupt.Handler) Error!void {
 }
 
 /// Set the per-CPU base address.
-pub fn setPerCpuBase(base: Phys) void {
+pub fn setPerCpuBase(base: Virt) void {
     // Enable fsgsbase if not enabled
     var cr4 = am.readCr4();
     if (!cr4.fsgsbase) {

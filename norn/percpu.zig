@@ -11,7 +11,9 @@ pub const section = ".data..percpu";
 pub const Error = error{} || PageAllocator.Error;
 
 /// Alignment of per-CPU data.
-const per_cpu_align = 16;
+const percpu_align = 16;
+/// Address space of per-CPU data.
+const percpu_addrspace = std.builtin.AddressSpace.fs;
 
 extern const __per_cpu_start: *void;
 extern const __per_cpu_end: *void;
@@ -30,7 +32,7 @@ pub fn init(num_cpus: usize, allocator: PageAllocator) Error!void {
     // Calculate offsets of per-CPU data.
     for (0..num_cpus) |i| {
         const offset = if (i == 0) 0 else cpu_offsets[i - 1] + per_cpu_size;
-        cpu_offsets[i] = roundup(offset, per_cpu_align);
+        cpu_offsets[i] = roundup(offset, percpu_align);
     }
 
     // Allocate per-CPU data area.
@@ -49,15 +51,13 @@ pub fn init(num_cpus: usize, allocator: PageAllocator) Error!void {
 
 /// Initialize per-CPU data for this core.
 pub fn initThisCpu(cpu: usize) void {
-    const percpu_phys = norn.mem.virt2phys(rawGetCpuHead(cpu));
-    norn.arch.setPerCpuBase(percpu_phys);
+    norn.arch.setPerCpuBase(@intFromPtr(rawGetCpuHead(cpu)));
 }
 
-/// Get the virtual address of per-CPU data for the current CPU.
+/// Get the address of per-CPU data relative to the per-CPU address space for the current CPU.
 /// TODO disable preemption
-pub fn thisCpuGet(T: type, pointer: *T) *T {
-    const offset = @intFromPtr(pointer) - @intFromPtr(&__per_cpu_start);
-    return @ptrFromInt(mem.phys2virt(arch.getPerCpuBase() + offset));
+pub fn thisCpuGet(T: type, pointer: *T) *addrspace(percpu_addrspace) T {
+    return @ptrFromInt(@intFromPtr(pointer) - @intFromPtr(&__per_cpu_start));
 }
 
 /// Get the virtual address of per-CPU data area for the given CPU.

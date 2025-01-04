@@ -106,6 +106,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 
     // Initialize per-CPU data.
     try norn.pcpu.init(norn.acpi.getSystemInfo().num_cpus, norn.mem.page_allocator);
+    norn.pcpu.initThisCpu(norn.arch.getLocalApic().id());
 
     // Boot APs.
     log.info("Booting APs...", .{});
