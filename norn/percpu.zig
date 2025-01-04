@@ -62,7 +62,7 @@ pub fn initThisCpu(cpu: usize) void {
 
 /// Get the address of per-CPU data relative to the per-CPU address space for the current CPU.
 /// TODO disable preemption
-pub fn thisCpuGet(pointer: anytype) *addrspace(percpu_addrspace) @typeInfo(@TypeOf(pointer)).Pointer.child {
+pub inline fn thisCpuGet(comptime pointer: anytype) *allowzero addrspace(percpu_addrspace) @typeInfo(@TypeOf(pointer)).Pointer.child {
     return @ptrFromInt(@intFromPtr(pointer) - @intFromPtr(&__per_cpu_start));
 }
 
