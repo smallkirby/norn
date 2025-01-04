@@ -269,7 +269,7 @@ pub const Timer = struct {
 
         // Set initial count.
         const initial = 0xFFFF_FFFF;
-        setInitialCount(initial);
+        self.setInitialCount(initial);
 
         // Start timer
         const lvt = Lvt{
@@ -284,7 +284,7 @@ pub const Timer = struct {
         acpi.spinForUsec(acpi_us) catch @panic("Unexpected failure in Timer.measureFreq()");
 
         // Get the current count.
-        const current = getCurrentCount();
+        const current = self.getCurrentCount();
 
         return (@as(u64, initial - current) * divider.value()) * (1_000_000 / acpi_us);
     }
@@ -326,8 +326,8 @@ pub const Timer = struct {
     }
 
     /// Get the current count of the timer.
-    inline fn getCurrentCount(lapic: LocalApic) u32 {
-        return lapic.read(u32, .current_count);
+    inline fn getCurrentCount(self: Timer) u32 {
+        return self.lapic.read(u32, .current_count);
     }
 };
 
