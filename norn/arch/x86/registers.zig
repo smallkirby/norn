@@ -47,7 +47,7 @@ pub const Rflags = packed struct(u64) {
     /// CPUID support.
     id: bool,
     /// Reserved.
-    _reserved3: u8,
+    _reserved3: u8 = 0,
     /// Reserved.
     aes: bool,
     /// Alternate instruction set enabled.
