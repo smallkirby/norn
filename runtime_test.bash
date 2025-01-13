@@ -2,9 +2,12 @@
 
 set -o pipefail
 
+NUM_CORES=3
+CPU_MODEL=qemu64
+CPU_FEATURES=fsgsbase
+
 TIMEOUT=60
 TMPFILE=$(mktemp)
-NUM_CORES=3
 
 function cleanup()
 {
@@ -23,6 +26,7 @@ qemu-system-x86_64 \
   -nographic \
   -serial mon:stdio \
   -no-reboot \
+  -cpu $CPU_MODEL,+$CPU_FEATURES \
   -smp $NUM_CORES \
   -device isa-debug-exit,iobase=0xF0,iosize=0x01 \
   2>&1 \
