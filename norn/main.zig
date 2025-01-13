@@ -116,7 +116,30 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     log.info("Booting APs...", .{});
     try arch.mp.bootAllAps(norn.mem.page_allocator);
 
-    // EOL
+    // Initialize scheduler.
+    log.info("Initializing scheduler...", .{});
+    arch.disableIrq();
+    try norn.sched.initThisCpu(norn.mem.general_allocator, norn.mem.page_allocator);
+
+    // Set up timer interrupt handler.
+    try arch.setInterruptHandler(@intFromEnum(norn.interrupt.VectorTable.timer), norn.sched.schedule);
+    const lapic = norn.arch.getLocalApic();
+    const lapic_timer = lapic.timer();
+    const lapic_freq = lapic_timer.measureFreq();
+
+    // Start timer and scheduler.
+    log.info("Starting scheduler...", .{});
+    try lapic_timer.startPeriodic(
+        @intFromEnum(norn.interrupt.VectorTable.timer),
+        1000 * 100, // TODO
+        lapic_freq,
+    );
+
+    // Wait for idle task to be scheduled.
+    norn.arch.enableIrq();
+    norn.arch.halt();
+
+    // Unreachable EOL
     if (norn.is_runtime_test) {
         norn.terminateQemu(0);
     }

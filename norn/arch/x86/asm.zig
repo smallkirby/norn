@@ -167,6 +167,14 @@ pub inline fn sti() void {
     asm volatile ("sti");
 }
 
+pub fn writeCr3(cr3: u64) void {
+    asm volatile (
+        \\mov %[cr3], %%cr3
+        :
+        : [cr3] "r" (cr3),
+    );
+}
+
 pub fn writeCr4(cr4: regs.Cr4) void {
     asm volatile (
         \\mov %[cr4], %%cr4

@@ -12,9 +12,10 @@ pub const pcpu = blk: {
         pub fn initThisCpu(_: usize) void {}
     };
 };
-pub usingnamespace @import("typing.zig");
-
+pub const sched = @import("sched.zig");
 pub const rtt = @import("rtt.zig");
+pub const thread = @import("thread.zig");
+pub usingnamespace @import("typing.zig");
 
 pub const is_runtime_test = @import("option").is_runtime_test;
 pub const LogFn = klog.LogFn;
