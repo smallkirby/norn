@@ -131,6 +131,14 @@ pub fn setInterruptHandler(vector: u8, handler: interrupt.Handler) Error!void {
 
 /// Set the per-CPU base address.
 pub fn setPerCpuBase(base: Virt) void {
+    // Check if fsgsbase is supported
+    const cpuid_fsgsbase_bit = 1 << 0;
+    const cpuid_res = cpuid.Leaf.ext_feature.query(0);
+    const fsgsbase_supported = (cpuid_res.ebx & cpuid_fsgsbase_bit) != 0;
+    if (!fsgsbase_supported) {
+        @panic("FSGSBASE is not supported."); // TODO don't panic. should fallback to wrmsr.
+    }
+
     // Enable fsgsbase if not enabled
     var cr4 = am.readCr4();
     if (!cr4.fsgsbase) {

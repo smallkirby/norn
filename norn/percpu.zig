@@ -57,7 +57,7 @@ pub fn init(num_cpus: usize, percpu_base: Virt, allocator: PageAllocator) Error!
 
 /// Initialize per-CPU data for this core.
 pub fn initThisCpu(cpu: usize) void {
-    if (!percpu_initialized) return;
+    norn.rtt.expect(percpu_initialized);
     norn.arch.setPerCpuBase(@intFromPtr(rawGetCpuHead(cpu)));
 }
 
