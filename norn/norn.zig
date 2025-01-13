@@ -5,13 +5,7 @@ pub const drivers = @import("drivers.zig");
 pub const interrupt = @import("interrupt.zig");
 pub const klog = @import("log.zig");
 pub const mem = @import("mem.zig");
-pub const pcpu = blk: {
-    if (!@import("builtin").is_test) {
-        break :blk @import("percpu.zig");
-    } else break :blk struct {
-        pub fn initThisCpu(_: usize) void {}
-    };
-};
+pub const pcpu = if (!is_test) @import("percpu.zig") else @import("percpu.zig").mock_for_testing;
 pub const sched = @import("sched.zig");
 pub const rtt = @import("rtt.zig");
 pub const thread = @import("thread.zig");
@@ -24,6 +18,7 @@ pub const SpinLock = @import("SpinLock.zig");
 
 const std = @import("std");
 const log = std.log;
+const is_test = @import("builtin").is_test;
 
 /// Maximum number of supported CPUs.
 pub const num_max_cpu = 256;

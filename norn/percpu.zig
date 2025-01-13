@@ -75,3 +75,20 @@ inline fn rawGetCpuHead(cpu: usize) [*]u8 {
 inline fn roundup(value: usize, alignment: usize) usize {
     return (value + alignment - 1) & ~(alignment - 1);
 }
+
+// =======================================
+
+// `percpu` module for testing.
+pub const mock_for_testing = struct {
+    comptime {
+        if (!@import("builtin").is_test) {
+            @compileError("sched.mock_for_testing is only available in test mode");
+        }
+    }
+
+    pub const section = ".data..percpu";
+    pub fn initThisCpu(_: usize) void {}
+    pub fn thisCpuGet(comptime pointer: anytype) *@typeInfo(@TypeOf(pointer)).Pointer.child {
+        return pointer;
+    }
+};
