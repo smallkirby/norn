@@ -93,15 +93,6 @@ pub fn enqueue(task: *Thread, allocator: Allocator) Error!void {
     queue.list.append(node);
 }
 
-/// TODO doc
-export fn contextSwitch(task: *Thread) void {
-    asm volatile (
-        \\movq %[stack], %%rsp
-        :
-        : [stack] "r" (@intFromPtr(task.stack_ptr)),
-    );
-}
-
 /// Setup the idle task and set the current task to it.
 fn setupIdleTask(allocator: Allocator, page_allocator: PageAllocator) Error!void {
     const idle_task = try thread.createKernelThread(idleTask, allocator, page_allocator);
