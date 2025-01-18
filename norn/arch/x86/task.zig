@@ -59,6 +59,29 @@ pub fn initOrphanFrame(rsp: [*]u8, ip: u64) [*]u8 {
     return @ptrCast(context);
 }
 
+/// Switch to the initial task.
+///
+/// Different from switchTo(), this function is called only once.
+/// No callee-saved registers are saved and restored.
+pub const initialSwitchTo: *const fn (init: *Thread) callconv(.C) noreturn = @ptrCast(&initialSwitchToImpl);
+noinline fn initialSwitchToImpl() callconv(.Naked) noreturn {
+    const sp_offset = @offsetOf(Thread, "stack_ptr");
+
+    asm volatile (std.fmt.comptimePrint(
+            \\
+            // Switch to the next task's stack.
+            \\movq {d}(%%rdi), %%rsp
+            // Restore callee-saved registers.
+            \\popq %%r15
+            \\popq %%r14
+            \\popq %%r13
+            \\popq %%r12
+            \\popq %%rbx
+            \\popq %%rbp
+            \\jmp switchToInternal
+        , .{sp_offset}));
+}
+
 /// Switch to the next task.
 ///
 /// Callee-saved registers of the previous task are saved, then the stack is switched to the next task.

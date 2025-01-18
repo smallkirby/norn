@@ -49,8 +49,13 @@ pub fn initThisCpu(allocator: Allocator, page_allocator: PageAllocator) Error!vo
     try setupIdleTask(allocator, page_allocator);
 }
 
+/// Run the task scheduler on this CPU.
+pub fn runThisCpu() noreturn {
+    norn.arch.task.initialSwitchTo(pcpu.thisCpuGet(&current_task).*.data);
+}
+
 /// Schedule the next task.
-pub fn schedule(_: *norn.interrupt.Context) void {
+pub fn schedule() void {
     arch.disableIrq();
     arch.getLocalApic().eoi();
 
@@ -61,6 +66,13 @@ pub fn schedule(_: *norn.interrupt.Context) void {
     const next_node = if (queue.list.first) |first| first else {
         // No task to run.
         norn.rtt.expect(cur_node.data.tid == 0); // must be idle task
+
+        if (norn.is_runtime_test) {
+            log.info("No task to run. Terminating QEMU...", .{});
+            norn.terminateQemu(0);
+            @panic("Reached unreachable Norn EOL.");
+        }
+
         arch.enableIrq();
         return;
     };
@@ -108,8 +120,8 @@ fn setupIdleTask(allocator: Allocator, page_allocator: PageAllocator) Error!void
 
 /// Idle task that yields the CPU to other tasks immediately.
 fn idleTask() noreturn {
-    arch.enableIrq();
     while (true) {
+        arch.enableIrq();
         arch.halt();
     }
 }
@@ -125,7 +137,7 @@ fn debugTmpThreadA() noreturn {
 
     const current = pcpu.thisCpuGet(&current_task).*;
     current.data.state = .dead;
-    schedule(undefined);
+    schedule();
     unreachable;
 }
 
@@ -137,6 +149,6 @@ fn debugTmpThreadB() noreturn {
 
     const current = pcpu.thisCpuGet(&current_task).*;
     current.data.state = .dead;
-    schedule(undefined);
+    schedule();
     unreachable;
 }

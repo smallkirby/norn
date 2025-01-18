@@ -9,6 +9,7 @@ pub const pcpu = if (!is_test) @import("percpu.zig") else @import("percpu.zig").
 pub const sched = @import("sched.zig");
 pub const rtt = @import("rtt.zig");
 pub const thread = @import("thread.zig");
+pub const timer = @import("timer.zig");
 pub usingnamespace @import("typing.zig");
 
 pub const is_runtime_test = @import("option").is_runtime_test;

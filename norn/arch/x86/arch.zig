@@ -28,7 +28,7 @@ const regs = @import("registers.zig");
 
 const Msr = regs.Msr;
 
-pub const Error = apic.Error || intr.Error;
+pub const Error = apic.Error || intr.Error || apic.Error;
 
 /// Reconstruct the page tables
 /// This function MUST be called only once.
