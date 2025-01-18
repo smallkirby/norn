@@ -5,6 +5,7 @@ const norn = @import("norn.zig");
 const arch = norn.arch;
 const mem = norn.mem;
 
+const page_allocator = mem.page_allocator;
 const PageAllocator = mem.PageAllocator;
 
 pub const Error = error{} || PageAllocator.Error;
@@ -44,7 +45,6 @@ pub const Thread = struct {
     /// Create a new thread.
     fn create(
         allocator: Allocator,
-        page_allocator: PageAllocator,
     ) Error!*Thread {
         const self = try allocator.create(Thread);
         errdefer allocator.destroy(self);
@@ -62,7 +62,7 @@ pub const Thread = struct {
     }
 
     /// Destroy the thread.
-    fn destroy(self: *Thread, allocator: Allocator, page_allocator: PageAllocator) void {
+    fn destroy(self: *Thread, allocator: Allocator) void {
         page_allocator.freePages(self.stack);
         allocator.destroy(self);
     }
@@ -79,9 +79,8 @@ fn assignNewTid() Tid {
 pub fn createKernelThread(
     entry: KernelThreadEntry,
     allocator: Allocator,
-    page_allocator: PageAllocator,
 ) Error!*Thread {
-    const thread = try Thread.create(allocator, page_allocator);
+    const thread = try Thread.create(allocator);
     thread.stack_ptr = arch.task.initOrphanFrame(thread.stack_ptr, @intFromPtr(entry));
 
     return thread;

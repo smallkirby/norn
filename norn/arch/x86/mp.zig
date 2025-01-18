@@ -6,9 +6,11 @@ const norn = @import("norn");
 const acpi = norn.acpi;
 const bits = norn.bits;
 const mem = norn.mem;
-const PageAllocator = mem.PageAllocator;
 const Phys = mem.Phys;
 const SpinLock = norn.SpinLock;
+
+const page_allocator = mem.page_allocator;
+const PageAllocator = mem.PageAllocator;
 
 const am = @import("asm.zig");
 const apic = @import("apic.zig");
@@ -27,16 +29,12 @@ const num_ap_stack_pages = 5;
 
 /// Spin lock shared by all APs while booting.
 var lock = SpinLock{};
-/// Page allocator used by APs while booting.
-var ap_page_allocator: PageAllocator = undefined;
 
 /// Boot all APs.
-pub fn bootAllAps(allocator: PageAllocator) Error!void {
+pub fn bootAllAps() Error!void {
     const ie = arch.isIrqEnabled();
     arch.disableIrq();
     defer if (ie) arch.enableIrq();
-
-    ap_page_allocator = allocator;
 
     const system_info = acpi.getSystemInfo();
     const bsp_id = arch.queryBspId();
@@ -46,7 +44,8 @@ pub fn bootAllAps(allocator: PageAllocator) Error!void {
     const trampoline: [*]const u8 = @ptrCast(&__ap_trampoline);
     const trampoline_end: [*]const u8 = @ptrCast(&__ap_trampoline_end);
     const trampoline_size = @intFromPtr(trampoline_end) - @intFromPtr(trampoline);
-    const trampoline_page = try allocator.allocPages(1, .dma);
+    const trampoline_page = try page_allocator.allocPages(1, .dma);
+    defer page_allocator.freePages(trampoline_page);
     const trampoline_page_phys = mem.virt2phys(trampoline_page.ptr);
     @memcpy(trampoline_page[0..trampoline_size], trampoline[0..trampoline_size]);
 
@@ -59,16 +58,17 @@ pub fn bootAllAps(allocator: PageAllocator) Error!void {
     try pg.boot.map4kPageDirect(
         trampoline_page_phys,
         trampoline_page_phys,
-        allocator,
+        page_allocator,
     );
 
     // Prepare temporary stack for APs.
-    const ap_stack = try allocator.allocPages(1, .dma);
+    const ap_stack = try page_allocator.allocPages(1, .dma);
+    defer page_allocator.freePages(ap_stack);
     @memset(ap_stack, 0);
     try pg.boot.map4kPageDirect(
         mem.virt2phys(ap_stack.ptr),
         mem.virt2phys(ap_stack.ptr),
-        allocator,
+        page_allocator,
     );
 
     // Relocate boot code.
@@ -92,8 +92,6 @@ pub fn bootAllAps(allocator: PageAllocator) Error!void {
     // Unmap and free the temporary pages.
     try pg.boot.unmap4kPage(mem.virt2phys(ap_stack.ptr));
     try pg.boot.unmap4kPage(mem.virt2phys(trampoline_page.ptr));
-    allocator.freePages(ap_stack);
-    allocator.freePages(trampoline_page);
 }
 
 /// Boot a single AP.
@@ -196,7 +194,7 @@ fn apEntry64() callconv(.C) noreturn {
 
     // Allocate stack.
     // TODO: set guard page.
-    const stack_top = ap_page_allocator.allocPages(num_ap_stack_pages + 1, .normal) catch @panic("Failed to allocate stack for AP");
+    const stack_top = page_allocator.allocPages(num_ap_stack_pages + 1, .normal) catch @panic("Failed to allocate stack for AP");
     const stack = @intFromPtr(stack_top.ptr) + (num_ap_stack_pages + 1) * mem.size_4kib - 0x10;
 
     // Set stack pointer.

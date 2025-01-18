@@ -108,18 +108,17 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     try norn.pcpu.init(
         norn.acpi.getSystemInfo().num_cpus,
         boot_info.percpu_base,
-        norn.mem.page_allocator,
     );
     norn.pcpu.initThisCpu(norn.arch.getLocalApic().id());
 
     // Boot APs.
     log.info("Booting APs...", .{});
-    try arch.mp.bootAllAps(norn.mem.page_allocator);
+    try arch.mp.bootAllAps();
 
     // Initialize scheduler.
     log.info("Initializing scheduler...", .{});
     arch.disableIrq();
-    try norn.sched.initThisCpu(norn.mem.general_allocator, norn.mem.page_allocator);
+    try norn.sched.initThisCpu(norn.mem.general_allocator);
 
     // Start timer and scheduler.
     log.info("Starting scheduler...", .{});

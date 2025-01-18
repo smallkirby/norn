@@ -10,6 +10,8 @@ const pcpu = norn.pcpu;
 const SpinLock = norn.SpinLock;
 const thread = norn.thread;
 const Thread = thread.Thread;
+
+const page_allocator = mem.page_allocator;
 const PageAllocator = mem.PageAllocator;
 
 pub const Error = error{} || Allocator.Error;
@@ -41,12 +43,12 @@ const RunQueue = struct {
 };
 
 /// Initialize the scheduler for this CPU.
-pub fn initThisCpu(allocator: Allocator, page_allocator: PageAllocator) Error!void {
+pub fn initThisCpu(allocator: Allocator) Error!void {
     // Initialize the run queue
     pcpu.thisCpuGet(&runq).* = try RunQueue.new(allocator);
 
     // Initialize the idle task
-    try setupIdleTask(allocator, page_allocator);
+    try setupIdleTask(allocator);
 }
 
 /// Run the task scheduler on this CPU.
@@ -106,14 +108,14 @@ pub fn enqueue(task: *Thread, allocator: Allocator) Error!void {
 }
 
 /// Setup the idle task and set the current task to it.
-fn setupIdleTask(allocator: Allocator, page_allocator: PageAllocator) Error!void {
-    const idle_task = try thread.createKernelThread(idleTask, allocator, page_allocator);
+fn setupIdleTask(allocator: Allocator) Error!void {
+    const idle_task = try thread.createKernelThread(idleTask, allocator);
     const idle_node = try allocator.create(QueuedTask);
     idle_node.* = QueuedTask{ .data = idle_task };
     pcpu.thisCpuGet(&current_task).* = idle_node;
 
-    const taskA = try thread.createKernelThread(debugTmpThreadA, allocator, page_allocator);
-    const taskB = try thread.createKernelThread(debugTmpThreadB, allocator, page_allocator);
+    const taskA = try thread.createKernelThread(debugTmpThreadA, allocator);
+    const taskB = try thread.createKernelThread(debugTmpThreadB, allocator);
     try enqueue(taskA, allocator);
     try enqueue(taskB, allocator);
 }

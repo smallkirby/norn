@@ -3,8 +3,10 @@ const std = @import("std");
 const norn = @import("norn");
 const arch = norn.arch;
 const mem = norn.mem;
-const PageAllocator = mem.PageAllocator;
 const Virt = mem.Virt;
+
+const page_allocator = mem.page_allocator;
+const PageAllocator = mem.PageAllocator;
 
 /// Section name where per-CPU data is placed.
 pub const section = ".data..percpu";
@@ -29,7 +31,7 @@ var percpu_instance: *void = undefined;
 var percpu_initialized: bool = false;
 
 /// Initialize per-CPU data.
-pub fn init(num_cpus: usize, percpu_base: Virt, allocator: PageAllocator) Error!void {
+pub fn init(num_cpus: usize, percpu_base: Virt) Error!void {
     const per_cpu_size = @intFromPtr(&__per_cpu_end) - @intFromPtr(&__per_cpu_start);
     if (per_cpu_size == 0) return;
 
@@ -41,7 +43,7 @@ pub fn init(num_cpus: usize, percpu_base: Virt, allocator: PageAllocator) Error!
 
     // Allocate per-CPU data area.
     const total_size = cpu_offsets[num_cpus - 1] + per_cpu_size;
-    percpu_instance = @ptrCast(try allocator.allocPages(
+    percpu_instance = @ptrCast(try page_allocator.allocPages(
         @divFloor(total_size - 1, mem.size_4kib) + 1,
         .normal,
     ));
