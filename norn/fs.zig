@@ -4,8 +4,8 @@ const Allocator = std.mem.Allocator;
 const norn = @import("norn");
 
 const cpio = @import("fs/cpio.zig");
-const ramfs = @import("fs/ramfs.zig");
 const vfs = @import("fs/vfs.zig");
+const RamFs = @import("fs/RamFs.zig");
 
 /// FS Error.
 pub const Error = error{} || vfs.Error;
@@ -40,7 +40,7 @@ var cwd: *vfs.Dentry = undefined;
 
 /// Initialize filesystem.
 pub fn init(allocator: Allocator) Error!void {
-    const rfs = try ramfs.RamFs.init(allocator);
+    const rfs = try RamFs.init(allocator);
     root = rfs.root;
     cwd = rfs.root;
 }
