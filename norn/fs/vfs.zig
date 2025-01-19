@@ -1,8 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const norn = @import("norn");
-
 /// VFS error.
 pub const Error = error{
     /// Failed to allocate memory.
