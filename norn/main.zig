@@ -111,6 +111,10 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     );
     norn.pcpu.initThisCpu(norn.arch.getLocalApic().id());
 
+    // Initialize filesystem.
+    try norn.fs.init(norn.mem.general_allocator);
+    log.info("Initialized filesystem.", .{});
+
     // Boot APs.
     log.info("Booting APs...", .{});
     try arch.mp.bootAllAps();
