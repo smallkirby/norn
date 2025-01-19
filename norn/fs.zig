@@ -41,8 +41,8 @@ var cwd: *vfs.Dentry = undefined;
 /// Initialize filesystem.
 pub fn init(allocator: Allocator) Error!void {
     const rfs = try ramfs.RamFs.init(allocator);
-    root = rfs.fs.root;
-    cwd = rfs.fs.root;
+    root = rfs.root;
+    cwd = rfs.root;
 }
 
 pub fn open(path: []const u8) Error!*File {

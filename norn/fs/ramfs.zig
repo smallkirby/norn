@@ -21,54 +21,57 @@ pub const RamFs = struct {
 
     /// Backing allocator.
     allocator: Allocator,
-    /// Filesystem interface.
-    fs: *vfs.FileSystem,
     /// Next inode number.
     inum_next: usize = 0,
+    /// Root directory.
+    root: *Dentry,
 
     /// Initiate ramfs creating root directory.
     pub fn init(allocator: Allocator) Error!*Self {
         const self = try allocator.create(Self);
         errdefer allocator.destroy(self);
 
-        // Create a filesystem interface.
-        const fs = try allocator.create(vfs.FileSystem);
-        fs.* = .{
-            .vtable = &vtable,
-            .root = undefined,
-            .ctx = self,
-        };
-
         // Create a root directory.
         const root_node = try Node.newDirectory(allocator);
         const root_inode = try Inode.new(0, root_node, allocator);
-        const dentry = try Dentry.new(
-            fs,
+        const root_dentry = try Dentry.new(
+            undefined,
             root_inode,
             undefined,
             "",
             allocator,
         );
-        dentry.parent = dentry;
-        fs.root = dentry;
+        root_dentry.parent = root_dentry;
 
         self.* = .{
             .allocator = allocator,
-            .fs = fs,
+            .root = root_dentry,
         };
+        root_dentry.fs = self.filesystem();
 
         return self;
     }
 
-    /// Create a file in the given directory.
-    pub fn createFile(fs: *vfs.FileSystem, dir: *Dentry, name: [:0]const u8) Error!*Dentry {
-        const self: *Self = @alignCast(@ptrCast(fs.ctx));
+    /// Get the filesystem interface.
+    pub fn filesystem(self: *Self) vfs.FileSystem {
+        return .{
+            .vtable = &vtable,
+            .root = self.root,
+            .ctx = self,
+        };
+    }
 
+    /// Create a file in the given directory.
+    pub fn createFile(self: *Self, dir: *Dentry, name: [:0]const u8) Error!*Dentry {
+        return self.createFileInternal(dir, name);
+    }
+
+    fn createFileInternal(self: *Self, dir: *Dentry, name: [:0]const u8) Error!*Dentry {
         // Create a new file node.
         const node = try Node.newFile(self.allocator);
         const inode = try Inode.new(self.assignInum(), node, self.allocator);
         const dentry = try Dentry.new(
-            self.fs,
+            self.filesystem(),
             inode,
             dir,
             name,
@@ -85,12 +88,15 @@ pub const RamFs = struct {
     /// Create a directory in the given directory.
     pub fn createDirectory(fs: *vfs.FileSystem, dir: *Dentry, name: []const u8) Error!*Dentry {
         const self: *Self = @alignCast(@ptrCast(fs.ctx));
+        return self.createDirectoryInternal(dir, name);
+    }
 
+    fn createDirectoryInternal(self: *Self, dir: *Dentry, name: []const u8) Error!*Dentry {
         // Create a new directory node.
         const node = try Node.newDirectory(self.allocator);
         const inode = try Inode.new(self.assignInum(), node, self.allocator);
         const dentry = try Dentry.new(
-            self.fs,
+            self.filesystem(),
             inode,
             dir,
             name,
@@ -105,7 +111,12 @@ pub const RamFs = struct {
     }
 
     /// Read data from the given inode.
-    pub fn read(_: *vfs.FileSystem, inode: *Inode, buf: []u8, pos: usize) Error!usize {
+    pub fn read(fs: *vfs.FileSystem, inode: *Inode, buf: []u8, pos: usize) Error!usize {
+        const self: *Self = @alignCast(@ptrCast(fs.ctx));
+        return self.readInternal(inode, buf, pos);
+    }
+
+    fn readInternal(_: *Self, inode: *Inode, buf: []u8, pos: usize) Error!usize {
         const file = &getNode(inode).file;
         return file.read(buf, pos);
     }
@@ -113,8 +124,28 @@ pub const RamFs = struct {
     /// Write data to the given inode.
     pub fn write(fs: *vfs.FileSystem, inode: *Inode, data: []const u8, pos: usize) Error!usize {
         const self: *Self = @alignCast(@ptrCast(fs.ctx));
+        return self.writeInternal(inode, data, pos);
+    }
+
+    fn writeInternal(self: *Self, inode: *Inode, data: []const u8, pos: usize) Error!usize {
         const file = &getNode(inode).file;
         return file.write(data, pos, self.allocator);
+    }
+
+    /// Lookup a dentry with the given name in the given directory.
+    pub fn lookup(fs: *vfs.FileSystem, dir: *Dentry, name: []const u8) Error!?*Dentry {
+        const self: *Self = @alignCast(@ptrCast(fs.ctx));
+        return self.lookupInternal(dir, name);
+    }
+
+    fn lookupInternal(_: *Self, dir: *Dentry, name: []const u8) Error!?*Dentry {
+        var child = getNode(dir.inode).directory.children.first;
+        while (child) |c| : (child = c.next) {
+            if (std.mem.eql(u8, c.data.name, name)) {
+                return c.data;
+            }
+        }
+        return null;
     }
 
     /// Assign a new unique inode number.
@@ -128,17 +159,6 @@ pub const RamFs = struct {
 /// Get the Node from the given inode.
 fn getNode(inode: *Inode) *Node {
     return @alignCast(@ptrCast(inode.ctx));
-}
-
-/// Lookup a dentry with the given name in the given directory.
-pub fn lookup(_: *vfs.FileSystem, dir: *Dentry, name: []const u8) Error!?*Dentry {
-    var child = getNode(dir.inode).directory.children.first;
-    while (child) |c| : (child = c.next) {
-        if (std.mem.eql(u8, c.data.name, name)) {
-            return c.data;
-        }
-    }
-    return null;
 }
 
 /// Actual file or directory entity.
@@ -257,11 +277,11 @@ test "Create directories" {
     const allocator = gpa.allocator();
     const rfs = try RamFs.init(allocator);
 
-    const dir1 = try RamFs.createDirectory(rfs.fs, rfs.fs.root, "dir1");
-    const dir2 = try RamFs.createDirectory(rfs.fs, dir1, "dir2");
-    try testing.expectEqual(dir1, try lookup(rfs.fs, rfs.fs.root, "dir1"));
-    try testing.expectEqual(dir2, try lookup(rfs.fs, dir1, "dir2"));
-    try testing.expectEqual(null, try lookup(rfs.fs, dir1, "dne"));
+    const dir1 = try rfs.createDirectoryInternal(rfs.root, "dir1");
+    const dir2 = try rfs.createDirectoryInternal(dir1, "dir2");
+    try testing.expectEqual(dir1, try rfs.lookupInternal(rfs.root, "dir1"));
+    try testing.expectEqual(dir2, try rfs.lookupInternal(dir1, "dir2"));
+    try testing.expectEqual(null, try rfs.lookupInternal(dir1, "dne"));
 }
 
 test "Create files" {
@@ -269,23 +289,23 @@ test "Create files" {
     const allocator = gpa.allocator();
     const rfs = try RamFs.init(allocator);
 
-    const dir1 = try RamFs.createDirectory(rfs.fs, rfs.fs.root, "dir1");
-    const file1 = try RamFs.createFile(rfs.fs, dir1, "file1");
-    try testing.expectEqual(file1, try lookup(rfs.fs, dir1, "file1"));
+    const dir1 = try rfs.createDirectoryInternal(rfs.root, "dir1");
+    const file1 = try rfs.createFileInternal(dir1, "file1");
+    try testing.expectEqual(file1, try rfs.lookupInternal(dir1, "file1"));
 }
 
 test "Write to file" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     const rfs = try RamFs.init(allocator);
-    const file1 = try RamFs.createFile(rfs.fs, rfs.fs.root, "file1");
+    const file1 = try rfs.createFileInternal(rfs.root, "file1");
 
     const s1 = "Hello, world!";
     const s2 = "Hello, world and beyond!";
-    var len = try RamFs.write(rfs.fs, file1.inode, s1, 0);
+    var len = try rfs.writeInternal(file1.inode, s1, 0);
     try testing.expectEqual(len, s1.len);
     try testing.expectEqualStrings(s1, getNode(file1.inode).file._data);
-    len = try RamFs.write(rfs.fs, file1.inode, s2, 0);
+    len = try rfs.writeInternal(file1.inode, s2, 0);
     try testing.expectEqual(len, s2.len);
     try testing.expectEqualStrings(s2, getNode(file1.inode).file._data);
 }
@@ -294,20 +314,20 @@ test "Read from file" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     const rfs = try RamFs.init(allocator);
-    const file1 = try RamFs.createFile(rfs.fs, rfs.fs.root, "file1");
+    const file1 = try rfs.createFileInternal(rfs.root, "file1");
 
     const s1 = "Hello, world!";
     const s2 = "Hello, world and beyond!";
     var buf: [1024]u8 = undefined;
     var len: usize = undefined;
 
-    _ = try RamFs.write(rfs.fs, file1.inode, s1, 0);
-    len = try RamFs.read(rfs.fs, file1.inode, buf[0..], 0);
+    _ = try rfs.writeInternal(file1.inode, s1, 0);
+    len = try rfs.readInternal(file1.inode, buf[0..], 0);
     try testing.expectEqual(len, s1.len);
     try testing.expectEqualStrings(s1, buf[0..s1.len]);
 
-    _ = try RamFs.write(rfs.fs, file1.inode, s2, 0);
-    len = try RamFs.read(rfs.fs, file1.inode, buf[0..], 0);
+    _ = try rfs.writeInternal(file1.inode, s2, 0);
+    len = try rfs.readInternal(file1.inode, buf[0..], 0);
     try testing.expectEqual(len, s2.len);
     try testing.expectEqualStrings(s2, buf[0..s2.len]);
 }
@@ -316,7 +336,7 @@ test "Operation via VFS" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     const rfs = try RamFs.init(allocator);
-    const fs = rfs.fs;
+    var fs = rfs.filesystem();
 
     const root = fs.root;
     const dir1 = try fs.createDirectory(root, "dir1");

@@ -40,17 +40,18 @@ pub const FileSystem = struct {
 /// Dentry that connects an inode with its name.
 pub const Dentry = struct {
     /// Filesystem this dentry belongs to.
-    fs: *FileSystem,
+    fs: FileSystem,
     /// Inode this dentry points to.
     inode: *Inode,
     /// Parent directory.
+    /// If there's no parent, it points to itself.
     parent: *Dentry,
     /// Name of this dentry.
     name: []const u8,
 
     /// Create a new dentry.
     pub fn new(
-        fs: *FileSystem,
+        fs: FileSystem,
         inode: *Inode,
         parent: *Dentry,
         name: []const u8,
