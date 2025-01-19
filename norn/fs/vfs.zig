@@ -14,6 +14,7 @@ pub const Vtable = struct {
     read: *const fn (self: *FileSystem, inode: *Inode, buf: []u8, pos: usize) Error!usize,
     write: *const fn (self: *FileSystem, inode: *Inode, data: []const u8, pos: usize) Error!usize,
     lookup: *const fn (self: *FileSystem, dentry: *Dentry, name: []const u8) Error!?*Dentry,
+    createFile: *const fn (self: *FileSystem, dentry: *Dentry, name: []const u8) Error!*Dentry,
     createDirectory: *const fn (self: *FileSystem, dentry: *Dentry, name: []const u8) Error!*Dentry,
 };
 
@@ -25,6 +26,11 @@ pub const FileSystem = struct {
     vtable: *const Vtable,
     /// Backing filesystem instance.
     ctx: *anyopaque,
+
+    /// Create a file.
+    pub fn createFile(self: *FileSystem, dentry: *Dentry, name: []const u8) Error!*Dentry {
+        return self.vtable.createFile(self, dentry, name);
+    }
 
     /// Create a directory.
     pub fn createDirectory(self: *FileSystem, dentry: *Dentry, name: []const u8) Error!*Dentry {

@@ -14,6 +14,7 @@ const Self = @This();
 
 /// Vtable for ramfs.
 const vtable = vfs.Vtable{
+    .createFile = createFile,
     .createDirectory = createDirectory,
     .lookup = lookup,
     .read = read,
@@ -63,7 +64,8 @@ pub fn filesystem(self: *Self) vfs.FileSystem {
 }
 
 /// Create a file in the given directory.
-pub fn createFile(self: *Self, dir: *Dentry, name: [:0]const u8) Error!*Dentry {
+pub fn createFile(fs: *vfs.FileSystem, dir: *Dentry, name: []const u8) Error!*Dentry {
+    const self: *Self = @alignCast(@ptrCast(fs.ctx));
     return self.createFileInternal(dir, name);
 }
 
@@ -91,7 +93,7 @@ pub fn lookup(fs: *vfs.FileSystem, dir: *Dentry, name: []const u8) Error!?*Dentr
     return self.lookupInternal(dir, name);
 }
 
-fn createFileInternal(self: *Self, dir: *Dentry, name: [:0]const u8) Error!*Dentry {
+fn createFileInternal(self: *Self, dir: *Dentry, name: []const u8) Error!*Dentry {
     // Create a new file node.
     const node = try Node.newFile(self.allocator);
     const inode = try Inode.new(

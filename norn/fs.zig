@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const ComponentIterator = std.fs.path.ComponentIterator;
 
 const norn = @import("norn");
 
@@ -8,7 +9,12 @@ const vfs = @import("fs/vfs.zig");
 const RamFs = @import("fs/RamFs.zig");
 
 /// FS Error.
-pub const Error = error{} || vfs.Error;
+pub const Error = error{
+    /// File not found.
+    NotFound,
+    /// File already exists.
+    AlreadyExists,
+} || vfs.Error;
 
 /// Path separator.
 pub const separator = '/';
@@ -16,9 +22,16 @@ pub const separator = '/';
 /// File instance.
 pub const File = struct {
     /// Offset within the file.
-    pos: usize,
+    pos: usize = 0,
     /// Dentry of the file.
     dentry: *vfs.Dentry,
+
+    /// Create a new file instance.
+    pub fn new(dentry: *vfs.Dentry) File {
+        return .{
+            .dentry = dentry,
+        };
+    }
 };
 
 /// Seek mode.
@@ -45,9 +58,27 @@ pub fn init(allocator: Allocator) Error!void {
     cwd = rfs.root;
 }
 
-pub fn open(path: []const u8) Error!*File {
-    _ = path; // autofix
-    norn.unimplemented("fs.open");
+/// TODO: doc
+pub const OpenFlags = struct {
+    /// Create a regular file if it doesn't exist.
+    create: bool = false,
+};
+
+/// TODO: doc
+pub fn open(path: []const u8, flags: OpenFlags, allocator: Allocator) Error!*File {
+    const dentry = if (try lookup(path)) |dent| dent else blk: {
+        if (!flags.create) return Error.NotFound;
+        // Try to create the file.
+        const parent = try lookupParent(path) orelse return Error.NotFound;
+        const basename = std.fs.path.basenamePosix(path);
+        break :blk try parent.fs.createFile(parent, basename);
+    };
+
+    const file = try allocator.create(File);
+    file.* = .{
+        .dentry = dentry,
+    };
+    return file;
 }
 
 pub fn read(file: *File, buf: []u8) Error!usize {
@@ -70,30 +101,59 @@ pub fn seek(file: *File, offset: usize, whence: SeekMode) Error!usize {
 }
 
 pub fn mkdir(path: []const u8) Error!void {
-    var iter = try std.fs.path.ComponentIterator(.posix, u8).init(path);
-    const is_absolute = if (iter.root()) |r| std.mem.eql(u8, r, &[_]u8{separator}) else false;
-    var cur = if (is_absolute) root else cwd;
+    _ = path; // autofix
+    norn.unimplemented("fs.mkdir");
+}
 
-    var iter_cur = iter.next();
-    while (iter_cur) |component| : (iter_cur = iter.next()) {
+pub fn close(file: *File, allocator: Allocator) Error!void {
+    allocator.destroy(file);
+}
+
+/// Lookup a dentry by path lexically.
+fn lookup(path: []const u8) Error!?*vfs.Dentry {
+    const parent = try lookupParent(path) orelse return null;
+    const basename = std.fs.path.basenamePosix(path);
+    return parent.fs.lookup(parent, basename);
+}
+
+/// Lookup the parent dentry of the given path.
+///
+/// If the parent dentry is not found, return null.
+/// This function looks up lexically, so "/a/b/c/." returns "/a/b/c".
+fn lookupParent(path: []const u8) Error!?*vfs.Dentry {
+    var iter = try ComponentIterator(.posix, u8).init(path);
+
+    // Decide the starting dentry.
+    const is_absolute = blk: {
+        if (iter.root()) |r| {
+            break :blk std.mem.eql(u8, r, &[_]u8{separator});
+        } else break :blk false;
+    };
+    var cur_dentry = if (is_absolute) root else cwd;
+
+    // Iterate over the components lexically.
+    var next = iter.next();
+    while (next) |component| : (next = iter.next()) {
+        // If the next component is null, we've reached the last component (child of the parent).
+        if (iter.peekNext() == null) break;
+
         if (std.mem.eql(u8, component.name, ".")) {
+            // ".": Just skip.
             continue;
         } else if (std.mem.eql(u8, component.name, "..")) {
-            cur = cur.parent;
+            // "..": Move to parent directory.
+            cur_dentry = cur_dentry.parent;
         } else {
-            if (try cur.fs.lookup(cur, component.name)) |next| {
-                cur = next;
+            // Lookup the component.
+            if (try cur_dentry.fs.lookup(cur_dentry, component.name)) |next_dentry| {
+                cur_dentry = next_dentry;
             } else {
-                // TODO: check if it's the last component
-                _ = try cur.fs.createDirectory(cur, component.name);
+                return null;
             }
         }
     }
-}
 
-pub fn close(file: *File) Error!void {
-    _ = file; // autofix
-    norn.unimplemented("fs.close");
+    return cur_dentry.parent;
 }
 
 // ==============================
