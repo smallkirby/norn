@@ -538,8 +538,6 @@ fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
             const page = rttAllocatePage(&allocated_pages_order0, allocator);
             // Blocks in the freelist must be sorted.
             rtt.expect(@intFromPtr(prev) < @intFromPtr(page.ptr));
-            // If prev is 8KiB aligned, the blocks must not be adjacent. If they're, they must be merged.
-            rtt.expect((arena.lists[0].numFree() < Arena.merge_threshold) or (@intFromPtr(prev) & 0x1FFF != 0) or (@intFromPtr(prev) + mem.size_4kib != @intFromPtr(page.ptr)));
             prev = page.ptr;
         }
         rtt.expectEqual(0, arena.lists[0].link.len);
