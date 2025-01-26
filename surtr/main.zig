@@ -206,6 +206,13 @@ pub fn boot() Error!void {
     // Enable NX-bit.
     arch.enableNxBit();
 
+    // Load initramfs.
+    const initramfs = try loadInitramfs(root_dir, bs);
+    log.info(
+        "Loaded initramfs @ 0x{X:0>16} ~ 0x{X:0>16}",
+        .{ @intFromPtr(initramfs.ptr), @intFromPtr(initramfs.ptr) + initramfs.len },
+    );
+
     // Clean up memory.
     status = kernel.close();
     if (status != .Success) {
@@ -280,6 +287,10 @@ pub fn boot() Error!void {
         .memory_map = map,
         .rsdp = rsdp,
         .percpu_base = percpu_base,
+        .initramfs = .{
+            .size = initramfs.len,
+            .addr = @intFromPtr(initramfs.ptr),
+        },
     };
     kernel_entry(boot_info);
 
@@ -347,6 +358,47 @@ fn getRsdp() ?*anyopaque {
         }
     }
     return null;
+}
+
+/// Load initramfs from EFI filesystem.
+fn loadInitramfs(root: *File, bs: *BootServices) Error![]u8 {
+    var status: uefi.Status = undefined;
+
+    const initramfs = try openFile(root, "rootfs.cpio");
+    defer _ = initramfs.close();
+
+    // Get initramfs size.
+    const initramfs_info_size: usize = @sizeOf(uefi.FileInfo) + 0x100;
+    var initramfs_info_actual_size: usize = initramfs_info_size;
+    var initramfs_info_buffer: [initramfs_info_size]u8 align(@alignOf(uefi.FileInfo)) = undefined;
+
+    status = initramfs.getInfo(
+        &uefi.FileInfo.guid,
+        &initramfs_info_actual_size,
+        &initramfs_info_buffer,
+    );
+    if (status != .Success) return Error.Fs;
+
+    const initramfs_info: *const uefi.FileInfo = @alignCast(@ptrCast(&initramfs_info_buffer));
+    const initramfs_size = initramfs_info.file_size;
+
+    // Allocate memory for initramfs in .LoaderData pages.
+    var initramfs_start: u64 = undefined;
+    const initramfs_size_pages = (initramfs_size + (page_size - 1)) / page_size;
+    status = bs.allocatePages(
+        .AllocateAnyPages,
+        .LoaderData,
+        initramfs_size_pages,
+        @ptrCast(&initramfs_start),
+    );
+    if (status != .Success) {
+        return Error.AllocatePool;
+    }
+
+    // Load initramfs.
+    const start: [*]u8 = @ptrFromInt(initramfs_start);
+    const loaded_size = try readFile(initramfs, start[0..initramfs_size]);
+    return start[0..loaded_size];
 }
 
 fn assert(condition: bool, comptime message: []const u8) void {

@@ -15,6 +15,16 @@ pub const BootInfo = extern struct {
     rsdp: *anyopaque,
     /// Virtual address where per-CPU data is loaded.
     percpu_base: u64,
+    /// Information about initramfs.
+    initramfs: InitramfsInfo,
+};
+
+/// Information about initramfs.
+pub const InitramfsInfo = extern struct {
+    /// Size of initramfs.
+    size: usize,
+    /// Physical address where initramfs is loaded.
+    addr: u64,
 };
 
 /// Memory map provided by UEFI.
