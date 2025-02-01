@@ -6,6 +6,15 @@
 ![Unit Tests](https://github.com/smallkirby/norn/actions/workflows/unittest.yml/badge.svg)
 ![Runtime Tests](https://github.com/smallkirby/norn/actions/workflows/runtimetest.yml/badge.svg)
 
+## Development
+
+```bash
+# Run on QEMU
+zig build run -Dlog_level=debug --summary all -Druntime_test -Doptimize=Debug
+# Runtime Test
+zig build test --summary all -Druntime_test=true
+```
+
 ## LICENSE
 
 [Licnesed under the MIT License](LICENSE) unless otherwise specified.
