@@ -93,6 +93,47 @@ pub fn lookup(fs: *vfs.FileSystem, dir: *Dentry, name: []const u8) Error!?*Dentr
     return self.lookupInternal(dir, name);
 }
 
+/// Print the tree structure of the filesystem.
+pub fn printTree(self: RamFs, log: anytype) void {
+    var current_path: [4096]u8 = undefined;
+    current_path[0] = 0;
+    self.printTreeSub(log, self.root, current_path[0..current_path.len :0]);
+}
+
+/// Print children of the given directory recursively.
+fn printTreeSub(self: RamFs, log: anytype, dir: *Dentry, current_path: [:0]u8) void {
+
+    // Prepend separator.
+    const init_path_end = blk: {
+        for (current_path, 0..) |c, i| {
+            if (c == 0) break :blk i + 1;
+        } else {
+            break :blk current_path.len;
+        }
+    };
+    current_path[init_path_end - 1] = '/';
+
+    // Iterate over children of the directory.
+    var cur = getNode(dir.inode).directory.children.first;
+    while (cur) |entry| : (cur = entry.next) {
+        const node = entry.data;
+        const name_len = node.name.len;
+
+        // Copy entry name
+        std.mem.copyBackwards(u8, current_path[init_path_end..], node.name);
+        current_path[init_path_end + name_len] = 0;
+
+        // Print the entry.
+        log("{s}", .{current_path[0 .. init_path_end + name_len]});
+
+        // Recurse if the entry is a directory.
+        switch (getNode(entry.data.inode).*) {
+            .directory => self.printTreeSub(log, node, current_path),
+            else => {},
+        }
+    }
+}
+
 fn createFileInternal(self: *Self, dir: *Dentry, name: []const u8) Error!*Dentry {
     // Create a new file node.
     const node = try Node.newFile(self.allocator);

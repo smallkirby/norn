@@ -115,6 +115,16 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     try norn.fs.init(norn.mem.general_allocator);
     log.info("Initialized filesystem.", .{});
 
+    // Read initramfs
+    {
+        const initimg = boot_info.initramfs;
+        const imgptr: [*]const u8 = @ptrFromInt(norn.mem.phys2virt(initimg.addr));
+        try norn.fs.loadInitImage(imgptr[0..initimg.size]);
+        log.debug("Loaded initramfs.", .{});
+
+        // TODO: free initramfs pages
+    }
+
     // Boot APs.
     log.info("Booting APs...", .{});
     try arch.mp.bootAllAps();

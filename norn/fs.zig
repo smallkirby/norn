@@ -1,12 +1,15 @@
 const std = @import("std");
+const log = std.log.scoped(.fs);
 const Allocator = std.mem.Allocator;
 const ComponentIterator = std.fs.path.ComponentIterator;
 
 const norn = @import("norn");
+const bits = norn.bits;
+
+pub const RamFs = @import("fs/RamFs.zig");
 
 const cpio = @import("fs/cpio.zig");
 const vfs = @import("fs/vfs.zig");
-const RamFs = @import("fs/RamFs.zig");
 
 /// FS Error.
 pub const Error = error{
@@ -56,6 +59,48 @@ pub fn init(allocator: Allocator) Error!void {
     const rfs = try RamFs.init(allocator);
     root = rfs.root;
     cwd = rfs.root;
+}
+
+/// Load initramfs image and create entries.
+pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
+    var fs = &root.fs;
+    var iter = cpio.CpioIterator.new(initimg);
+    var cur = try iter.next();
+
+    // Iterate over entries in the CPIO archive.
+    while (cur) |c| : (cur = try iter.next()) {
+        const path = try c.getPath();
+        const basename = std.fs.path.basenamePosix(path);
+        const mode = try c.getMode();
+
+        if (std.mem.eql(u8, path, ".") or std.mem.eql(u8, path, "..")) {
+            continue;
+        }
+
+        // Check if the target file already exists.
+        if (try lookup(path) != null) {
+            log.warn("File already exists: {s}", .{path});
+            continue;
+        }
+        // Check if the parent directory exists.
+        const parent = try lookupParent(path) orelse {
+            log.warn("Parent directory not found: {s}", .{path});
+            continue;
+        };
+
+        // Create the file or directory.
+        if (bits.isset(mode, 14)) {
+            _ = try fs.createDirectory(parent, basename);
+        } else {
+            _ = try fs.createFile(parent, basename);
+        }
+    }
+
+    // Debug print the loaded file tree.
+    const ramfs: *RamFs = @alignCast(@ptrCast(root.fs.ctx));
+    log.debug("=== Directory Tree ==================", .{});
+    ramfs.printTree(log.debug);
+    log.debug("=====================================", .{});
 }
 
 /// TODO: doc
@@ -124,11 +169,7 @@ fn lookupParent(path: []const u8) Error!?*vfs.Dentry {
     var iter = try ComponentIterator(.posix, u8).init(path);
 
     // Decide the starting dentry.
-    const is_absolute = blk: {
-        if (iter.root()) |r| {
-            break :blk std.mem.eql(u8, r, &[_]u8{separator});
-        } else break :blk false;
-    };
+    const is_absolute = std.fs.path.isAbsolutePosix(path);
     var cur_dentry = if (is_absolute) root else cwd;
 
     // Iterate over the components lexically.
@@ -153,7 +194,7 @@ fn lookupParent(path: []const u8) Error!?*vfs.Dentry {
         }
     }
 
-    return cur_dentry.parent;
+    return cur_dentry;
 }
 
 // ==============================
