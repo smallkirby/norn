@@ -122,7 +122,10 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         try norn.fs.loadInitImage(imgptr[0..initimg.size]);
         log.debug("Loaded initramfs.", .{});
 
-        // TODO: free initramfs pages
+        // Free initramfs pages
+        const num_pages = try std.math.divCeil(usize, initimg.size, norn.mem.size_4kib);
+        try norn.mem.page_allocator.freePagesRaw(initimg.addr, num_pages);
+        log.info("Freed {d} pages of initramfs.", .{num_pages});
     }
 
     // Boot APs.
