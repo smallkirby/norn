@@ -124,7 +124,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 
         // Free initramfs pages
         const num_pages = try std.math.divCeil(usize, initimg.size, norn.mem.size_4kib);
-        try norn.mem.page_allocator.freePagesRaw(initimg.addr, num_pages);
+        try norn.mem.page_allocator.freePagesRaw(@intFromPtr(imgptr), num_pages);
         log.info("Freed {d} pages of initramfs.", .{num_pages});
     }
 

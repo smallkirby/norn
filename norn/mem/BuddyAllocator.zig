@@ -459,7 +459,7 @@ fn freePagesRaw(ctx: *anyopaque, addr: Virt, num_pages: usize) Error!void {
     if ((zone_end orelse std.math.maxInt(Phys)) < phys + num_pages * mem.size_4kib) return Error.InvalidRegion;
 
     // Free the pages to the zone.
-    self.zones.getArena(zone).addRegion(addr, addr + num_pages * mem.size_4kib);
+    self.zones.getArena(zone).addRegion(phys, phys + num_pages * mem.size_4kib);
 }
 
 /// Check if the memory region described by the descriptor is usable for norn kernel.
