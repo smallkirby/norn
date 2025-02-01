@@ -14,7 +14,7 @@ const Thread = thread.Thread;
 const page_allocator = mem.page_allocator;
 const PageAllocator = mem.PageAllocator;
 
-pub const Error = error{} || Allocator.Error;
+pub const Error = error{} || mem.Error;
 
 /// List of tasks.
 const TaskList = DoublyLinkedList(*Thread);

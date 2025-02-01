@@ -58,6 +58,7 @@ blk: {
 const vtable = PageAllocator.Vtable{
     .allocPages = allocPages,
     .freePages = freePages,
+    .freePagesRaw = freePagesRaw,
 };
 
 /// Create a new instance of the allocator.
@@ -165,6 +166,11 @@ fn allocPages(ctx: *anyopaque, num_pages: usize, _: mem.Zone) Error![]align(mem.
 
 /// BootstrapAllocator does not support free.
 fn freePages(_: *anyopaque, _: []u8) void {
+    @panic("BootstrapAllocator is not supposed to free memory.");
+}
+
+/// BootstrapAllocator does not support free.
+fn freePagesRaw(_: *anyopaque, _: mem.Virt, _: usize) Error!void {
     @panic("BootstrapAllocator is not supposed to free memory.");
 }
 

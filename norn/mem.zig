@@ -12,6 +12,14 @@ const arch = norn.arch;
 /// Allocator interface to get free pages.
 pub const PageAllocator = @import("mem/PageAllocator.zig");
 
+/// Errors.
+pub const Error = error{
+    /// Out of memory.
+    OutOfMemory,
+    /// The specified region is invalid.
+    InvalidRegion,
+};
+
 /// Memory zone.
 pub const Zone = enum(u8) {
     /// DMA region

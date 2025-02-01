@@ -19,10 +19,7 @@ const gdt = @import("gdt.zig");
 const intr = @import("intr.zig");
 const pg = @import("page.zig");
 
-const Error = error{
-    /// Failed to allocate memory.
-    OutOfMemory,
-} || pg.PageError;
+const Error = mem.Error || pg.PageError;
 
 /// Number of pages for the each AP stack.
 const num_ap_stack_pages = 5;

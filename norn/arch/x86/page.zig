@@ -16,15 +16,13 @@ const Phys = mem.Phys;
 const PageAllocator = mem.PageAllocator;
 
 pub const PageError = error{
-    /// Failed to allocate memory.
-    OutOfMemory,
     /// Invalid address.
     InvalidAddress,
     /// Specified address is not mapped.
     NotMapped,
     /// Specified address is already mapped.
     AlreadyMapped,
-};
+} || mem.Error;
 
 const size_4k = mem.size_4kib;
 const size_2mb = mem.size_2mib;

@@ -31,6 +31,7 @@ zones: ZoneList,
 const vtable = PageAllocator.Vtable{
     .allocPages = allocPages,
     .freePages = freePages,
+    .freePagesRaw = freePagesRaw,
 };
 
 /// Exponent of power of 2 representing the number of contiguous physical pages.
@@ -444,6 +445,21 @@ fn freePages(ctx: *anyopaque, pages: []u8) void {
     defer self.lock.unlockRestoreIrq(ie);
 
     self.zones.freePagesTo(pages);
+}
+
+fn freePagesRaw(ctx: *anyopaque, addr: Virt, num_pages: usize) Error!void {
+    const self: *Self = @alignCast(@ptrCast(ctx));
+    const ie = self.lock.lockDisableIrq();
+    defer self.lock.unlockRestoreIrq(ie);
+
+    // Get the zone the pages belong to.
+    const phys = mem.virt2phys(addr);
+    const zone = Zone.from(phys);
+    _, const zone_end = zone.range();
+    if ((zone_end orelse std.math.maxInt(Phys)) < phys + num_pages * mem.size_4kib) return Error.InvalidRegion;
+
+    // Free the pages to the zone.
+    self.zones.getArena(zone).addRegion(addr, addr + num_pages * mem.size_4kib);
 }
 
 /// Check if the memory region described by the descriptor is usable for norn kernel.
