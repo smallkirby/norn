@@ -9,7 +9,7 @@ const Inode = vfs.Inode;
 const Vtable = vfs.Vtable;
 
 /// Filesystem for ramfs.
-pub const RamFs = Self;
+const RamFs = Self;
 const Self = @This();
 
 /// Vtable for ramfs.

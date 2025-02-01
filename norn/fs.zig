@@ -6,9 +6,8 @@ const ComponentIterator = std.fs.path.ComponentIterator;
 const norn = @import("norn");
 const bits = norn.bits;
 
-pub const RamFs = @import("fs/RamFs.zig");
-
 const cpio = @import("fs/cpio.zig");
+const RamFs = @import("fs/RamFs.zig");
 const vfs = @import("fs/vfs.zig");
 
 /// FS Error.
