@@ -172,6 +172,7 @@ const TestPageAllocator = struct {
     pub const vtable = PageAllocator.Vtable{
         .allocPages = allocPages,
         .freePages = freePages,
+        .freePagesRaw = freePagesRaw,
     };
 
     const Error = PageAllocator.Error;
@@ -198,6 +199,10 @@ const TestPageAllocator = struct {
 
     pub fn freePages(_: *anyopaque, slice: []u8) void {
         std.heap.page_allocator.free(slice);
+    }
+
+    pub fn freePagesRaw(_: *anyopaque, _: mem.Virt, _: usize) Error!void {
+        return;
     }
 };
 
