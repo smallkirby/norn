@@ -97,11 +97,11 @@ pub fn lookup(fs: *vfs.FileSystem, dir: *Dentry, name: []const u8) Error!?*Dentr
 pub fn printTree(self: RamFs, log: anytype) void {
     var current_path: [4096]u8 = undefined;
     current_path[0] = 0;
-    self.printTreeSub(log, self.root, current_path[0..current_path.len :0]);
+    self.printTreeSub(log, self.root, current_path[0..current_path.len]);
 }
 
 /// Print children of the given directory recursively.
-fn printTreeSub(self: RamFs, log: anytype, dir: *Dentry, current_path: [:0]u8) void {
+fn printTreeSub(self: RamFs, log: anytype, dir: *Dentry, current_path: []u8) void {
 
     // Prepend separator.
     const init_path_end = blk: {
