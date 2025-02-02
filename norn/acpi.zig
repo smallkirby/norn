@@ -331,9 +331,9 @@ pub const Fadt = extern struct {
     p_lvl2_lat: u16,
     /// Worst-case HW latency in microseconds to enter/exit C3 state.
     p_lvl3_lat: u16,
-    /// (Maitained for ACPI 1.0 processor compatibility)
+    /// (Maintained for ACPI 1.0 processor compatibility)
     flush_size: u16,
-    /// (Maitained for ACPI 1.0 processor compatibility)
+    /// (Maintained for ACPI 1.0 processor compatibility)
     flush_stride: u16,
     /// Zero-based index of where the processor's duty cycle setting is within the processor's P_CNT register.
     duty_offset: u8,

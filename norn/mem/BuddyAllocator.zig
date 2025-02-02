@@ -237,12 +237,12 @@ const Arena = struct {
         // If the number of free blocks is small, we don't merge.
         if (self.getList(order).numFree() < merge_threshold) return;
 
-        const higer_order = order + 1;
-        const higer_mask = getOrderMask(higer_order);
+        const higher_order = order + 1;
+        const higher_mask = getOrderMask(higher_order);
         const adjacent_distance = orderToInt(order) * mem.size_4kib;
 
         // Find the adjacent block.
-        const t1, const t2 = if (@intFromPtr(page) & higer_mask == 0) blk: {
+        const t1, const t2 = if (@intFromPtr(page) & higher_mask == 0) blk: {
             // The given block is the lower one.
             break :blk if (page.next != null and @intFromPtr(page.next.?) == @intFromPtr(page) + adjacent_distance) .{
                 page,
@@ -265,13 +265,13 @@ const Arena = struct {
         // If we find the adjacent block, merge them recursively.
         if (t1 != null and t2 != null) {
             const lower_list = self.getList(order);
-            const higher_list = self.getList(higer_order);
+            const higher_list = self.getList(higher_order);
 
             lower_list.detachBlock(t1.?);
             lower_list.detachBlock(t2.?);
 
             const new_page = higher_list.addRegion(mem.virt2phys(t1.?));
-            self.maybeMergeRecursive(new_page, higer_order);
+            self.maybeMergeRecursive(new_page, higher_order);
         }
     }
 
@@ -288,7 +288,7 @@ const Arena = struct {
     /// Convert the number of pages to the order.
     /// If the num is not a power of 2, the order is rounded down and the remaining size is returned.
     /// If the order exceeds the available orders, the order is clamped to the max.
-    /// Returnes the pair of the order and the remaining number of pages.
+    /// Returns the pair of the order and the remaining number of pages.
     fn orderFloor(num_pages: usize) struct { SizeOrder, usize } {
         rtt.expect(num_pages != 0);
 

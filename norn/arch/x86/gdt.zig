@@ -206,7 +206,7 @@ pub const SegmentDescriptor = packed struct(u64) {
             wr: bool,
             /// For data segment, expand-down when set, otherwise expand-up.
             /// For code segment, conforming when set, otherwise nonconforming.
-            /// A transfer into a nonconforming code segment at a different privilege level (including from higer level)
+            /// A transfer into a nonconforming code segment at a different privilege level (including from higher level)
             /// cause #GP unless gate or task gate is used.
             dc: bool,
             /// Code segment if set, otherwise data segment.

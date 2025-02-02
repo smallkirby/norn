@@ -60,7 +60,7 @@ pub const LocalApic = struct {
     /// Virtual address of the local APIC base
     _base: *void,
 
-    /// Spurious-Intrrupt Vector Register.
+    /// Spurious-Interrupt Vector Register.
     pub const Svr = packed struct(u32) {
         /// Spurious Vector.
         /// Determines the vector number to be delivered when the local APIC generates a spurious vector.

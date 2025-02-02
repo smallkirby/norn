@@ -168,7 +168,7 @@ const Exception = enum(usize) {
     machine_check = 18,
     simd_exception = 19,
     virtualization_exception = 20,
-    control_protection_excepton = 21,
+    control_protection_exception = 21,
 
     _,
 
@@ -195,7 +195,7 @@ const Exception = enum(usize) {
             .machine_check => "#MC: Machine check",
             .simd_exception => "#XM: SIMD exception",
             .virtualization_exception => "#VE: Virtualization exception",
-            .control_protection_excepton => "#CP: Control protection exception",
+            .control_protection_exception => "#CP: Control protection exception",
             _ => "Unknown exception",
         };
     }

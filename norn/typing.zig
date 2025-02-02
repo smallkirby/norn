@@ -1,4 +1,4 @@
-/// Wrapper struct that allows partial write of fields with an annonymous struct.
+/// Wrapper struct that allows partial write of fields with an anonymous struct.
 pub fn Partialable(Type: type) type {
     return packed struct {
         const Self = @This();

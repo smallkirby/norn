@@ -58,7 +58,7 @@ const Functions = struct {
 /// Initialize a serial console.
 pub fn initSerial(port: Ports, baud: u32) Functions {
     const p: u16 = @intFromEnum(port);
-    outb(0b00_000_0_00, p + Registers.lcr); // 8n1: no paritiy, 1 stop bit, 8 data bit
+    outb(0b00_000_0_00, p + Registers.lcr); // 8n1: no parity, 1 stop bit, 8 data bit
     outb(0, p + Registers.ier); // Disable interrupts
     outb(0, p + Registers.fcr); // Disable FIFO
 
