@@ -37,3 +37,6 @@ jobs:
 
       - name: Spell Check
         uses: crate-ci/typos@v1.29.5
+        with:
+          files: .github/** scripts/** surtr/** norn/** *.zig *.zig.zon *.md *.bash
+          config: _typos.toml
