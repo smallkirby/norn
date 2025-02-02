@@ -16,7 +16,7 @@ jobs:
   lint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install clang-format
         run: |
@@ -34,3 +34,6 @@ jobs:
       - name: Lint Zig
         run: |
           zig fmt --check **/*.zig --exclude .zig-cache/**/*.zig
+
+      - name: Spell Check
+        uses: crate-ci/typos@v1.29.5

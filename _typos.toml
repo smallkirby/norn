@@ -1,0 +1,8 @@
+[default.extend-words]
+# IST: acronym for Interrupt Stack Table.
+ist = "ist"
+ists = "ists"
+# DNE: acronym for Does Not Exist.
+dne = "dne"
+# ba: acronym for BinAllocator.
+ba = "ba"
