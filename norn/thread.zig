@@ -79,8 +79,8 @@ pub const Thread = struct {
     /// The name is truncated if it exceeds the maximum length.
     /// The output buffer is null-terminated.
     inline fn truncCopyName(out: *[name_max_len:0]u8, in: []const u8) void {
-        const length = @max(in.len, name_max_len);
-        @memcpy(out[0..length], in);
+        const length = @min(in.len, name_max_len);
+        @memcpy(out[0..length], in[0..length]);
         out[length] = 0;
     }
 
