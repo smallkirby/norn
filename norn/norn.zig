@@ -28,6 +28,8 @@ const is_test = @import("builtin").is_test;
 pub const version = option.version;
 /// Git SHA of Norn kernel.
 pub const sha = option.sha;
+/// Norn banner ascii art.
+pub const banner = @import("banner.zig").banner;
 
 /// Maximum number of supported CPUs.
 pub const num_max_cpu = 256;

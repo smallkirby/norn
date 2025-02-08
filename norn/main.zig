@@ -134,8 +134,10 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 
     // Print Norn banner.
     log.info("", .{});
-    log.info("Norn Kernel version {s} ({s})", .{ norn.version, norn.sha });
-    log.info("", .{});
+    log.info("Norn Kernel - version {s} ({s})", .{ norn.version, norn.sha });
+    norn.getSerial().writeString("\n");
+    norn.getSerial().writeString(norn.banner);
+    norn.getSerial().writeString("\n");
 
     // Initialize scheduler.
     log.info("Initializing scheduler...", .{});

@@ -20,7 +20,7 @@ fn getGitSha(b: *std.Build) ![]const u8 {
             std.log.warn("Failed to get git SHA: {s}", .{@errorName(err)});
             break :blk "(unknown)";
         };
-        return b.dupe(std.mem.trim(u8, result.stdout, "\n \t"));
+        return b.dupe(std.mem.trim(u8, result.stdout[0..7], "\n \t"));
     };
 }
 
