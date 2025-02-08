@@ -33,6 +33,9 @@ pub const State = enum {
 
 /// Execution context.
 pub const Thread = struct {
+    /// Maximum length of the thread name.
+    const name_max_len: usize = 16;
+
     /// Thread ID.
     tid: Tid,
     /// Stack.
@@ -41,9 +44,12 @@ pub const Thread = struct {
     stack_ptr: [*]u8,
     /// Thread state.
     state: State = .running,
+    /// Thread name with null-termination.
+    name: [name_max_len:0]u8 = undefined,
 
     /// Create a new thread.
     fn create(
+        name: []const u8,
         allocator: Allocator,
     ) Error!*Thread {
         const self = try allocator.create(Thread);
@@ -58,6 +64,8 @@ pub const Thread = struct {
             .stack = stack,
             .stack_ptr = stack_ptr,
         };
+        truncCopyName(&self.name, name);
+
         return self;
     }
 
@@ -65,6 +73,22 @@ pub const Thread = struct {
     fn destroy(self: *Thread, allocator: Allocator) void {
         page_allocator.freePages(self.stack);
         allocator.destroy(self);
+    }
+
+    /// Copy the thread name to the output buffer.
+    /// The name is truncated if it exceeds the maximum length.
+    /// The output buffer is null-terminated.
+    inline fn truncCopyName(out: *[name_max_len:0]u8, in: []const u8) void {
+        const length = @max(in.len, name_max_len);
+        @memcpy(out[0..length], in);
+        out[length] = 0;
+    }
+
+    /// Get the thread name.
+    pub fn getName(self: *Thread) []const u8 {
+        for (0..name_max_len) |i| {
+            if (self.name[i] == 0) return self.name[0..i];
+        } else return &self.name;
     }
 };
 
@@ -77,10 +101,11 @@ fn assignNewTid() Tid {
 
 /// Create a new kernel thread.
 pub fn createKernelThread(
+    name: []const u8,
     entry: KernelThreadEntry,
     allocator: Allocator,
 ) Error!*Thread {
-    const thread = try Thread.create(allocator);
+    const thread = try Thread.create(name, allocator);
     thread.stack_ptr = arch.task.initOrphanFrame(thread.stack_ptr, @intFromPtr(entry));
 
     return thread;

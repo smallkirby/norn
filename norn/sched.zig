@@ -109,13 +109,13 @@ pub fn enqueue(task: *Thread, allocator: Allocator) Error!void {
 
 /// Setup the idle task and set the current task to it.
 fn setupIdleTask(allocator: Allocator) Error!void {
-    const idle_task = try thread.createKernelThread(idleTask, allocator);
+    const idle_task = try thread.createKernelThread("[idle]", idleTask, allocator);
     const idle_node = try allocator.create(QueuedTask);
     idle_node.* = QueuedTask{ .data = idle_task };
     pcpu.thisCpuGet(&current_task).* = idle_node;
 
-    const taskA = try thread.createKernelThread(debugTmpThreadA, allocator);
-    const taskB = try thread.createKernelThread(debugTmpThreadB, allocator);
+    const taskA = try thread.createKernelThread("threadA", debugTmpThreadA, allocator);
+    const taskB = try thread.createKernelThread("threadB", debugTmpThreadB, allocator);
     try enqueue(taskA, allocator);
     try enqueue(taskB, allocator);
 }
@@ -125,6 +125,16 @@ fn idleTask() noreturn {
     while (true) {
         arch.enableIrq();
         arch.halt();
+    }
+}
+
+/// Print the list of threads in the run queue of this CPU.
+pub fn debugPrintRunQueue(logger: anytype) void {
+    const queue = pcpu.thisCpuGet(&runq);
+    var node: ?*QueuedTask = queue.list.first;
+    while (node) |n| {
+        logger("{d: >3}: {s}", .{ n.data.tid, n.data.getName() });
+        node = n.next;
     }
 }
 
