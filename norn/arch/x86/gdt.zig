@@ -27,7 +27,16 @@ pub const kernel_ds_index: u16 = 0x01;
 /// Index of the kernel code segment.
 pub const kernel_cs_index: u16 = 0x02;
 /// Index of the kernel TSS.
-pub const kernel_tss_index: u16 = 0x03;
+/// Note that TSS descriptor occupies two GDT entries.
+pub const kernel_tss_index: u16 = 0x08;
+/// Last index of the GDT.
+pub const sentinel_gdt_index: u16 = 0x0A;
+
+comptime {
+    if (sentinel_gdt_index >= max_num_gdt) {
+        @compileError("Too many GDT entries");
+    }
+}
 
 /// Initialize the GDT.
 pub fn init() void {
