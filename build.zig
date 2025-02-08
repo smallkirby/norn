@@ -1,9 +1,30 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+// TODO: Zig 0.14.0 can import build.zig.zon.
+// const zon = @import("build.zig.zon");
+// const norn_version = zon.version;
+const norn_version = "0.0.0";
 
+/// Get SHA-1 hash of the current Git commit.
+fn getGitSha(b: *std.Build) ![]const u8 {
+    return blk: {
+        const result = std.process.Child.run(.{
+            .allocator = b.allocator,
+            .argv = &.{
+                "git",
+                "rev-parse",
+                "HEAD",
+            },
+            .cwd = b.pathFromRoot("."),
+        }) catch |err| {
+            std.log.warn("Failed to get git SHA: {s}", .{@errorName(err)});
+            break :blk "(unknown)";
+        };
+        return b.dupe(std.mem.trim(u8, result.stdout, "\n \t"));
+    };
+}
+
+pub fn build(b: *std.Build) !void {
     const target = b.resolveTargetQuery(.{
         .cpu_arch = .x86_64,
         .os_tag = .freestanding,
@@ -47,6 +68,8 @@ pub fn build(b: *std.Build) !void {
     const options = b.addOptions();
     options.addOption(std.log.Level, "log_level", log_level);
     options.addOption(bool, "is_runtime_test", is_runtime_test);
+    options.addOption([]const u8, "sha", try getGitSha(b));
+    options.addOption([]const u8, "version", norn_version);
 
     // Modules
     const surtr_module = b.createModule(.{
@@ -118,7 +141,7 @@ pub fn build(b: *std.Build) !void {
     b.getInstallStep().dependOn(&install_norn.step);
 
     // Run QEMU
-    var qemu_args = std.ArrayList([]const u8).init(allocator);
+    var qemu_args = std.ArrayList([]const u8).init(b.allocator);
     defer qemu_args.deinit();
     try qemu_args.appendSlice(&.{
         "qemu-system-x86_64",

@@ -132,6 +132,11 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     log.info("Booting APs...", .{});
     try arch.mp.bootAllAps();
 
+    // Print Norn banner.
+    log.info("", .{});
+    log.info("Norn Kernel version {s} ({s})", .{ norn.version, norn.sha });
+    log.info("", .{});
+
     // Initialize scheduler.
     log.info("Initializing scheduler...", .{});
     arch.disableIrq();

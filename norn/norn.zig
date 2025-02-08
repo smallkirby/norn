@@ -14,14 +14,20 @@ pub const thread = @import("thread.zig");
 pub const timer = @import("timer.zig");
 pub usingnamespace @import("typing.zig");
 
-pub const is_runtime_test = @import("option").is_runtime_test;
+pub const is_runtime_test = option.is_runtime_test;
 pub const LogFn = klog.LogFn;
 pub const Serial = @import("Serial.zig");
 pub const SpinLock = @import("SpinLock.zig");
 
 const std = @import("std");
 const log = std.log;
+const option = @import("option");
 const is_test = @import("builtin").is_test;
+
+/// Version of Norn kernel.
+pub const version = option.version;
+/// Git SHA of Norn kernel.
+pub const sha = option.sha;
 
 /// Maximum number of supported CPUs.
 pub const num_max_cpu = 256;
