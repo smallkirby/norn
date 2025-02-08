@@ -107,17 +107,21 @@ pub fn enqueue(task: *Thread, allocator: Allocator) Error!void {
     queue.list.append(node);
 }
 
+/// Put the initial task into the run queue.
+pub fn setInitialTask(init: thread.KernelThreadEntry, allocator: Allocator) Error!void {
+    const init_task = try thread.createKernelThread("[init]", init, allocator);
+    const init_node = try allocator.create(QueuedTask);
+    init_node.* = QueuedTask{ .data = init_task };
+    pcpu.thisCpuGet(&current_task).* = init_node;
+}
+
 /// Setup the idle task and set the current task to it.
 fn setupIdleTask(allocator: Allocator) Error!void {
     const idle_task = try thread.createKernelThread("[idle]", idleTask, allocator);
     const idle_node = try allocator.create(QueuedTask);
     idle_node.* = QueuedTask{ .data = idle_task };
-    pcpu.thisCpuGet(&current_task).* = idle_node;
 
-    const taskA = try thread.createKernelThread("threadA", debugTmpThreadA, allocator);
-    const taskB = try thread.createKernelThread("threadB", debugTmpThreadB, allocator);
-    try enqueue(taskA, allocator);
-    try enqueue(taskB, allocator);
+    try enqueue(idle_task, allocator);
 }
 
 /// Idle task that yields the CPU to other tasks immediately.
@@ -136,31 +140,4 @@ pub fn debugPrintRunQueue(logger: anytype) void {
         logger("{d: >3}: {s}", .{ n.data.tid, n.data.getName() });
         node = n.next;
     }
-}
-
-/// Example thread for debugging.
-/// TODO remove this.
-fn debugTmpThreadA() noreturn {
-    arch.enableIrq();
-
-    log.debug("Thread A1", .{});
-    norn.acpi.spinForUsec(1000 * 1000) catch unreachable;
-    log.debug("Thread A2", .{});
-
-    const current = pcpu.thisCpuGet(&current_task).*;
-    current.data.state = .dead;
-    schedule();
-    unreachable;
-}
-
-/// Example thread for debugging.
-/// TODO remove this.
-fn debugTmpThreadB() noreturn {
-    arch.enableIrq();
-    log.debug("Thread B", .{});
-
-    const current = pcpu.thisCpuGet(&current_task).*;
-    current.data.state = .dead;
-    schedule();
-    unreachable;
 }
