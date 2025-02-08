@@ -26,6 +26,10 @@ var gdtr = GdtRegister{
 pub const kernel_ds_index: u16 = 0x01;
 /// Index of the kernel code segment.
 pub const kernel_cs_index: u16 = 0x02;
+/// Index of the user data segment.
+pub const user_ds_index: u16 = 0x04;
+/// Index of the user code segment.
+pub const user_cs_index: u16 = 0x05;
 /// Index of the kernel TSS.
 /// Note that TSS descriptor occupies two GDT entries.
 pub const kernel_tss_index: u16 = 0x08;
@@ -43,6 +47,18 @@ pub fn init() void {
     // Init GDT.
     gdtr.base = &gdt;
 
+    gdt[kernel_ds_index] = SegmentDescriptor.new(
+        0,
+        std.math.maxInt(u20),
+        .{ .app = .{
+            .wr = true,
+            .dc = false,
+            .code = false,
+        } },
+        .app,
+        0,
+        .kbyte,
+    );
     gdt[kernel_cs_index] = SegmentDescriptor.new(
         0,
         std.math.maxInt(u20),
@@ -55,7 +71,8 @@ pub fn init() void {
         0,
         .kbyte,
     );
-    gdt[kernel_ds_index] = SegmentDescriptor.new(
+
+    gdt[user_ds_index] = SegmentDescriptor.new(
         0,
         std.math.maxInt(u20),
         .{ .app = .{
@@ -64,7 +81,19 @@ pub fn init() void {
             .code = false,
         } },
         .app,
+        3,
+        .kbyte,
+    );
+    gdt[user_cs_index] = SegmentDescriptor.new(
         0,
+        std.math.maxInt(u20),
+        .{ .app = .{
+            .wr = false,
+            .dc = false,
+            .code = true,
+        } },
+        .app,
+        3,
         .kbyte,
     );
 
@@ -339,15 +368,28 @@ fn testGdtEntries() void {
         const bits = norn.bits;
         const accessed_bit = 40;
 
-        const expected_ds = bits.unset(u64, 0x00CF93000000FFFF, accessed_bit);
-        const expected_cs = bits.unset(u64, 0x00AF99000000FFFF, accessed_bit);
+        // GDT entries for kernel.
+        const expected_kernel_ds = bits.unset(u64, 0x00_CF_93_000000_FFFF, accessed_bit);
+        const expected_kernel_cs = bits.unset(u64, 0x00_AF_99_000000_FFFF, accessed_bit);
         rtt.expectEqual(
-            expected_ds,
+            expected_kernel_ds,
             bits.unset(u64, @bitCast(gdt[kernel_ds_index]), accessed_bit),
         );
         rtt.expectEqual(
-            expected_cs,
+            expected_kernel_cs,
             bits.unset(u64, @bitCast(gdt[kernel_cs_index]), accessed_bit),
+        );
+
+        // GDT entries for user.
+        const expected_user_ds = bits.unset(u64, 0x00_CF_F3_000000_FFFF, accessed_bit);
+        const expected_user_cs = bits.unset(u64, 0x00_AF_F9_000000_FFFF, accessed_bit);
+        rtt.expectEqual(
+            expected_user_ds,
+            bits.unset(u64, @bitCast(gdt[user_ds_index]), accessed_bit),
+        );
+        rtt.expectEqual(
+            expected_user_cs,
+            bits.unset(u64, @bitCast(gdt[user_cs_index]), accessed_bit),
         );
     }
 }
