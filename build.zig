@@ -1,6 +1,9 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
     const target = b.resolveTargetQuery(.{
         .cpu_arch = .x86_64,
         .os_tag = .freestanding,
@@ -33,6 +36,12 @@ pub fn build(b: *std.Build) void {
         bool,
         "runtime_test",
         "Specify if the build is for the runtime testing.",
+    ) orelse false;
+
+    const wait_qemu = b.option(
+        bool,
+        "wait_qemu",
+        "QEMU waits for GDB connection.",
     ) orelse false;
 
     const options = b.addOptions();
@@ -109,7 +118,9 @@ pub fn build(b: *std.Build) void {
     b.getInstallStep().dependOn(&install_norn.step);
 
     // Run QEMU
-    const qemu_args = [_][]const u8{
+    var qemu_args = std.ArrayList([]const u8).init(allocator);
+    defer qemu_args.deinit();
+    try qemu_args.appendSlice(&.{
         "qemu-system-x86_64",
         "-m",
         "512M",
@@ -127,8 +138,9 @@ pub fn build(b: *std.Build) void {
         "-smp",
         "3",
         "-s",
-    };
-    const qemu_cmd = b.addSystemCommand(&qemu_args);
+    });
+    if (wait_qemu) try qemu_args.append("-S");
+    const qemu_cmd = b.addSystemCommand(qemu_args.items);
     qemu_cmd.step.dependOn(b.getInstallStep());
 
     const run_qemu_cmd = b.step("run", "Run QEMU");
