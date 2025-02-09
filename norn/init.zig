@@ -21,10 +21,11 @@ pub fn initialTask() noreturn {
 }
 
 /// Initial userland task for debugging purposes.
-fn debugUserTask() noreturn {
+export fn debugUserTask() noreturn {
     while (true) {
         asm volatile (
             \\nop
+            \\hlt
         );
     }
 }

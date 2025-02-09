@@ -37,7 +37,14 @@ const num_ists = 7;
 /// Interrupt stack tables.
 /// TODO: Must be per-CPU.
 var ists: [num_ists]Ist align(mem.size_4kib) = [_]Ist{std.mem.zeroes(Ist)} ** num_ists;
+
+const Rsp = [mem.size_4kib]u8;
+/// Ring-0 stack pointer.
+/// TODO: Must be per-CPU.
+var rsp0: Rsp align(mem.size_4kib) = undefined;
+
 /// TSS.
+/// TODO: Must be per-CPU.
 var tss: gdt.TaskStateSegment align(mem.size_4kib) = .{};
 
 /// Index of IST for #DF.
@@ -64,6 +71,7 @@ pub fn init() void {
 
     // Load TSS.
     tss.ist1 = @intFromPtr(&ists[df_ist_index - 1]) + @sizeOf(Ist) - 0x10;
+    tss.rsp0 = @intFromPtr(&rsp0) + @sizeOf(Rsp) - 0x10;
     gdt.setTss(@intFromPtr(&tss));
 
     // Load IDTR.
