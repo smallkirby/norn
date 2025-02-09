@@ -24,14 +24,14 @@ var gdtr = GdtRegister{
     .base = undefined,
 };
 
-/// Index of the kernel data segment.
-pub const kernel_ds_index: u16 = 0x01;
 /// Index of the kernel code segment.
-pub const kernel_cs_index: u16 = 0x02;
+pub const kernel_cs_index: u16 = 0x01;
+/// Index of the kernel data segment.
+pub const kernel_ds_index: u16 = 0x02;
+/// Index of the user code segment.
+pub const user_cs_index: u16 = 0x03;
 /// Index of the user data segment.
 pub const user_ds_index: u16 = 0x04;
-/// Index of the user code segment.
-pub const user_cs_index: u16 = 0x05;
 /// Index of the kernel TSS.
 /// Note that TSS descriptor occupies two GDT entries.
 pub const kernel_tss_index: u16 = 0x08;
