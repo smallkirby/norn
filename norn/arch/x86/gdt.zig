@@ -9,6 +9,7 @@ const Phys = norn.mem.Phys;
 const max_num_gdt = 0x10;
 
 /// Global Descriptor Table.
+/// TODO: GDT must be per-CPU variable.
 var gdt: [max_num_gdt]SegmentDescriptor align(16) = [_]SegmentDescriptor{
     SegmentDescriptor.newNull(),
 } ** max_num_gdt;
