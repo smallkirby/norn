@@ -117,14 +117,9 @@ pub fn loadKernelGdt() void {
 pub fn setTss(tss: Phys) void {
     norn.rtt.expectEqual(0, tss >> 32);
 
-    gdt[kernel_tss_index] = SegmentDescriptor.new(
-        @truncate(tss), // assuming physical address
-        std.math.maxInt(u20),
-        .{ .system = .tss_available },
-        .system,
-        0,
-        .kbyte,
-    );
+    const desc = TssDescriptor.new(tss, std.math.maxInt(u20));
+    @as(*TssDescriptor, @ptrCast(&gdt[kernel_tss_index])).* = desc;
+
     loadKernelTss();
 }
 
@@ -294,6 +289,50 @@ pub const SegmentDescriptor = packed struct(u64) {
             .long = if (typ.app.code) true else false,
             .db = if (typ.app.code) 0 else 1,
             .granularity = granularity,
+            .base_high = @truncate(base >> 24),
+        };
+    }
+};
+
+/// TSS Descriptor in 64-bit mode.
+///
+/// Note that the descriptor is 16 bytes long and occupies two GDT entries.
+/// cf. SDM Vol.3A Figure 8-4.
+const TssDescriptor = packed struct(u128) {
+    /// Lower 16 bits of the segment limit.
+    limit_low: u16,
+    /// Lower 24 bits of the base address.
+    base_low: u24,
+
+    /// Type: TSS.
+    type: u4 = @intFromEnum(SegmentDescriptor.AccessType.System.tss_available),
+    /// Descriptor type: System.
+    desc_type: SegmentDescriptor.DescriptorType = .system,
+    /// Descriptor Privilege Level.
+    dpl: u2 = 0,
+    present: bool = true,
+
+    /// Upper 4 bits of the segment limit.
+    limit_high: u4,
+    /// Available for use by system software.
+    avl: u1 = 0,
+    /// Reserved.
+    long: bool = true,
+    /// Size flag.
+    db: u1 = 0,
+    /// Granularity.
+    granularity: SegmentDescriptor.Granularity = .kbyte,
+    /// Upper 40 bits of the base address.
+    base_high: u40,
+    /// Reserved.
+    _reserved: u32 = 0,
+
+    /// Create a new 64-bit TSS descriptor.
+    pub fn new(base: Phys, limit: u20) TssDescriptor {
+        return TssDescriptor{
+            .limit_low = @truncate(limit),
+            .base_low = @truncate(base),
+            .limit_high = @truncate(limit >> 16),
             .base_high = @truncate(base >> 24),
         };
     }
