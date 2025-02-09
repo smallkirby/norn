@@ -148,7 +148,7 @@ pub fn setPerCpuBase(base: Virt) void {
 
     // Set the base address
     asm volatile (
-        \\wrfsbase %[base]
+        \\wrgsbase %[base]
         :
         : [base] "r" (base),
     );

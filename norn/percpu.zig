@@ -16,7 +16,7 @@ pub const Error = error{} || PageAllocator.Error;
 /// Alignment of per-CPU data.
 const percpu_align = 16;
 /// Address space of per-CPU data.
-const percpu_addrspace = std.builtin.AddressSpace.fs;
+const percpu_addrspace = std.builtin.AddressSpace.gs;
 
 extern const __per_cpu_start: *void;
 extern const __per_cpu_end: *void;
