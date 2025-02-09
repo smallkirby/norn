@@ -198,7 +198,7 @@ pub const boot = struct {
             lv4ent.* = Lv4Entry{
                 .present = true,
                 .rw = true,
-                .us = false,
+                .us = true, // TODO
                 .ps = false,
                 .phys = @truncate(@intFromPtr(lv3tbl) >> page_shift_4k),
             };
@@ -217,7 +217,7 @@ pub const boot = struct {
                 lv4tbl[lv4idx] = Lv4Entry{
                     .present = true,
                     .rw = true,
-                    .us = false,
+                    .us = true, // TODO
                     .ps = false,
                     .phys = @truncate(@intFromPtr(new_lv3tbl.ptr) >> page_shift_4k),
                 };
@@ -287,6 +287,7 @@ pub const boot = struct {
 
         for (new_lv3tbl) |*lv3ent| {
             if (!lv3ent.present or lv3ent.ps) continue;
+            lv3ent.us = true; // TODO
 
             const lv2tbl = boot.getLv2Table(lv3ent.address());
             const new_lv2tbl = try cloneLevel2Table(lv2tbl, allocator);
@@ -303,6 +304,7 @@ pub const boot = struct {
 
         for (new_lv2tbl) |*lv2ent| {
             if (!lv2ent.present or lv2ent.ps) continue;
+            lv2ent.us = true; // TODO
 
             const lv1tbl = boot.getLv1Table(lv2ent.address());
             const new_lv1tbl = try cloneLevel1Table(lv1tbl, allocator);
@@ -316,6 +318,11 @@ pub const boot = struct {
         const new_lv1ptr: [*]Lv1Entry = @ptrCast(try allocatePage(allocator));
         const new_lv1tbl = new_lv1ptr[0..num_table_entries];
         @memcpy(new_lv1tbl, lv1_table);
+
+        for (new_lv1tbl) |*lv1ent| {
+            if (!lv1ent.present) continue;
+            lv1ent.us = true; // TODO
+        }
 
         return new_lv1tbl;
     }
@@ -473,7 +480,7 @@ fn EntryBase(table_level: TableLevel) type {
             return Self{
                 .present = present,
                 .rw = true,
-                .us = false,
+                .us = true, // TODO
                 .ps = false,
                 .phys = @truncate(virt2phys(table) >> page_shift_4k),
             };
@@ -485,7 +492,7 @@ fn EntryBase(table_level: TableLevel) type {
             return Self{
                 .present = present,
                 .rw = true,
-                .us = false,
+                .us = true, // TODO
                 .ps = true,
                 .phys = @truncate(phys >> page_shift_4k),
             };
