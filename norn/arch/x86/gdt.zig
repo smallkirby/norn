@@ -4,6 +4,7 @@ const norn = @import("norn");
 const am = @import("asm.zig");
 
 const Phys = norn.mem.Phys;
+const Virt = norn.mem.Virt;
 
 /// Maximum number of GDT entries.
 const max_num_gdt = 0x10;
@@ -115,9 +116,7 @@ pub fn loadKernelGdt() void {
 }
 
 /// Set the TSS.
-pub fn setTss(tss: Phys) void {
-    norn.rtt.expectEqual(0, tss >> 32);
-
+pub fn setTss(tss: Virt) void {
     const desc = TssDescriptor.new(tss, std.math.maxInt(u20));
     @as(*TssDescriptor, @ptrCast(&gdt[kernel_tss_index])).* = desc;
 

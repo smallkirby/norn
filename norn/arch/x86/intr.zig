@@ -64,7 +64,7 @@ pub fn init() void {
 
     // Load TSS.
     tss.ist1 = @intFromPtr(&ists[df_ist_index - 1]) + @sizeOf(Ist) - 0x10;
-    gdt.setTss(@intFromPtr(&tss) - norn.mem.kernel_base);
+    gdt.setTss(@intFromPtr(&tss));
 
     // Load IDTR.
     idtr.base = &idt;
