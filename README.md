@@ -15,6 +15,16 @@ zig build run -Dlog_level=debug --summary all -Druntime_test -Doptimize=Debug
 zig build test --summary all -Druntime_test=true
 ```
 
+### Options
+
+| Option | Type | Description |
+|---|---|---|
+| `optimize` | String: `Debug`, `ReleaseFast`, `ReleaseSmall` | Optimization level. |
+| `log_level` | String: `debug`, `info`, `warn`, `error` | Logging level. Output under the logging level is suppressed. |
+| `runtime_test` | Flag | Run runtime tests. |
+| `wait_qemu` | Flag | Make QEMU wait for being attached by GDB. |
+| `debug_intr` | Flag | Print all interrupts and exceptions for debugging. |
+
 ## LICENSE
 
 [Licnesed under the MIT License](LICENSE) unless otherwise specified.
