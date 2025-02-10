@@ -154,10 +154,24 @@ pub const Msr = enum(u64) {
     /// IA32_APIC_BASE.
     apic_base = 0x1B,
 
+    /// IA32_EFER
+    efer = 0xC000_0080,
+    /// IA32_STAR.
+    star = 0xC000_0081,
+    /// IA32_LSTAR.
+    lstar = 0xC000_0082,
+    /// IA32_CSTAR.
+    cstar = 0xC000_0083,
+    /// IA32_FMASK
+    fmask = 0xC000_0084,
+
+    /// IA32_KERNEL_GS_BASE.
+    kernel_gs_base = 0xC000_0102,
+
     _,
 };
 
-/// IA32_APIC_BASE_MSR
+/// IA32_APIC_BASE MSR
 pub const MsrApicBase = packed struct(u64) {
     /// Reserved.
     _reserved1: u8,
@@ -182,4 +196,49 @@ pub const MsrApicBase = packed struct(u64) {
     pub fn getAddress(self: MsrApicBase) Phys {
         return self.base << 12;
     }
+};
+
+/// IA32_EFER MSR
+pub const MsrEfer = packed struct(u64) {
+    /// SYSCALL / SYSRET enable.
+    sce: bool,
+    /// Reserved.
+    _reserved1: u7 = 0,
+    /// Long mode enable.
+    lme: bool,
+    /// Reserved.
+    _reserved2: u1 = 0,
+    /// Long mode active.
+    lma: bool,
+    /// Execute Disable Bit Enable.
+    nxe: bool,
+    /// Reserved.
+    _reserved3: u52 = 0,
+};
+
+/// IA32_STAR MSR
+pub const MsrFmask = packed struct(u64) {
+    /// SYSCALL EFLAGS mask.
+    /// RFLAGS is set to the logical-AND of the current value and this mask.
+    flags: u32,
+    /// Reserved.
+    _reserved: u32 = 0,
+};
+
+/// IA32_LSTAR MSR
+pub const MsrLstar = packed struct(u64) {
+    /// Target RIP for SYSCALL.
+    rip: u64,
+};
+
+/// IA32_STAR MSR
+pub const MsrStar = packed struct(u64) {
+    /// Reserved.
+    _reserved: u32 = 0,
+    /// Target CS selector for SYSCALL.
+    /// SS is computed by adding 8 to the value.
+    syscall_cs_ss: u16,
+    /// Target CS selector for SYSRET.
+    /// SS is computed by subtracting 8 from the value.
+    sysret_cs_ss: u16,
 };

@@ -25,7 +25,8 @@ export fn debugUserTask() noreturn {
     while (true) {
         asm volatile (
             \\nop
-            \\hlt
+            \\movq $0, %%rax
+            \\syscall
         );
     }
 }
@@ -46,7 +47,7 @@ export fn debugEnterUser() callconv(.Naked) void {
         \\movq $0x02, %%rdi
         \\pushq %%rdi
         // CS (RPL = 3)
-        \\movq $(5 << 3 + 3), %%rdi
+        \\movq $(3 << 3 + 3), %%rdi
         \\pushq %%rdi
         // RIP
         \\movq %[rip], %%rdi

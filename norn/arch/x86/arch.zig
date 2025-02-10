@@ -25,10 +25,11 @@ const intr = @import("intr.zig");
 const isr = @import("isr.zig");
 const pg = @import("page.zig");
 const regs = @import("registers.zig");
+const syscall = @import("syscall.zig");
 
 const Msr = regs.Msr;
 
-pub const Error = apic.Error || intr.Error || apic.Error;
+pub const Error = apic.Error || intr.Error || apic.Error || syscall.Error;
 
 /// Reconstruct the page tables
 /// This function MUST be called only once.
@@ -45,6 +46,9 @@ pub inline fn disableIrq() void {
 pub inline fn enableIrq() void {
     am.sti();
 }
+
+/// Enable system calls.
+pub const enableSyscall = syscall.init;
 
 /// Get the local APIC.
 pub fn getLocalApic() apic.LocalApic {
@@ -152,6 +156,9 @@ pub fn setPerCpuBase(base: Virt) void {
         :
         : [base] "r" (base),
     );
+
+    // Set to KERNEL_GS_BASE.
+    am.wrmsr(.kernel_gs_base, base);
 }
 
 // ========================================

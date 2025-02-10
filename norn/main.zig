@@ -132,6 +132,9 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     log.info("Booting APs...", .{});
     try arch.mp.bootAllAps();
 
+    // Initialize syscall.
+    try arch.enableSyscall();
+
     // Print Norn banner.
     log.info("", .{});
     log.info("Norn Kernel - version {s} ({s})", .{ norn.version, norn.sha });
