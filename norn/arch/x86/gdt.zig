@@ -328,7 +328,7 @@ const TssDescriptor = packed struct(u128) {
     _reserved: u32 = 0,
 
     /// Create a new 64-bit TSS descriptor.
-    pub fn new(base: Phys, limit: u20) TssDescriptor {
+    pub fn new(base: Virt, limit: u20) TssDescriptor {
         return TssDescriptor{
             .limit_low = @truncate(limit),
             .base_low = @truncate(base),
