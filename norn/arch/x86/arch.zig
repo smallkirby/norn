@@ -31,6 +31,9 @@ const Msr = regs.Msr;
 
 pub const Error = apic.Error || intr.Error || apic.Error || syscall.Error;
 
+/// Saved registers for system call handlers.
+pub const SyscallContext = syscall.Registers;
+
 /// Reconstruct the page tables
 /// This function MUST be called only once.
 pub fn bootReconstructPageTable(allocator: PageAllocator) pg.PageError!void {

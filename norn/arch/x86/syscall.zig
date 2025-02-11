@@ -5,6 +5,7 @@ const std = @import("std");
 const norn = @import("norn");
 const bits = norn.bits;
 const pcpu = norn.pcpu;
+const Syscall = norn.syscall.Syscall;
 
 const am = @import("asm.zig");
 const cpuid = @import("cpuid.zig");
@@ -20,7 +21,7 @@ pub const Error = error{
 };
 
 /// Register context for x86-64 syscall.
-const Registers = packed struct {
+pub const Registers = packed struct {
     // Callee-saved registers.
     r15: u64,
     r14: u64,
@@ -80,10 +81,37 @@ pub fn init() Error!void {
 }
 
 /// Dispatch system call.
-export fn dispatchSyscall(nr: u64, _: *Registers) callconv(.C) u64 {
-    std.log.debug("syscall nr={d}", .{nr});
+export fn dispatchSyscall(nr: u64, ctx: *Registers) callconv(.C) i64 {
+    asm volatile (
+        \\mov %[kernel_ds], %dx
+        \\mov %%dx, %%ds
+        :
+        : [kernel_ds] "n" (@as(u16, @bitCast(gdt.SegmentSelector{
+            .rpl = 0,
+            .index = gdt.kernel_ds_index,
+          }))),
+    );
 
-    return 0;
+    const ret = Syscall.from(nr).getHandler()(
+        ctx,
+        ctx.rdi,
+        ctx.rsi,
+        ctx.rdx,
+        ctx.rcx,
+        ctx.r8,
+    ) catch -1; // TODO: handler errors
+
+    asm volatile (
+        \\mov %[user_ds], %dx
+        \\mov %%dx, %%ds
+        :
+        : [user_ds] "n" (@as(u16, @bitCast(gdt.SegmentSelector{
+            .rpl = 3,
+            .index = gdt.user_ds_index,
+          }))),
+    );
+
+    return ret;
 }
 
 /// SYSCALL entry point.
@@ -119,7 +147,10 @@ export fn syscallEntry() callconv(.Naked) void {
 
         // Skip caller-saved registers (rbp, rbx, and r12-r15)
         \\sub $(6*8), %%rsp
+        \\
+        // Prepare arguments
         \\movq %%rax, %%rdi
+        \\movq %%rsp, %%rsi
 
         // Align stack to 16 bytes.
         \\pushq %%rsp

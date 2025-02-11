@@ -21,10 +21,10 @@ pub fn initialTask() noreturn {
 }
 
 /// Initial userland task for debugging purposes.
+/// TODO: debug-purpose only. Remove this.
 export fn debugUserTask() noreturn {
     while (true) {
         asm volatile (
-            \\nop
             \\movq $0, %%rax
             \\syscall
         );

@@ -10,6 +10,7 @@ pub const mem = @import("mem.zig");
 pub const pcpu = if (!is_test) @import("percpu.zig") else @import("percpu.zig").mock_for_testing;
 pub const sched = @import("sched.zig");
 pub const rtt = @import("rtt.zig");
+pub const syscall = @import("syscall.zig");
 pub const thread = @import("thread.zig");
 pub const timer = @import("timer.zig");
 pub usingnamespace @import("typing.zig");
