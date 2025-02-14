@@ -92,7 +92,11 @@ const FreeList = struct {
 
     /// Add a block of pages to the free list.
     pub fn freeBlock(self: *FreeList, block: []u8) *FreePage {
-        const page: *FreePage = @alignCast(@ptrCast(block));
+        // BUG: Zig v0.14.0 : https://github.com/ziglang/zig/issues/22885
+        // const page: *FreePage = @alignCast(@ptrCast(block));
+        const work_around_ptr: u64 = @intFromPtr(block.ptr);
+        const page: *FreePage = @ptrFromInt(work_around_ptr);
+
         self.insertSorted(page);
         return page;
     }
