@@ -4,6 +4,7 @@ const std = @import("std");
 
 const norn = @import("norn");
 const bits = norn.bits;
+const errno = norn.errno;
 const pcpu = norn.pcpu;
 const Syscall = norn.syscall.Syscall;
 
@@ -99,7 +100,7 @@ export fn dispatchSyscall(nr: u64, ctx: *Registers) callconv(.C) i64 {
         ctx.rdx,
         ctx.rcx,
         ctx.r8,
-    ) catch -1; // TODO: handler errors
+    ) catch |err| -@intFromEnum(errno.convertToErrno(err));
 
     asm volatile (
         \\mov %[user_ds], %dx

@@ -2,6 +2,7 @@ pub const acpi = @import("acpi.zig");
 pub const arch = @import("arch.zig");
 pub const bits = @import("bits.zig");
 pub const drivers = @import("drivers.zig");
+pub const errno = @import("errno.zig");
 pub const fs = @import("fs.zig");
 pub const init = @import("init.zig");
 pub const interrupt = @import("interrupt.zig");
