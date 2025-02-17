@@ -37,21 +37,24 @@ pub inline fn concat(T: type, a: anytype, b: @TypeOf(a)) T {
 ///
 /// Numbers must not be comptime_int. The width must be explicitly specified.
 pub fn concatMany(T: type, args: anytype) T {
-    switch (@typeInfo(@TypeOf(args))) {
-        .Struct => {},
-        else => @compileError("concatMany: invalid type"),
-    }
     const fields = std.meta.fields(@TypeOf(args));
 
     // Check if the total width of the args is equal to the output type.
-    comptime var width = 0;
-    inline for (fields) |field| {
-        width += switch (@typeInfo(field.type)) {
-            .Int => |t| t.bits,
-            else => @compileError("concatMany: invalid type of entry"),
-        };
+    comptime {
+        switch (@typeInfo(@TypeOf(args))) {
+            .Struct => {},
+            else => @compileError("concatMany: invalid type"),
+        }
+
+        var width = 0;
+        for (fields) |field| {
+            width += switch (@typeInfo(field.type)) {
+                .Int => |t| t.bits,
+                else => @compileError("concatMany: invalid type of entry"),
+            };
+        }
+        if (width != @typeInfo(T).Int.bits) @compileError("concatMany: total width mismatch");
     }
-    if (width != @typeInfo(T).Int.bits) @compileError("concatMany: total width mismatch");
 
     // Calculate the result.
     comptime var cur_width = 0;
