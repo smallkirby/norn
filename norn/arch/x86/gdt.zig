@@ -121,6 +121,8 @@ pub fn setTss(tss: Virt) void {
     @as(*TssDescriptor, @ptrCast(&gdt[kernel_tss_index])).* = desc;
 
     loadKernelTss();
+
+    testTssDescriptor(tss);
 }
 
 /// Load the kernel data segment selector.
@@ -429,6 +431,36 @@ fn testGdtEntries() void {
         rtt.expectEqual(
             expected_user_cs,
             bits.unset(u64, @bitCast(gdt[user_cs_index]), accessed_bit),
+        );
+    }
+}
+
+fn testTssDescriptor(base: Virt) void {
+    if (norn.is_runtime_test) {
+        const bits = norn.bits;
+
+        const base_low: u24 = @truncate(base >> 0);
+        const base_med: u8 = @truncate(base >> 24);
+        const base_high: u32 = @truncate(base >> 32);
+
+        const expected_tss_low = bits.concatMany(u64, .{
+            base_med, // base med
+            @as(u16, 0xAF_8B), // other fields
+            base_low, // base low
+            @as(u16, 0xFFFF), // limit
+        });
+        const expected_tss_high = bits.concatMany(u64, .{
+            @as(u32, 0), // reserved
+            base_high, // base high
+        });
+
+        rtt.expectEqual(
+            expected_tss_low,
+            @as(u64, @bitCast(gdt[kernel_tss_index + 0])),
+        );
+        rtt.expectEqual(
+            expected_tss_high,
+            @as(u64, @bitCast(gdt[kernel_tss_index + 1])),
         );
     }
 }
