@@ -32,7 +32,6 @@ pub const version = option.version;
 pub const sha = option.sha;
 /// Norn banner ascii art.
 pub const banner = @import("banner.zig").banner;
-
 /// Maximum number of supported CPUs.
 pub const num_max_cpu = 256;
 

@@ -5,6 +5,7 @@ pub const ApicTimer = apic.Timer;
 pub const InterruptContext = isr.Context;
 pub const InterruptRegisters = isr.Registers;
 pub const LocalApic = apic.LocalApic;
+const Msr = regs.Msr;
 
 const std = @import("std");
 const log = std.log.scoped(.arch);
@@ -27,8 +28,7 @@ const pg = @import("page.zig");
 const regs = @import("registers.zig");
 const syscall = @import("syscall.zig");
 
-const Msr = regs.Msr;
-
+// Architecture-specific error type.
 pub const Error = apic.Error || intr.Error || apic.Error || syscall.Error;
 
 /// Saved registers for system call handlers.
