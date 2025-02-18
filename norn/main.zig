@@ -67,7 +67,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     boot_info = early_boot_info;
 
     // Initialize GDT.
-    arch.initGdt();
+    arch.initEarlyGdt();
     log.info("Initialized GDT.", .{});
 
     // Initialize IDT.
@@ -110,6 +110,9 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         boot_info.percpu_base,
     );
     norn.pcpu.initThisCpu(norn.arch.getLocalApic().id());
+
+    // Do per-CPU initialization.
+    try arch.initGdtThisCpu(norn.mem.page_allocator);
 
     // Initialize filesystem.
     try norn.fs.init(norn.mem.general_allocator);

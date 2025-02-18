@@ -22,7 +22,7 @@ const pg = @import("page.zig");
 const Error = mem.Error || pg.PageError;
 
 /// Number of pages for the each AP stack.
-const num_ap_stack_pages = 5;
+const num_ap_stack_pages = 10;
 
 /// Spin lock shared by all APs while booting.
 var lock = SpinLock{};
@@ -183,12 +183,6 @@ fn bootAp(ap_id: u8, lapic: apic.LocalApic, ap_entry: Phys) void {
 /// GDT is temporary. IDT is not set. Interrupts are disabled.
 /// Stack is shared and temporary.
 fn apEntry64() callconv(.C) noreturn {
-    // Load kernel GDT.
-    gdt.loadKernelGdt();
-
-    // Load kernel IDT.
-    intr.loadKernelIdt();
-
     // Allocate stack.
     // TODO: set guard page.
     const stack_top = page_allocator.allocPages(num_ap_stack_pages + 1, .normal) catch @panic("Failed to allocate stack for AP");
@@ -218,6 +212,11 @@ export fn apTrampolineToMain() callconv(.C) noreturn {
 
     // Initialize per-CPU data.
     norn.pcpu.initThisCpu(lapic.id());
+
+    // Setup GDT.
+    gdt.setupThisCpu(mem.page_allocator) catch {
+        @panic("Failed to setup GDT for AP");
+    };
 
     // Greeting
     const lapic_id = lapic.id();

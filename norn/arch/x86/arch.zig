@@ -89,9 +89,14 @@ pub inline fn in(T: type, port: u16) T {
     };
 }
 
-/// Initialize the GDT.
-pub fn initGdt() void {
-    gdt.init();
+/// Initialize boot-time GDT.
+pub fn initEarlyGdt() void {
+    return gdt.init();
+}
+
+/// Setup GDT for the current CPU.
+pub fn initGdtThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
+    return gdt.setupThisCpu(allocator);
 }
 
 /// Initialize interrupt and exception handling.

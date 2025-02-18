@@ -1,28 +1,30 @@
 const std = @import("std");
+
 const norn = @import("norn");
+const mem = norn.mem;
+const pcpu = norn.pcpu;
 
 const am = @import("asm.zig");
 
-const Phys = norn.mem.Phys;
-const Virt = norn.mem.Virt;
+const PageAllocator = mem.PageAllocator;
+const Phys = mem.Phys;
+const Virt = mem.Virt;
 
 /// Maximum number of GDT entries.
 const max_num_gdt = 0x10;
 
-/// Global Descriptor Table.
-/// TODO: GDT must be per-CPU variable.
-var gdt: [max_num_gdt]SegmentDescriptor align(16) = [_]SegmentDescriptor{
+/// Descriptor table type.
+const DescriptorTable = [max_num_gdt]SegmentDescriptor;
+
+/// Boot-time GDT.
+var early_gdt: DescriptorTable = [_]SegmentDescriptor{
     SegmentDescriptor.newNull(),
 } ** max_num_gdt;
-/// GDT Register.
-var gdtr = GdtRegister{
-    .limit = @sizeOf(@TypeOf(gdt)) - 1,
-    // TODO: BUG: Zig v0.13.0. https://github.com/ziglang/zig/issues/17856
-    // .base = &gdt,
-    // This initialization invokes LLVM error.
-    // As a workaround, we make `gdtr` mutable and initialize it in `init()`.
-    .base = undefined,
-};
+
+/// GDT is initialized and differentiated for this CPU.
+var gdt_initialized: bool linksection(pcpu.section) = false;
+/// TSS is initialized and set for this CPU.
+var tss_initialized: bool linksection(pcpu.section) = false;
 
 /// Index of the kernel code segment.
 pub const kernel_cs_index: u16 = 0x01;
@@ -42,70 +44,121 @@ comptime {
     if (sentinel_gdt_index >= max_num_gdt) {
         @compileError("Too many GDT entries");
     }
+    if (@sizeOf(DescriptorTable) > mem.size_4kib) {
+        @compileError("GDT is too large");
+    }
 }
 
-/// Initialize the GDT.
+const null_descriptor =
+    SegmentDescriptor.newNull();
+const kernel_ds =
+    SegmentDescriptor.new(
+    0,
+    std.math.maxInt(u20),
+    .{ .app = .{
+        .wr = true,
+        .dc = false,
+        .code = false,
+    } },
+    .app,
+    0,
+    .kbyte,
+);
+const kernel_cs =
+    SegmentDescriptor.new(
+    0,
+    std.math.maxInt(u20),
+    .{ .app = .{
+        .wr = false,
+        .dc = false,
+        .code = true,
+    } },
+    .app,
+    0,
+    .kbyte,
+);
+const user_ds =
+    SegmentDescriptor.new(
+    0,
+    std.math.maxInt(u20),
+    .{ .app = .{
+        .wr = true,
+        .dc = false,
+        .code = false,
+    } },
+    .app,
+    3,
+    .kbyte,
+);
+const user_cs =
+    SegmentDescriptor.new(
+    0,
+    std.math.maxInt(u20),
+    .{ .app = .{
+        .wr = false,
+        .dc = false,
+        .code = true,
+    } },
+    .app,
+    3,
+    .kbyte,
+);
+
+/// Initialize boot-time GDT.
 pub fn init() void {
-    // Init GDT.
-    gdtr.base = &gdt;
+    // Construct GDT entries.
+    early_gdt[0] = null_descriptor;
+    early_gdt[kernel_ds_index] = kernel_ds;
+    early_gdt[kernel_cs_index] = kernel_cs;
+    early_gdt[user_ds_index] = user_ds;
+    early_gdt[user_cs_index] = user_cs;
 
-    gdt[kernel_ds_index] = SegmentDescriptor.new(
-        0,
-        std.math.maxInt(u20),
-        .{ .app = .{
-            .wr = true,
-            .dc = false,
-            .code = false,
-        } },
-        .app,
-        0,
-        .kbyte,
-    );
-    gdt[kernel_cs_index] = SegmentDescriptor.new(
-        0,
-        std.math.maxInt(u20),
-        .{ .app = .{
-            .wr = false,
-            .dc = false,
-            .code = true,
-        } },
-        .app,
-        0,
-        .kbyte,
-    );
+    // Load GDTR.
+    const early_gdtr = GdtRegister{
+        .limit = @sizeOf(DescriptorTable) - 1,
+        .base = &early_gdt,
+    };
 
-    gdt[user_ds_index] = SegmentDescriptor.new(
-        0,
-        std.math.maxInt(u20),
-        .{ .app = .{
-            .wr = true,
-            .dc = false,
-            .code = false,
-        } },
-        .app,
-        3,
-        .kbyte,
-    );
-    gdt[user_cs_index] = SegmentDescriptor.new(
-        0,
-        std.math.maxInt(u20),
-        .{ .app = .{
-            .wr = false,
-            .dc = false,
-            .code = true,
-        } },
-        .app,
-        3,
-        .kbyte,
-    );
-
-    loadKernelGdt();
+    // Load segment selectors.
+    loadKernelGdt(early_gdtr);
 
     testGdtEntries();
 }
 
+/// Differentiate a GDT for this CPU.
+pub fn setupThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
+    if (pcpu.thisCpuGet(&gdt_initialized).* and norn.is_runtime_test) {
+        @panic("GDT is initialized twice.");
+    }
+
+    // Allocate a page for GDT.
+    const page = try allocator.allocPages(1, .normal);
+    errdefer allocator.freePages(page);
+
+    // Construct GDT entries.
+    const ptr: [*]SegmentDescriptor = @alignCast(@ptrCast(page.ptr));
+    const gdt = ptr[0..max_num_gdt];
+    gdt[0] = null_descriptor;
+    gdt[kernel_ds_index] = kernel_ds;
+    gdt[kernel_cs_index] = kernel_cs;
+    gdt[user_ds_index] = user_ds;
+    gdt[user_cs_index] = user_cs;
+
+    // Load GDTR.
+    const gdtr = GdtRegister{
+        .limit = @sizeOf(DescriptorTable) - 1,
+        .base = @ptrCast(gdt.ptr),
+    };
+
+    // Load segment selectors.
+    loadKernelGdt(gdtr);
+
+    // Mark as initialized.
+    pcpu.thisCpuGet(&gdt_initialized).* = true;
+}
+
 /// Load kernel segment selectors.
-pub fn loadKernelGdt() void {
+fn loadKernelGdt(gdtr: GdtRegister) void {
     am.lgdt(@intFromPtr(&gdtr));
 
     // Changing the entries in the GDT, or setting GDTR
@@ -118,7 +171,7 @@ pub fn loadKernelGdt() void {
 /// Set the TSS.
 pub fn setTss(tss: Virt) void {
     const desc = TssDescriptor.new(tss, std.math.maxInt(u20));
-    @as(*TssDescriptor, @ptrCast(&gdt[kernel_tss_index])).* = desc;
+    @as(*TssDescriptor, @alignCast(@ptrCast(&early_gdt[kernel_tss_index]))).* = desc;
 
     loadKernelTss();
 
@@ -132,8 +185,6 @@ fn loadKernelDs() void {
         \\mov %[kernel_ds], %di
         \\mov %%di, %%ds
         \\mov %%di, %%es
-        \\mov %%di, %%fs
-        \\mov %%di, %%gs
         \\mov %%di, %%ss
         :
         : [kernel_ds] "n" (@as(u16, @bitCast(SegmentSelector{
@@ -362,7 +413,7 @@ pub const SegmentSelector = packed struct(u16) {
 /// GDTR.
 const GdtRegister = packed struct {
     limit: u16,
-    base: *[max_num_gdt]SegmentDescriptor,
+    base: *DescriptorTable,
 };
 
 /// Task State Segment.
@@ -414,11 +465,11 @@ fn testGdtEntries() void {
         const expected_kernel_cs = bits.unset(u64, 0x00_AF_99_000000_FFFF, accessed_bit);
         rtt.expectEqual(
             expected_kernel_ds,
-            bits.unset(u64, @bitCast(gdt[kernel_ds_index]), accessed_bit),
+            bits.unset(u64, @bitCast(early_gdt[kernel_ds_index]), accessed_bit),
         );
         rtt.expectEqual(
             expected_kernel_cs,
-            bits.unset(u64, @bitCast(gdt[kernel_cs_index]), accessed_bit),
+            bits.unset(u64, @bitCast(early_gdt[kernel_cs_index]), accessed_bit),
         );
 
         // GDT entries for user.
@@ -426,11 +477,11 @@ fn testGdtEntries() void {
         const expected_user_cs = bits.unset(u64, 0x00_AF_F9_000000_FFFF, accessed_bit);
         rtt.expectEqual(
             expected_user_ds,
-            bits.unset(u64, @bitCast(gdt[user_ds_index]), accessed_bit),
+            bits.unset(u64, @bitCast(early_gdt[user_ds_index]), accessed_bit),
         );
         rtt.expectEqual(
             expected_user_cs,
-            bits.unset(u64, @bitCast(gdt[user_cs_index]), accessed_bit),
+            bits.unset(u64, @bitCast(early_gdt[user_cs_index]), accessed_bit),
         );
     }
 }
@@ -456,11 +507,11 @@ fn testTssDescriptor(base: Virt) void {
 
         rtt.expectEqual(
             expected_tss_low,
-            @as(u64, @bitCast(gdt[kernel_tss_index + 0])),
+            @as(u64, @bitCast(early_gdt[kernel_tss_index + 0])),
         );
         rtt.expectEqual(
             expected_tss_high,
-            @as(u64, @bitCast(gdt[kernel_tss_index + 1])),
+            @as(u64, @bitCast(early_gdt[kernel_tss_index + 1])),
         );
     }
 }
