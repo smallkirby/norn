@@ -127,7 +127,7 @@ pub fn init() void {
 
 /// Differentiate a GDT for this CPU.
 pub fn setupThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
-    if (pcpu.thisCpuGet(&gdt_initialized).* and norn.is_runtime_test) {
+    if (pcpu.thisCpuGet(&gdt_initialized) and norn.is_runtime_test) {
         @panic("GDT is initialized twice.");
     }
 
@@ -154,7 +154,7 @@ pub fn setupThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
     loadKernelGdt(gdtr);
 
     // Mark as initialized.
-    pcpu.thisCpuGet(&gdt_initialized).* = true;
+    pcpu.thisCpuSet(&gdt_initialized, true);
 }
 
 /// Load kernel segment selectors.
