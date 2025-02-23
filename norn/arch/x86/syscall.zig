@@ -14,9 +14,6 @@ const gdt = @import("gdt.zig");
 const regs = @import("registers.zig");
 const task = @import("task.zig");
 
-/// RSP value when SYSCALL is called.
-var rsp_syscall: u64 linksection(pcpu.section) = undefined;
-
 pub const Error = error{
     /// The operation is not supported.
     NotSupported,
@@ -99,7 +96,7 @@ export fn dispatchSyscall(nr: u64, ctx: *Registers) callconv(.C) i64 {
         ctx.rdi,
         ctx.rsi,
         ctx.rdx,
-        ctx.rcx,
+        ctx.r10,
         ctx.r8,
     ) catch |err| -@intFromEnum(errno.convertToErrno(err));
 
@@ -131,13 +128,13 @@ export fn syscallEntry() callconv(.Naked) void {
 
         // SYSCALL does not save RSP, so we need to save it here.
         \\swapgs
-        \\movq %%rsp, %%gs:(%[rsp_syscall])
+        \\movq %%rsp, %%gs:(%[user_stack])
         // Switch to kernel stack
         \\movq %%gs:(%[kernel_stack]), %%rsp
 
         // Construct context
         \\pushq %[ss]                   # ss
-        \\pushq %%gs:(%[rsp_syscall])   # sp
+        \\pushq %%gs:(%[user_stack])    # sp
         \\pushq %%r11                   # rflags
         \\pushq %[cs]                   # cs
         \\pushq %%rcx                   # rip
@@ -187,7 +184,7 @@ export fn syscallEntry() callconv(.Naked) void {
         \\popq %%r11                    # rflags
 
         // Restore user stack.
-        \\movq %%gs:(%[rsp_syscall]), %%rsp
+        \\movq %%gs:(%[user_stack]), %%rsp
 
         // Return to user.
         \\swapgs
@@ -195,7 +192,7 @@ export fn syscallEntry() callconv(.Naked) void {
         :
         : [ss] "i" (gdt.SegmentSelector{ .index = gdt.user_ds_index, .rpl = 3 }),
           [cs] "i" (gdt.SegmentSelector{ .index = gdt.user_cs_index, .rpl = 3 }),
-          [rsp_syscall] "{r12}" (&rsp_syscall), // We can use caller-saved register here
-          [kernel_stack] "{r11}" (&task.current_stack_top),
+          [user_stack] "{r12}" (&task.current_tss.rsp1), // We can use caller-saved register here
+          [kernel_stack] "{r11}" (&task.current_tss.rsp0),
     );
 }
