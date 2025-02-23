@@ -120,6 +120,15 @@ pub fn build(b: *std.Build) !void {
     norn.want_lto = false; // NOTE: LTO dead-strips exported functions in Zig file. cf: https://github.com/ziglang/zig/issues/22234
     b.installArtifact(norn);
 
+    const init = b.addExecutable(.{
+        .name = "init",
+        .root_source_file = b.path("apps/init/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .linkage = .static,
+    });
+    b.installArtifact(init);
+
     // Make initramfs
     const make_initramfs = b.addSystemCommand(&[_][]const u8{
         "bash",
@@ -128,6 +137,12 @@ pub fn build(b: *std.Build) !void {
     });
     make_initramfs.step.dependOn(&norn.step);
     b.getInstallStep().dependOn(&make_initramfs.step);
+
+    const install_init = b.addInstallFile(
+        init.getEmittedBin(),
+        "rootfs/sbin/init",
+    );
+    make_initramfs.step.dependOn(&install_init.step);
 
     // EFI directory
     const out_dir_name = "img";
