@@ -19,7 +19,7 @@ const gdt = @import("gdt.zig");
 const intr = @import("intr.zig");
 const pg = @import("page.zig");
 
-const Error = mem.Error || pg.PageError;
+const Error = mem.Error || pg.Error;
 
 /// Number of pages for the each AP stack.
 const num_ap_stack_pages = 10;

@@ -138,7 +138,7 @@ pub fn reconstructMapping() !void {
     defer arch.enableIrq();
 
     // Remap pages.
-    try arch.bootReconstructPageTable(bootstrap_allocator_instance.getAllocator());
+    try arch.mem.bootReconstructPageTable(bootstrap_allocator_instance.getAllocator());
     pgtbl_initialized.store(true, .release);
 }
 

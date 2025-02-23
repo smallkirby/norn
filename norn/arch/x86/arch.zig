@@ -12,11 +12,10 @@ const log = std.log.scoped(.arch);
 
 const norn = @import("norn");
 const bits = norn.bits;
-const mem = norn.mem;
 const interrupt = norn.interrupt;
-const PageAllocator = mem.PageAllocator;
-const Phys = mem.Phys;
-const Virt = mem.Virt;
+const PageAllocator = norn.mem.PageAllocator;
+const Phys = norn.mem.Phys;
+const Virt = norn.mem.Virt;
 
 const am = @import("asm.zig");
 const apic = @import("apic.zig");
@@ -29,16 +28,15 @@ const regs = @import("registers.zig");
 const syscall = @import("syscall.zig");
 
 // Architecture-specific error type.
-pub const Error = apic.Error || intr.Error || apic.Error || syscall.Error;
+pub const Error =
+    apic.Error ||
+    intr.Error ||
+    apic.Error ||
+    syscall.Error ||
+    pg.Error;
 
 /// Saved registers for system call handlers.
 pub const SyscallContext = syscall.Registers;
-
-/// Reconstruct the page tables
-/// This function MUST be called only once.
-pub fn bootReconstructPageTable(allocator: PageAllocator) pg.PageError!void {
-    try pg.boot.reconstruct(allocator);
-}
 
 /// Disable external interrupts.
 pub inline fn disableIrq() void {
@@ -168,6 +166,39 @@ pub fn setPerCpuBase(base: Virt) void {
     // Set to KERNEL_GS_BASE.
     am.wrmsr(.kernel_gs_base, base);
 }
+
+/// Memory-related services.
+pub const mem = struct {
+    /// Page attribute.
+    pub const Attribute = pg.Attribute;
+
+    /// Reconstruct the page tables
+    /// Caller MUST ensure that this function is called only once.
+    pub fn bootReconstructPageTable(allocator: PageAllocator) pg.Error!void {
+        try pg.boot.reconstruct(allocator);
+    }
+
+    /// Create a new root of page tables.
+    /// Returns a virtual address of the root table (CR).
+    pub fn createPageTables() Error!Virt {
+        return pg.createPageTables();
+    }
+
+    /// Get the virtual address of the root table (CR3).
+    pub fn getRootTable() Virt {
+        return norn.mem.phys2virt(am.readCr3());
+    }
+
+    /// Maps a physical address to a virtual address.
+    pub fn map(cr3: Virt, vaddr: Virt, paddr: Virt, size: usize, attr: Attribute) Error!void {
+        return pg.map(cr3, vaddr, paddr, size, attr);
+    }
+
+    /// Set the root table (CR3).
+    pub inline fn setPagetable(cr3: Virt) void {
+        am.writeCr3(norn.mem.virt2phys(cr3));
+    }
+};
 
 // ========================================
 
