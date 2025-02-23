@@ -8,7 +8,9 @@ const mem = norn.mem;
 const page_allocator = mem.page_allocator;
 const PageAllocator = mem.PageAllocator;
 
-pub const Error = error{} || PageAllocator.Error;
+pub const Error =
+    arch.Error ||
+    PageAllocator.Error;
 
 /// Thread ID type.
 pub const Tid = usize;
@@ -46,6 +48,12 @@ pub const Thread = struct {
     state: State = .running,
     /// Thread name with null-termination.
     name: [name_max_len:0]u8 = undefined,
+    /// CR3 of the user space.
+    pgtbl: ?mem.Virt = null,
+    /// User stack pointer.
+    user_stack_ptr: ?mem.Virt = null, // TODO
+    /// User IP.
+    user_ip: ?mem.Virt = null, // TODO
 
     /// Create a new thread.
     fn create(
@@ -107,6 +115,57 @@ pub fn createKernelThread(
 ) Error!*Thread {
     const thread = try Thread.create(name, allocator);
     thread.stack_ptr = arch.task.initOrphanFrame(thread.stack_ptr, @intFromPtr(entry));
+
+    return thread;
+}
+
+/// Create a initial thread.
+///
+/// TODO: This function now has many hardcoded code for debug.
+/// TODO: Read init from FS and parse it.
+pub fn createInitialThread(allocator: Allocator) Error!*Thread {
+    const thread = try Thread.create("init", allocator);
+
+    // Copy initial user function for debug.
+    const text_page = try norn.mem.page_allocator.allocPages(1, .normal);
+    const text_ptr: [*]const u8 = @ptrCast(&norn.init.debugUserTask);
+    @memcpy(text_page, text_ptr[0..text_page.len]);
+
+    // Create user stack.
+    const stack_page = try norn.mem.page_allocator.allocPages(1, .normal);
+    @memset(stack_page, 0);
+
+    // Map text segment.
+    const text_base = 0x100000;
+    const text_size = 0x1000;
+
+    const cr3 = try arch.mem.createPageTables();
+    try arch.mem.map(
+        cr3,
+        text_base,
+        mem.virt2phys(text_page.ptr),
+        text_size,
+        .executable,
+    );
+    thread.pgtbl = cr3;
+
+    // Map stack.
+    const stack_base = 0x200000;
+    const stack_size = 0x1000;
+    try arch.mem.map(
+        cr3,
+        stack_base,
+        mem.virt2phys(stack_page.ptr),
+        stack_size,
+        .read_write,
+    );
+
+    thread.stack_ptr = arch.task.initOrphanFrame(
+        thread.stack_ptr,
+        @intFromPtr(&norn.init.initialTask),
+    );
+    thread.user_ip = text_base;
+    thread.user_stack_ptr = stack_base + stack_size - 0x10;
 
     return thread;
 }

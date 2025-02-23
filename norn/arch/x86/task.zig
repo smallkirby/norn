@@ -1,14 +1,19 @@
 const std = @import("std");
 
 const norn = @import("norn");
+const pcpu = norn.pcpu;
 const Thread = norn.thread.Thread;
 
 const gdt = @import("gdt.zig");
 const isr = @import("isr.zig");
 const regs = @import("registers.zig");
+const syscall = @import("syscall.zig");
+
+/// Top of the current stack.
+pub var current_stack_top: u64 linksection(pcpu.section) = undefined;
 
 /// Initial value of RFLAGS register for tasks.
-const initial_rip: regs.Rflags = .{
+const initial_rflags: regs.Rflags = .{
     .cf = false,
     .pf = false,
     .af = false,

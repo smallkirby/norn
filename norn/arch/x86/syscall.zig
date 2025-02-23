@@ -12,6 +12,7 @@ const am = @import("asm.zig");
 const cpuid = @import("cpuid.zig");
 const gdt = @import("gdt.zig");
 const regs = @import("registers.zig");
+const task = @import("task.zig");
 
 /// RSP value when SYSCALL is called.
 var rsp_syscall: u64 linksection(pcpu.section) = undefined;
@@ -121,13 +122,18 @@ export fn syscallEntry() callconv(.Naked) void {
     //  R11: RFLAGS
     //  RCX: RIP
     asm volatile (
+        \\
+        // Disable interrupt.
         \\cli
+
+        // NOTE: Norn kernel shares the same page tables with user (no KPTI).
+        // So we don't have to switch CR3 here.
+
         // SYSCALL does not save RSP, so we need to save it here.
         \\swapgs
         \\movq %%rsp, %%gs:(%[rsp_syscall])
         // Switch to kernel stack
-        // TODO: restore stack pointer here
-        // TODO: Switch CR3 here.
+        \\movq %%gs:(%[kernel_stack]), %%rsp
 
         // Construct context
         \\pushq %[ss]                   # ss
@@ -176,16 +182,20 @@ export fn syscallEntry() callconv(.Naked) void {
         \\popq %%rsi                    # rsi
         \\popq %%rdi                    # rdi
         \\add  $8, %%rsp                # orig_rax
-
-        // Return to user mode
         \\popq %%rcx                    # rip
         \\add  $8, %%rsp                # cs
         \\popq %%r11                    # rflags
+
+        // Restore user stack.
+        \\movq %%gs:(%[rsp_syscall]), %%rsp
+
+        // Return to user.
         \\swapgs
         \\sysretq
         :
         : [ss] "i" (gdt.SegmentSelector{ .index = gdt.user_ds_index, .rpl = 3 }),
           [cs] "i" (gdt.SegmentSelector{ .index = gdt.user_cs_index, .rpl = 3 }),
           [rsp_syscall] "{r12}" (&rsp_syscall), // We can use caller-saved register here
+          [kernel_stack] "{r11}" (&task.current_stack_top),
     );
 }

@@ -9,9 +9,14 @@ const thread = norn.thread;
 pub fn initialTask() noreturn {
     log.debug("Initial task started.", .{});
 
-    asm volatile (
-        \\jmp debugEnterUser
-    );
+    const task = sched.getCurrentTask();
+
+    // Switch CR3
+    const pgtbl = task.pgtbl.?;
+    norn.arch.mem.setPagetable(pgtbl);
+
+    // Enter userland.
+    debugEnterUser(task.user_stack_ptr.?, task.user_ip.?);
 
     {
         log.warn("Reached end of initial task.", .{});
@@ -22,7 +27,7 @@ pub fn initialTask() noreturn {
 
 /// Initial userland task for debugging purposes.
 /// TODO: debug-purpose only. Remove this.
-export fn debugUserTask() noreturn {
+pub export fn debugUserTask() noreturn {
     while (true) {
         asm volatile (
             \\movq $0, %%rax
@@ -34,27 +39,47 @@ export fn debugUserTask() noreturn {
 /// Enter userland task with hardcoded context.
 ///
 /// TODO: Debug-purpose only. Remove this.
-export fn debugEnterUser() callconv(.Naked) void {
+fn debugEnterUser(sp: u64, ip: u64) callconv(.C) void {
     asm volatile (
         \\cli
         // SS (RPL = 3)
-        \\movq $(4 << 3 + 3), %%rdi
-        \\pushq %%rdi
+        \\movq $(4 << 3 + 3), %%r8
+        \\pushq %%r8
         // RSP
-        \\movq %%rsp, %%rdi
-        \\pushq %%rdi
+        \\movq %[rsp], %%r8
+        \\pushq %%r8
         // RFLAGS
-        \\movq $0x02, %%rdi
-        \\pushq %%rdi
+        \\movq $0x02, %%r8
+        \\pushq %%r8
         // CS (RPL = 3)
-        \\movq $(3 << 3 + 3), %%rdi
-        \\pushq %%rdi
+        \\movq $(3 << 3 + 3), %%r8
+        \\pushq %%r8
         // RIP
-        \\movq %[rip], %%rdi
-        \\pushq %%rdi
+        \\movq %[rip], %%r8
+        \\pushq %%r8
+        // Save current top of stack
+        \\movq %%rsp, %%gs:(%[kernel_stack])
+        // Clear registers
+        \\movq $0, %%rax
+        \\movq $0, %%rbx
+        \\movq $0, %%rcx
+        \\movq $0, %%rdx
+        \\movq $0, %%rsi
+        \\movq $0, %%rdi
+        \\movq $0, %%rbp
+        \\movq $0, %%r8
+        \\movq $0, %%r9
+        \\movq $0, %%r10
+        \\movq $0, %%r11
+        \\movq $0, %%r12
+        \\movq $0, %%r13
+        \\movq $0, %%r14
+        \\movq $0, %%r15
         // IRETQ
         \\iretq
         :
-        : [rip] "r" (&debugUserTask),
+        : [rip] "r" (ip),
+          [rsp] "r" (sp),
+          [kernel_stack] "{r11}" (&norn.arch.task.current_stack_top),
     );
 }

@@ -14,7 +14,9 @@ const Thread = thread.Thread;
 const page_allocator = mem.page_allocator;
 const PageAllocator = mem.PageAllocator;
 
-pub const Error = error{} || mem.Error;
+pub const Error =
+    arch.Error ||
+    mem.Error;
 
 /// List of tasks.
 const TaskList = DoublyLinkedList(*Thread);
@@ -107,9 +109,14 @@ pub fn enqueue(task: *Thread, allocator: Allocator) Error!void {
     queue.list.append(node);
 }
 
+/// Get the current task running on this CPU.
+pub inline fn getCurrentTask() *Thread {
+    return pcpu.thisCpuGet(&current_task).data;
+}
+
 /// Put the initial task into the run queue.
-pub fn setInitialTask(init: thread.KernelThreadEntry, allocator: Allocator) Error!void {
-    const init_task = try thread.createKernelThread("[init]", init, allocator);
+pub fn setupInitialTask(allocator: Allocator) Error!void {
+    const init_task = try thread.createInitialThread(allocator);
     const init_node = try allocator.create(QueuedTask);
     init_node.* = QueuedTask{ .data = init_task };
     pcpu.thisCpuSet(&current_task, init_node);
