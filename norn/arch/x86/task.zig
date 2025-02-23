@@ -1,6 +1,8 @@
 const std = @import("std");
 
 const norn = @import("norn");
+const arch = norn.arch;
+const mem = norn.mem;
 const pcpu = norn.pcpu;
 const Thread = norn.thread.Thread;
 
@@ -8,9 +10,23 @@ const gdt = @import("gdt.zig");
 const isr = @import("isr.zig");
 const regs = @import("registers.zig");
 const syscall = @import("syscall.zig");
+const TaskStateSegment = gdt.TaskStateSegment;
 
-/// Top of the current stack.
-pub var current_stack_top: u64 linksection(pcpu.section) = undefined;
+pub const Error = mem.Error || arch.Error;
+
+/// Current TSS.
+pub var current_tss: TaskStateSegment linksection(pcpu.section) = undefined;
+
+/// Size in bytes of kernel stack.
+const kernel_stack_size = 2 * mem.size_4kib;
+/// Number of pages for kernel stack.
+const kernel_stack_num_pages = kernel_stack_size / mem.size_4kib;
+
+/// x64 version of architecture-specific task context.
+const X64Context = struct {
+    /// TSS
+    tss: *TaskStateSegment,
+};
 
 /// Initial value of RFLAGS register for tasks.
 const initial_rflags: regs.Rflags = .{
@@ -46,6 +62,31 @@ const ContextStackFrame = packed struct {
     rip: u64,
 };
 
+/// TODO: doc
+pub fn setupNewTask(task: *Thread) Error!void {
+    // Init page table.
+    task.pgtbl = try arch.mem.createPageTables();
+
+    // Init kernel stack.
+    const stack = try mem.page_allocator.allocPages(kernel_stack_num_pages, .normal);
+    errdefer mem.page_allocator.freePages(stack);
+    const stack_ptr = stack.ptr + stack.len;
+    task.stack = stack;
+    task.stack_ptr = stack_ptr;
+
+    // Init TSS.
+    const tss = try mem.general_allocator.create(TaskStateSegment);
+    tss.* = TaskStateSegment{
+        .rsp0 = @intFromPtr(task.stack.ptr),
+    };
+    x64ctx(task).tss = tss;
+}
+
+/// Convert arch-specific task context to x64 context.
+inline fn x64ctx(task: *Thread) *X64Context {
+    return @ptrCast(&task.arch_ctx);
+}
+
 /// Set up the initial stack frame for an orphaned task.
 /// Returns the pointer to the stack frame.
 pub fn initOrphanFrame(rsp: [*]u8, ip: u64) [*]u8 {
@@ -74,8 +115,10 @@ noinline fn initialSwitchToImpl() callconv(.Naked) noreturn {
 
     asm volatile (std.fmt.comptimePrint(
             \\
-            // Switch to the next task's stack.
+            // Switch to the initial task's stack.
             \\movq {d}(%%rdi), %%rsp
+            // Move initial task address to RSI for switchToInternal().
+            \\movq %%rdi, %%rsi
             // Restore callee-saved registers.
             \\popq %%r15
             \\popq %%r14
@@ -83,6 +126,7 @@ noinline fn initialSwitchToImpl() callconv(.Naked) noreturn {
             \\popq %%r12
             \\popq %%rbx
             \\popq %%rbp
+            \\
             \\jmp switchToInternal
         , .{sp_offset}));
 }
@@ -132,6 +176,12 @@ noinline fn switchToImpl() callconv(.Naked) void {
 /// Callee-saved registers are already saved and restored, so we don't care about them.
 ///
 /// This function returns to the caller of switchTo().
-export fn switchToInternal(_: *Thread, _: *Thread) callconv(.C) void {
-    // TODO Save and restore other context including segment registers.
+export fn switchToInternal(_: *Thread, next: *Thread) callconv(.C) void {
+    // Restore TSS.RSP0.
+    const rsp0 = @intFromPtr(next.stack_ptr);
+    x64ctx(next).tss.rsp0 = rsp0;
+    pcpu.thisCpuVar(&current_tss).rsp0 = rsp0;
+
+    // Return to the caller of switchTo().
+    return;
 }

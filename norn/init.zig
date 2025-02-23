@@ -12,7 +12,7 @@ pub fn initialTask() noreturn {
     const task = sched.getCurrentTask();
 
     // Switch CR3
-    const pgtbl = task.pgtbl.?;
+    const pgtbl = task.pgtbl;
     norn.arch.mem.setPagetable(pgtbl);
 
     // Enter userland.
@@ -28,6 +28,14 @@ pub fn initialTask() noreturn {
 /// Initial userland task for debugging purposes.
 /// TODO: debug-purpose only. Remove this.
 pub export fn debugUserTask() noreturn {
+    asm volatile (
+        \\movq $0x12345678, %%rdi
+        \\movq $0xDEADBEEF, %%rsi
+        \\movq $0x87654321, %%rdx
+        \\movq $0xCAFEBABE, %%r10
+        \\movq $0x11223344, %%r8
+    );
+
     while (true) {
         asm volatile (
             \\movq $0, %%rax
@@ -80,6 +88,6 @@ fn debugEnterUser(sp: u64, ip: u64) callconv(.C) void {
         :
         : [rip] "r" (ip),
           [rsp] "r" (sp),
-          [kernel_stack] "{r11}" (&norn.arch.task.current_stack_top),
+          [kernel_stack] "{r11}" (&norn.arch.task.current_tss.rsp0),
     );
 }

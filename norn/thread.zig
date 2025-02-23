@@ -40,16 +40,19 @@ pub const Thread = struct {
 
     /// Thread ID.
     tid: Tid,
-    /// Stack.
+    /// Kernel stack.
     stack: []u8,
-    /// Stack pointer.
+    /// Kernel stack pointer.
     stack_ptr: [*]u8,
     /// Thread state.
     state: State = .running,
     /// Thread name with null-termination.
     name: [name_max_len:0]u8 = undefined,
     /// CR3 of the user space.
-    pgtbl: ?mem.Virt = null,
+    pgtbl: mem.Virt,
+    /// Arch-specific context.
+    arch_ctx: *anyopaque,
+
     /// User stack pointer.
     user_stack_ptr: ?mem.Virt = null, // TODO
     /// User IP.
@@ -63,15 +66,13 @@ pub const Thread = struct {
         const self = try allocator.create(Thread);
         errdefer allocator.destroy(self);
 
-        const stack = try page_allocator.allocPages(default_stack_pgnum, .normal);
-        errdefer page_allocator.freePages(stack);
-        const stack_ptr = stack.ptr + stack.len - 0x10;
+        // Initialize arch-specific context.
+        try arch.task.setupNewTask(self);
 
-        self.* = Thread{
-            .tid = assignNewTid(),
-            .stack = stack,
-            .stack_ptr = stack_ptr,
-        };
+        // Assign unique TID.
+        self.tid = assignNewTid();
+
+        // Initialize thread name.
         truncCopyName(&self.name, name);
 
         return self;
@@ -139,21 +140,19 @@ pub fn createInitialThread(allocator: Allocator) Error!*Thread {
     const text_base = 0x100000;
     const text_size = 0x1000;
 
-    const cr3 = try arch.mem.createPageTables();
     try arch.mem.map(
-        cr3,
+        thread.pgtbl,
         text_base,
         mem.virt2phys(text_page.ptr),
         text_size,
         .executable,
     );
-    thread.pgtbl = cr3;
 
     // Map stack.
     const stack_base = 0x200000;
     const stack_size = 0x1000;
     try arch.mem.map(
-        cr3,
+        thread.pgtbl,
         stack_base,
         mem.virt2phys(stack_page.ptr),
         stack_size,

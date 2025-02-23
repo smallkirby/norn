@@ -422,10 +422,13 @@ pub const TaskStateSegment = packed struct {
     /// Reserved.
     _reserved1: u32 = 0,
     /// RSP0.
+    /// In Norn, this field is used to store kernel stack pointer for privilege level change from ring-3 to ring-0.
     rsp0: u64 = 0,
     /// RSP1.
+    /// In Norn, this field is used to store user stack pointer.
     rsp1: u64 = 0,
     /// RSP2.
+    /// In Norn, this field is not used.
     rsp2: u64 = 0,
     /// Reserved.
     _reserved2: u64 = 0,
