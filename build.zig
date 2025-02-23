@@ -69,6 +69,11 @@ pub fn build(b: *std.Build) !void {
         "debug_intr",
         "Print interrupts for debugging.",
     ) orelse false;
+    const debug_exit = b.option(
+        bool,
+        "debug_exit",
+        "Add isa-debug-exit device.",
+    ) orelse false;
 
     const options = b.addOptions();
     options.addOption(std.log.Level, "log_level", log_level);
@@ -194,6 +199,10 @@ pub fn build(b: *std.Build) !void {
             "-enable-kvm",
         });
     }
+    if (debug_exit) try qemu_args.appendSlice(&.{
+        "-device",
+        "isa-debug-exit,iobase=0xF0,iosize=0x01",
+    });
     const qemu_cmd = b.addSystemCommand(qemu_args.items);
     qemu_cmd.step.dependOn(b.getInstallStep());
 
