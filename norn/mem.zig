@@ -9,7 +9,11 @@ const MemoryMap = surtr.MemoryMap;
 const norn = @import("norn");
 const arch = norn.arch;
 
-/// Allocator interface to get free pages.
+const BootstrapAllocator = @import("mem/BootstrapAllocator.zig");
+const BuddyAllocator = @import("mem/BuddyAllocator.zig");
+const BinAllocator = @import("mem/BinAllocator.zig");
+
+/// Allocator interface to manage pages.
 pub const PageAllocator = @import("mem/PageAllocator.zig");
 
 /// Errors.
@@ -53,12 +57,18 @@ pub const Phys = u64;
 /// Virtual address.
 pub const Virt = u64;
 
+/// KiB in bytes.
 pub const kib = 1024;
+/// MiB in bytes.
 pub const mib = 1024 * kib;
+/// GiB in bytes.
 pub const gib = 1024 * mib;
 
+/// Size of a single page in bytes in Norn kernel.
 pub const page_size: u64 = size_4kib;
+/// Number of bits to shift to extract the PFN from physical address.
 pub const page_shift: u64 = page_shift_4kib;
+/// Bit mask to extract the page-aligned address.
 pub const page_mask: u64 = page_mask_4kib;
 
 /// Size in bytes of a 4KiB.
@@ -89,22 +99,23 @@ pub const direct_map_size = 512 * gib;
 /// The virtual address starting from the address is directly mapped to the physical address at 0x0.
 pub const kernel_base = 0xFFFF_FFFF_8000_0000;
 
-const BootstrapAllocator = @import("mem/BootstrapAllocator.zig");
-const BuddyAllocator = @import("mem/BuddyAllocator.zig");
-const BinAllocator = @import("mem/BinAllocator.zig");
-var bootstrap_allocator_instance = BootstrapAllocator.new();
-var buddy_allocator_instance = BuddyAllocator.new();
-var bin_allocator_instance = BinAllocator.newUninit();
-
 /// General memory allocator.
 pub const general_allocator = bin_allocator_instance.getAllocator();
 /// General page allocator that can be used to allocate physically contiguous pages.
 pub const page_allocator = buddy_allocator_instance.getAllocator();
 
+/// One and only instance of the bootstrap allocator.
+var bootstrap_allocator_instance = BootstrapAllocator.new();
+/// One and only instance of the buddy allocator.
+var buddy_allocator_instance = BuddyAllocator.new();
+/// One and only instance of the bin allocator.
+var bin_allocator_instance = BinAllocator.newUninit();
+
 /// Whether the page table is initialized.
 var pgtbl_initialized = atomic.Value(bool).init(false);
 
 /// Initialize the bootstrap allocator.
+///
 /// You MUST call this function before using `page_allocator`.
 pub fn initBootstrapAllocator(map: MemoryMap) void {
     norn.rtt.expect(!pgtbl_initialized.load(.acquire));
@@ -112,12 +123,14 @@ pub fn initBootstrapAllocator(map: MemoryMap) void {
 }
 
 /// Initialize the buddy allocator.
+///
 /// You MUST call this function before using `buddy_allocator`.
 pub fn initBuddyAllocator(log_fn: ?norn.LogFn) void {
     buddy_allocator_instance.init(&bootstrap_allocator_instance, log_fn);
 }
 
 /// Initialize the general allocator.
+///
 /// You MUST call this function before using `general_allocator`.
 pub fn initGeneralAllocator() void {
     bin_allocator_instance.init(page_allocator);
@@ -129,6 +142,7 @@ pub fn isPgtblInitialized() bool {
 }
 
 /// Discard the initial direct mapping and construct Norn's page tables.
+///
 /// It creates two mappings: direct mapping and kernel mapping.
 /// After this function, direct mapping provided by UEFI is no longer available.
 pub fn reconstructMapping() !void {
@@ -143,6 +157,7 @@ pub fn reconstructMapping() !void {
 }
 
 /// Translate the given virtual address to physical address.
+///
 /// This function just use simple calculation and does not walk page tables.
 /// To do page table walk, use arch-specific functions.
 pub fn virt2phys(addr: anytype) Phys {
@@ -161,6 +176,7 @@ pub fn virt2phys(addr: anytype) Phys {
 }
 
 /// Translate the given physical address to virtual address.
+///
 /// This function just use simple calculation and does not walk page tables.
 /// To do page table walk, use arch-specific functions.
 pub fn phys2virt(addr: anytype) Virt {

@@ -1,30 +1,28 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
+//! Arch-independent thread structure.
+//!
+//! This filed provides a thread structure and related functions,
+//! that are independent from the specific architecture.
 
-const norn = @import("norn.zig");
+const norn = @import("norn");
 const arch = norn.arch;
 const mem = norn.mem;
 const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
 
 const page_allocator = mem.page_allocator;
-const PageAllocator = mem.PageAllocator;
+const general_allocator = mem.general_allocator;
 
+/// Error.
 pub const Error =
     arch.Error ||
-    PageAllocator.Error;
+    mem.Error;
 
-/// Thread ID type.
+/// Type of thread ID.
 pub const Tid = usize;
 /// Entry point of kernel thread.
 pub const KernelThreadEntry = *const fn () noreturn;
 
-/// Default stack size of a thread.
-const default_stack_size: usize = 1 * mem.size_4kib;
-/// Default number of pages for the stack.
-const default_stack_pgnum: usize = @divFloor(default_stack_size - 1, mem.size_4kib) + 1;
-
-/// Next thread ID.
-var tid_next: Tid = 0;
+/// Type representing a linked list of threads.
+pub const ThreadList = InlineDoublyLinkedList(Thread, "list_head");
 
 /// Thread state.
 pub const State = enum {
@@ -34,10 +32,15 @@ pub const State = enum {
     dead,
 };
 
-/// Type representing a linked list of threads.
-pub const ThreadList = InlineDoublyLinkedList(Thread, "list_head");
+/// Default stack size of a kernel thread.
+const default_stack_size: usize = 1 * mem.size_4kib;
+/// Default number of pages for kernel stack.
+const default_stack_pgnum: usize = @divFloor(default_stack_size - 1, mem.size_4kib) + 1;
 
-/// Execution context.
+/// Next thread ID.
+var tid_next: Tid = 0;
+
+/// Execution context and resources.
 pub const Thread = struct {
     /// Maximum length of the thread name.
     const name_max_len: usize = 16;
@@ -66,17 +69,16 @@ pub const Thread = struct {
     list_head: ThreadList.Head = .{},
 
     /// Create a new thread.
-    fn create(
-        name: []const u8,
-        allocator: Allocator,
-    ) Error!*Thread {
-        const self = try allocator.create(Thread);
-        errdefer allocator.destroy(self);
+    ///
+    /// - `name`: Name of the thread.
+    fn create(name: []const u8) Error!*Thread {
+        const self = try general_allocator.create(Thread);
+        errdefer general_allocator.destroy(self);
 
         // Initialize arch-specific context.
         try arch.task.setupNewTask(self);
 
-        // Assign unique TID.
+        // Assign an unique TID.
         self.tid = assignNewTid();
 
         // Initialize thread name.
@@ -86,14 +88,18 @@ pub const Thread = struct {
     }
 
     /// Destroy the thread.
-    fn destroy(self: *Thread, allocator: Allocator) void {
+    fn destroy(self: *Thread) void {
         page_allocator.freePages(self.stack);
-        allocator.destroy(self);
+        general_allocator.destroy(self);
     }
 
     /// Copy the thread name to the output buffer.
+    ///
     /// The name is truncated if it exceeds the maximum length.
     /// The output buffer is null-terminated.
+    ///
+    /// - `out`: Buffer to copy the name.
+    /// - `in` : Name to copy.
     inline fn truncCopyName(out: *[name_max_len:0]u8, in: []const u8) void {
         const length = @min(in.len, name_max_len);
         @memcpy(out[0..length], in[0..length]);
@@ -108,7 +114,7 @@ pub const Thread = struct {
     }
 };
 
-/// Assign new unique TID.
+/// Consume TID pool to allocate a new unique TID.
 fn assignNewTid() Tid {
     const tid = tid_next;
     tid_next +%= 1;
@@ -116,23 +122,22 @@ fn assignNewTid() Tid {
 }
 
 /// Create a new kernel thread.
-pub fn createKernelThread(
-    name: []const u8,
-    entry: KernelThreadEntry,
-    allocator: Allocator,
-) Error!*Thread {
-    const thread = try Thread.create(name, allocator);
+///
+/// - `name` : Name of the kernel thread.
+/// - `entry`: Entry point of the kernel thread.
+pub fn createKernelThread(name: []const u8, entry: KernelThreadEntry) Error!*Thread {
+    const thread = try Thread.create(name);
     thread.stack_ptr = arch.task.initOrphanFrame(thread.stack_ptr, @intFromPtr(entry));
 
     return thread;
 }
 
-/// Create a initial thread.
+/// Create a initial thread (PID 1).
 ///
 /// TODO: This function now has many hardcoded code for debug.
 /// TODO: Read init from FS and parse it.
-pub fn createInitialThread(allocator: Allocator) Error!*Thread {
-    const thread = try Thread.create("init", allocator);
+pub fn createInitialThread() Error!*Thread {
+    const thread = try Thread.create("init");
 
     // Copy initial user function for debug.
     const text_page = try norn.mem.page_allocator.allocPages(1, .normal);

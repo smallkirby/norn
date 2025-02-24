@@ -148,8 +148,8 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     // Initialize scheduler.
     log.info("Initializing scheduler...", .{});
     arch.disableIrq();
-    try norn.sched.initThisCpu(norn.mem.general_allocator);
-    try norn.sched.setupInitialTask(norn.mem.general_allocator);
+    try norn.sched.initThisCpu();
+    try norn.sched.setupInitialTask();
     norn.sched.debugPrintRunQueue(log.debug);
 
     // Start timer and scheduler.

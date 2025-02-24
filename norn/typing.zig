@@ -1,4 +1,8 @@
-/// Wrapper struct that allows partial write of fields with an anonymous struct.
+//! Generic typing utility.
+//!
+//! This file provides generic data structures and types.
+
+/// Wrapper struct that allows setting values to the part of fields with an anonymous struct.
 pub fn Partialable(Type: type) type {
     return packed struct {
         const Self = @This();
@@ -29,6 +33,13 @@ pub fn Partialable(Type: type) type {
 }
 
 /// Doubly-linked list where head is embedded in the data structure itself.
+///
+/// This is based on Zig standard library's `std.DoublyLinkedList`,
+/// but the head is embedded in the data structure
+/// that is allocated and managed separately in the standard library.
+///
+/// - `T`    : Type of the data structure to be managed in the list.
+/// - `field`: Field name of the head (`Head`) in the data structure.
 pub fn InlineDoublyLinkedList(comptime T: type, comptime field: []const u8) type {
     return struct {
         const Self = @This();

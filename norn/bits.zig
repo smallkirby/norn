@@ -1,6 +1,13 @@
+//! Bit manipulation utilities.
+//!
+//! This file provides a numeric utilities for bit manipulation.
+
 const std = @import("std");
 
 /// Set the integer where only the nth bit is set.
+///
+/// - `T`   : Type of the integer.
+/// - `nth` : The bit position to set.
 pub fn tobit(T: type, nth: anytype) T {
     const val = switch (@typeInfo(@TypeOf(nth))) {
         .Int, .ComptimeInt => nth,
@@ -11,6 +18,9 @@ pub fn tobit(T: type, nth: anytype) T {
 }
 
 /// Check if the nth bit is set.
+///
+/// - `val` : The integer to check.
+/// - `nth` : The bit position to check.
 pub inline fn isset(val: anytype, nth: anytype) bool {
     const int_nth = switch (@typeInfo(@TypeOf(nth))) {
         .Int, .ComptimeInt => nth,
@@ -21,6 +31,10 @@ pub inline fn isset(val: anytype, nth: anytype) bool {
 }
 
 /// Concatnate two values and returns new value with twice the bit width.
+///
+/// - `T` : Type of the output value.
+/// - `a` : The first value. Becomes the upper half of the output.
+/// - `b` : The second value. Must be the same type as `a`. Becomes the lower half of the output.
 pub inline fn concat(T: type, a: anytype, b: @TypeOf(a)) T {
     const U = @TypeOf(a);
     const width_T = @typeInfo(T).Int.bits;
@@ -35,7 +49,11 @@ pub inline fn concat(T: type, a: anytype, b: @TypeOf(a)) T {
 
 /// Concatnate arbitrary number of integers in the order of the arguments.
 ///
-/// Numbers must not be comptime_int. The width must be explicitly specified.
+/// Numbers MUST NOT be comptime_int.
+/// The width MUST be explicitly specified for each value.
+///
+/// - `T`   : Type of the output value.
+/// - `args`: Arbitrary number of values to concatnate.
 pub fn concatMany(T: type, args: anytype) T {
     const fields = std.meta.fields(@TypeOf(args));
 
@@ -75,14 +93,24 @@ pub fn concatMany(T: type, args: anytype) T {
 }
 
 /// Set the nth bit in the integer.
+///
+/// - `T`  : Type of the integer.
+/// - `val`: The integer to set nth bit.
+/// - `nth`: The bit position to set.
 pub inline fn set(T: type, val: T, comptime nth: anytype) T {
     return val | tobit(T, nth);
 }
 
 /// Unset the nth bit in the integer.
+///
+/// - `T`  : Type of the integer.
+/// - `val`: The integer to unset nth bit.
+/// - `nth`: The bit position to unset.
 pub inline fn unset(T: type, val: T, comptime nth: anytype) T {
     return val & ~tobit(T, nth);
 }
+
+// =======================================
 
 const testing = std.testing;
 
