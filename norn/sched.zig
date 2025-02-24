@@ -44,8 +44,8 @@ pub fn schedule() void {
     arch.disableIrq();
     arch.getLocalApic().eoi();
 
-    const rq: *ThreadList = pcpu.thisCpuVar(&runq).*;
-    const cur: *Thread = pcpu.thisCpuGet(&current_task);
+    const rq: *ThreadList = getRunQueue();
+    const cur: *Thread = getCurrentTask();
 
     // Find the next task to run.
     const next: *Thread = rq.pop() orelse {
