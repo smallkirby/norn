@@ -11,7 +11,7 @@
 ```bash
 # Run on QEMU
 zig build run -Dlog_level=debug --summary all -Druntime_test -Doptimize=Debug
-# Runtime Test
+# Unit Test
 zig build test --summary all -Druntime_test=true
 ```
 
