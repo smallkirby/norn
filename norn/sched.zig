@@ -1,7 +1,6 @@
 const std = @import("std");
 const log = std.log.scoped(.sched);
 const Allocator = std.mem.Allocator;
-const DoublyLinkedList = std.DoublyLinkedList;
 
 const norn = @import("norn.zig");
 const arch = norn.arch;
@@ -10,6 +9,7 @@ const pcpu = norn.pcpu;
 const SpinLock = norn.SpinLock;
 const thread = norn.thread;
 const Thread = thread.Thread;
+const ThreadList = thread.ThreadList;
 
 const page_allocator = mem.page_allocator;
 const PageAllocator = mem.PageAllocator;
@@ -18,36 +18,17 @@ pub const Error =
     arch.Error ||
     mem.Error;
 
-/// List of tasks.
-const TaskList = DoublyLinkedList(*Thread);
-/// Node of a queued task.
-const QueuedTask = TaskList.Node;
-
 /// Run queue of this CPU.
-var runq: RunQueue linksection(pcpu.section) = undefined;
+var runq: *ThreadList linksection(pcpu.section) = undefined;
 /// Task running now on this CPU.
-var current_task: *QueuedTask linksection(pcpu.section) = undefined;
-
-/// Run queue that manages tasks waiting for execution.
-const RunQueue = struct {
-    /// List of tasks.
-    list: *TaskList,
-
-    /// Create a new run queue.
-    fn new(allocator: Allocator) Error!RunQueue {
-        const list = try allocator.create(TaskList);
-        list.* = TaskList{};
-
-        return .{
-            .list = list,
-        };
-    }
-};
+var current_task: *Thread linksection(pcpu.section) = undefined;
 
 /// Initialize the scheduler for this CPU.
 pub fn initThisCpu(allocator: Allocator) Error!void {
     // Initialize the run queue
-    pcpu.thisCpuSet(&runq, try RunQueue.new(allocator));
+    const rq = try allocator.create(ThreadList);
+    rq.* = .{};
+    pcpu.thisCpuSet(&runq, rq);
 
     // Initialize the idle task
     try setupIdleTask(allocator);
@@ -55,7 +36,7 @@ pub fn initThisCpu(allocator: Allocator) Error!void {
 
 /// Run the task scheduler on this CPU.
 pub fn runThisCpu() noreturn {
-    norn.arch.task.initialSwitchTo(pcpu.thisCpuGet(&current_task).data);
+    norn.arch.task.initialSwitchTo(pcpu.thisCpuGet(&current_task));
 }
 
 /// Schedule the next task.
@@ -63,13 +44,13 @@ pub fn schedule() void {
     arch.disableIrq();
     arch.getLocalApic().eoi();
 
-    const queue = pcpu.thisCpuVar(&runq);
-    const cur_node = pcpu.thisCpuGet(&current_task);
+    const rq: *ThreadList = pcpu.thisCpuVar(&runq).*;
+    const cur: *Thread = pcpu.thisCpuGet(&current_task);
 
     // Find the next task to run.
-    const next_node = if (queue.list.first) |first| first else {
+    const next: *Thread = rq.pop() orelse {
         // No task to run.
-        norn.rtt.expect(cur_node.data.tid == 0); // must be idle task
+        norn.rtt.expect(cur.tid == 0); // must be idle task
 
         if (norn.is_runtime_test) {
             log.info("No task to run. Terminating QEMU...", .{});
@@ -80,55 +61,49 @@ pub fn schedule() void {
         arch.enableIrq();
         return;
     };
-    const next_task: *Thread = next_node.data;
-
-    // Remove the next task from the queue.
-    queue.list.remove(next_node);
 
     // Update the current task.
-    switch (cur_node.data.state) {
+    switch (cur.state) {
         .running => {
             // Insert the current task into the tail of the queue.
-            queue.list.append(cur_node);
+            rq.append(cur);
         },
         .dead => {
             // TODO: Destroy the task.
         },
     }
-    pcpu.thisCpuSet(&current_task, next_node);
+    pcpu.thisCpuSet(&current_task, next);
 
     // Switch the context.
-    norn.arch.task.switchTo(cur_node.data, next_task);
-}
-
-/// Enqueue a task to the run queue.
-pub fn enqueue(task: *Thread, allocator: Allocator) Error!void {
-    const queue = pcpu.thisCpuVar(&runq);
-    const node = try allocator.create(QueuedTask);
-    node.* = QueuedTask{ .data = task };
-    queue.list.append(node);
+    norn.arch.task.switchTo(cur, next);
 }
 
 /// Get the current task running on this CPU.
 pub inline fn getCurrentTask() *Thread {
-    return pcpu.thisCpuGet(&current_task).data;
+    return pcpu.thisCpuGet(&current_task);
+}
+
+/// Get the pointer to the run queue of this CPU.
+inline fn getRunQueue() *ThreadList {
+    return pcpu.thisCpuGet(&runq);
+}
+
+/// Append a new task to the tail of the run queue.
+inline fn enqueueTask(task: *Thread) void {
+    getRunQueue().append(task);
 }
 
 /// Put the initial task into the run queue.
 pub fn setupInitialTask(allocator: Allocator) Error!void {
     const init_task = try thread.createInitialThread(allocator);
-    const init_node = try allocator.create(QueuedTask);
-    init_node.* = QueuedTask{ .data = init_task };
-    pcpu.thisCpuSet(&current_task, init_node);
+    enqueueTask(init_task);
+    pcpu.thisCpuSet(&current_task, init_task);
 }
 
 /// Setup the idle task and set the current task to it.
 fn setupIdleTask(allocator: Allocator) Error!void {
     const idle_task = try thread.createKernelThread("[idle]", idleTask, allocator);
-    const idle_node = try allocator.create(QueuedTask);
-    idle_node.* = QueuedTask{ .data = idle_task };
-
-    try enqueue(idle_task, allocator);
+    enqueueTask(idle_task);
 }
 
 /// Idle task that yields the CPU to other tasks immediately.
@@ -141,10 +116,10 @@ fn idleTask() noreturn {
 
 /// Print the list of threads in the run queue of this CPU.
 pub fn debugPrintRunQueue(logger: anytype) void {
-    const queue = pcpu.thisCpuVar(&runq);
-    var node: ?*QueuedTask = queue.list.first;
-    while (node) |n| {
-        logger("{d: >3}: {s}", .{ n.data.tid, n.data.getName() });
-        node = n.next;
+    const queue: *ThreadList = getRunQueue();
+    var node: ?*Thread = queue.first;
+    while (node) |th| {
+        logger("{d: >3}: {s}", .{ th.tid, th.getName() });
+        node = th.list_head.next;
     }
 }

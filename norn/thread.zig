@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 const norn = @import("norn.zig");
 const arch = norn.arch;
 const mem = norn.mem;
+const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
 
 const page_allocator = mem.page_allocator;
 const PageAllocator = mem.PageAllocator;
@@ -33,6 +34,9 @@ pub const State = enum {
     dead,
 };
 
+/// Type representing a linked list of threads.
+pub const ThreadList = InlineDoublyLinkedList(Thread, "list_head");
+
 /// Execution context.
 pub const Thread = struct {
     /// Maximum length of the thread name.
@@ -57,6 +61,9 @@ pub const Thread = struct {
     user_stack_ptr: ?mem.Virt = null, // TODO
     /// User IP.
     user_ip: ?mem.Virt = null, // TODO
+
+    /// Linked list of threads.
+    list_head: ThreadList.Head = .{},
 
     /// Create a new thread.
     fn create(
