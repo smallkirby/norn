@@ -23,6 +23,7 @@ pub const rtt = @import("rtt.zig");
 pub const syscall = @import("syscall.zig");
 pub const thread = @import("thread.zig");
 pub const timer = @import("timer.zig");
+pub const util = @import("util.zig");
 pub usingnamespace @import("typing.zig");
 
 /// Whether the module is built with runtime tests enabled.

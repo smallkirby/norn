@@ -16,10 +16,11 @@ const std = @import("std");
 const norn = @import("norn");
 const arch = norn.arch;
 const mem = norn.mem;
+const util = norn.util;
+const PageAllocator = mem.PageAllocator;
 const Virt = mem.Virt;
 
 const page_allocator = mem.page_allocator;
-const PageAllocator = mem.PageAllocator;
 
 /// Section name where per-CPU data is placed.
 pub const section = ".data..percpu";
@@ -53,7 +54,7 @@ pub fn init(num_cpus: usize, percpu_base: Virt) Error!void {
     // Calculate offsets of per-CPU data.
     for (0..num_cpus) |i| {
         const offset = if (i == 0) 0 else cpu_offsets[i - 1] + per_cpu_size;
-        cpu_offsets[i] = roundup(offset, percpu_align);
+        cpu_offsets[i] = util.roundup(offset, percpu_align);
     }
 
     // Allocate per-CPU data area.
@@ -96,11 +97,6 @@ pub inline fn thisCpuSet(comptime pointer: anytype, value: @typeInfo(@TypeOf(poi
 /// Get the virtual address of per-CPU data area for the given CPU.
 inline fn rawGetCpuHead(cpu: usize) [*]u8 {
     return @ptrFromInt(@intFromPtr(percpu_instance) + cpu_offsets[cpu]);
-}
-
-/// Round up the value to the given alignment.
-inline fn roundup(value: usize, alignment: usize) usize {
-    return (value + alignment - 1) & ~(alignment - 1);
 }
 
 // =======================================
