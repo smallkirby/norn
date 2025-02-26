@@ -1,3 +1,16 @@
+//! This file provides per-CPU data access.
+//!
+//! Per-CPU variable can be defined by adding `linksection(pcpu.section)` to the variable.
+//! These variables are placed in the `.data..percpu` section.
+//! By calling `init()` function, these data are copied for each CPU.
+//!
+//! Each CPU must call `initThisCpu()`.
+//! The function sets the base address of per-CPU data to the segment register.
+//! After that, you can access per-CPU data by using `thisCpuXYZ()` function.
+//!
+//! Note that pointer returned by `thisCpuVar()` is in the per-CPU address space.
+//! So you cannot pass the pointer to the function that expects a pointer in the umua address space.
+
 const std = @import("std");
 
 const norn = @import("norn");
@@ -18,7 +31,9 @@ const percpu_align = 16;
 /// Address space of per-CPU data.
 const percpu_addrspace = std.builtin.AddressSpace.gs;
 
+/// Start address of initial per-CPU data.
 extern const __per_cpu_start: *void;
+/// End address of initial per-CPU data.
 extern const __per_cpu_end: *void;
 
 /// Offsets of per-CPU data.
@@ -74,7 +89,6 @@ pub inline fn thisCpuGet(comptime pointer: anytype) @typeInfo(@TypeOf(pointer)).
 }
 
 /// Set the given value to the per-CPU variable.
-/// TODO disable preemption
 pub inline fn thisCpuSet(comptime pointer: anytype, value: @typeInfo(@TypeOf(pointer)).Pointer.child) void {
     thisCpuVar(pointer).* = value;
 }
@@ -84,6 +98,7 @@ inline fn rawGetCpuHead(cpu: usize) [*]u8 {
     return @ptrFromInt(@intFromPtr(percpu_instance) + cpu_offsets[cpu]);
 }
 
+/// Round up the value to the given alignment.
 inline fn roundup(value: usize, alignment: usize) usize {
     return (value + alignment - 1) & ~(alignment - 1);
 }
@@ -91,6 +106,8 @@ inline fn roundup(value: usize, alignment: usize) usize {
 // =======================================
 
 /// Mock of `percpu` module for testing.
+///
+/// You cannot access per-CPU data in the unit test.
 pub const mock_for_testing = struct {
     comptime {
         if (!@import("builtin").is_test) {
@@ -99,13 +116,17 @@ pub const mock_for_testing = struct {
     }
 
     pub const section = ".data..percpu";
+
     pub fn initThisCpu(_: usize) void {}
+
     pub fn thisCpuVar(comptime pointer: anytype) *@typeInfo(@TypeOf(pointer)).Pointer.child {
         return pointer;
     }
+
     pub fn thisCpuGet(comptime pointer: anytype) @typeInfo(@TypeOf(pointer)).Pointer.child {
         return pointer.*;
     }
+
     pub fn thisCpuSet(comptime pointer: anytype, value: @typeInfo(@TypeOf(pointer)).Pointer.child) void {
         pointer.* = value;
     }
