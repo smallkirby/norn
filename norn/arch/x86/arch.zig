@@ -51,6 +51,27 @@ pub inline fn enableIrq() void {
 /// Enable system calls.
 pub const enableSyscall = syscall.init;
 
+/// Get frequency of TSC in Hz.
+pub fn getTscFrequency() error{NotEnumerated}!u64 {
+    const res = cpuid.Leaf.from(0x15).query(0);
+    const nominal_core: u128 = res.ecx; // nominal core crystal clock frequency in Hz
+    const numerator: u128 = res.ebx; // numerator of the TSC / core crystal clock ratio
+    const denominator: u128 = res.eax; // dominator of the TSC / core crystal clock ratio
+
+    if (numerator == 0 or denominator == 0) {
+        return error.NotEnumerated;
+    }
+
+    if (nominal_core != 0) {
+        return @intCast(nominal_core * numerator / denominator);
+    } else {
+        // Some processors do not report the core crystal clock frequency.
+        const res2 = cpuid.Leaf.from(0x16).query(0);
+        const base_freq: u128 = res2.eax; // base frequency in MHz
+        return @intCast(base_freq * 1_000_000 * numerator / denominator);
+    }
+}
+
 /// Get the local APIC.
 pub fn getLocalApic() apic.LocalApic {
     const base = am.rdmsr(regs.MsrApicBase, .apic_base).getAddress();
@@ -113,6 +134,12 @@ pub fn isCurrentBsp() bool {
     return am.rdmsr(regs.MsrApicBase, .apic_base).is_bsp;
 }
 
+/// Check if TSC is supported on this CPU.
+pub fn isTscSupported() bool {
+    const res = cpuid.Leaf.version_info.query(0);
+    return bits.isset(res.edx, 4);
+}
+
 /// Write a byte to an I/O port.
 pub fn out(T: type, value: T, port: u16) void {
     return switch (T) {
@@ -127,6 +154,11 @@ pub fn out(T: type, value: T, port: u16) void {
 pub fn queryBspId() u8 {
     const leaf = cpuid.Leaf.version_info.query(null);
     return @truncate(leaf.ebx >> 24);
+}
+
+/// Read TSC.
+pub fn readTsc() u64 {
+    return am.rdtsc();
 }
 
 /// Pause a CPU for a short period of time.

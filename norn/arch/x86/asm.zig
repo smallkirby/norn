@@ -163,6 +163,19 @@ pub fn rdmsr(T: type, comptime msr: Msr) T {
     };
 }
 
+pub fn rdtsc() u64 {
+    var eax: u32 = undefined;
+    var edx: u32 = undefined;
+    asm volatile (
+        \\rdtsc
+        : [eax] "={eax}" (eax),
+          [edx] "={edx}" (edx),
+        :
+        : "eax", "edx"
+    );
+    return bits.concat(u64, edx, eax);
+}
+
 pub inline fn sti() void {
     asm volatile ("sti");
 }

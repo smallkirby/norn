@@ -10,7 +10,7 @@ const arch = norn.arch;
 const mem = norn.mem;
 const SpinLock = norn.SpinLock;
 
-const Error = error{
+pub const Error = error{
     /// Failed to validate SDT.
     InvalidTable,
     /// Failed to allocate memory.

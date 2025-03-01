@@ -188,14 +188,14 @@ pub fn build(b: *std.Build) !void {
     if (debug_intr) {
         try qemu_args.appendSlice(&.{
             "-cpu",
-            "qemu64,+fsgsbase",
+            "qemu64,+fsgsbase,+invtsc",
             "-d",
             "int",
         });
     } else {
         try qemu_args.appendSlice(&.{
             "-cpu",
-            "host",
+            "host,+invtsc",
             "-enable-kvm",
         });
     }

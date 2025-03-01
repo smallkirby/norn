@@ -1,10 +1,22 @@
+const std = @import("std");
+const log = std.log.scoped(.timer);
+
 const norn = @import("norn");
 const arch = norn.arch;
 
-pub const Error = error{} || arch.Error;
+pub const Error = error{
+    /// Required feature is not supported.
+    NotSupported,
+} || arch.Error || norn.acpi.Error;
 
-/// Frequency of the timer timer interrupt in Hz.
+/// Frequency of the timer interrupt in Hz.
 const freq_hz = 250;
+
+/// Number of jiffies since boot.
+var jiffies: u64 = 0;
+
+/// Frequency in KHz of the TSC.
+var tsc_freq_khz: u64 = undefined;
 
 /// Start the periodic timer service.
 pub fn init() Error!void {
@@ -14,7 +26,14 @@ pub fn init() Error!void {
         timer,
     );
 
+    // Get the TSC frequency.
+    tsc_freq_khz = try calibrateTsc();
+    log.info("TSC frequency: {d} KHz", .{tsc_freq_khz});
+
     norn.rtt.expect(!arch.isIrqEnabled());
+
+    // Initialize the jiffies counter.
+    jiffies = 0;
 
     // Start the periodic timer.
     const lapic = norn.arch.getLocalApic();
@@ -29,7 +48,34 @@ pub fn init() Error!void {
     );
 }
 
+/// Calibrate the TSC frequency in Hz.
+fn calibrateTsc() Error!u64 {
+    if (!arch.isTscSupported()) {
+        return Error.NotSupported;
+    }
+
+    // Get TSC value from CPUID.
+    if (arch.getTscFrequency()) |freq| {
+        return freq / 1000;
+    } else |_| {}
+
+    // Calibrate TSC frequency.
+    const repeat = 3;
+    var sum_tsc_freq: u64 = 0;
+    for (0..repeat) |_| {
+        const wait_us = 1000;
+        const tsc1 = arch.readTsc();
+        try norn.acpi.spinForUsec(wait_us); // 1ms
+        const tsc2 = arch.readTsc();
+
+        sum_tsc_freq += (tsc2 - tsc1) * 1000 / wait_us;
+    }
+
+    return sum_tsc_freq / repeat;
+}
+
 /// Timer interrupt handler.
 fn timer(_: *norn.interrupt.Context) void {
-    norn.sched.schedule();
+    jiffies += 1;
+    arch.getLocalApic().eoi();
 }
