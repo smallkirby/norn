@@ -57,7 +57,7 @@ fn debugEnterUser(sp: u64, ip: u64) callconv(.C) void {
         \\movq %[rsp], %%r8
         \\pushq %%r8
         // RFLAGS
-        \\movq $0x02, %%r8
+        \\movq $0x202, %%r8
         \\pushq %%r8
         // CS (RPL = 3)
         \\movq $(3 << 3 + 3), %%r8

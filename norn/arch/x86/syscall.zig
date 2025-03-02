@@ -70,8 +70,8 @@ pub fn init() Error!void {
         }),
     };
     am.wrmsr(.star, star);
-    const fmask = regs.MsrFmask{ .flags = std.math.maxInt(u32) };
-    am.wrmsr(.fmask, fmask); // TODO: should mask IE?
+    const fmask = regs.MsrFmask{ .flags = 0 };
+    am.wrmsr(.fmask, fmask); // syscall does not clear RFLAGS.
 
     // Enable SYSCALL/SYSRET instructions.
     var efer = am.rdmsr(regs.MsrEfer, .efer);
@@ -192,7 +192,7 @@ export fn syscallEntry() callconv(.Naked) void {
         :
         : [ss] "i" (gdt.SegmentSelector{ .index = gdt.user_ds_index, .rpl = 3 }),
           [cs] "i" (gdt.SegmentSelector{ .index = gdt.user_cs_index, .rpl = 3 }),
-          [user_stack] "{r12}" (&task.current_tss.rsp1), // We can use caller-saved register here
-          [kernel_stack] "{r11}" (&task.current_tss.rsp0),
+          [user_stack] "{r9}" (&task.current_tss.rsp1), // We can use caller-saved register here
+          [kernel_stack] "{r10}" (&task.current_tss.rsp0),
     );
 }
