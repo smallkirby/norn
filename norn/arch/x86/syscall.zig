@@ -120,9 +120,6 @@ export fn syscallEntry() callconv(.Naked) void {
     //  RCX: RIP
     asm volatile (
         \\
-        // Disable interrupt.
-        \\cli
-
         // NOTE: Norn kernel shares the same page tables with user (no KPTI).
         // So we don't have to switch CR3 here.
 

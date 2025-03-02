@@ -5,6 +5,7 @@ const norn = @import("norn.zig");
 const arch = norn.arch;
 const mem = norn.mem;
 const pcpu = norn.pcpu;
+const timer = norn.timer;
 const thread = norn.thread;
 const Thread = thread.Thread;
 const ThreadList = thread.ThreadList;
@@ -85,6 +86,12 @@ pub fn schedule() void {
         },
     }
     pcpu.thisCpuSet(&current_task, next);
+
+    // Update the CPU time.
+    // TODO: properly record user/kernel -CPU time.
+    const tsc = timer.getTimestamp();
+    cur.cpu_time.updateExitUser(tsc);
+    next.cpu_time.updateEnterUser(tsc);
 
     // Switch the context.
     norn.arch.task.switchTo(cur, next);

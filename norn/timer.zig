@@ -3,6 +3,7 @@ const log = std.log.scoped(.timer);
 
 const norn = @import("norn");
 const arch = norn.arch;
+const sched = norn.sched;
 
 pub const Error = error{
     /// Required feature is not supported.
@@ -48,6 +49,11 @@ pub fn init() Error!void {
     );
 }
 
+/// Get timestamp.
+pub fn getTimestamp() u64 {
+    return arch.readTsc();
+}
+
 /// Calibrate the TSC frequency in Hz.
 fn calibrateTsc() Error!u64 {
     if (!arch.isTscSupported()) {
@@ -78,4 +84,6 @@ fn calibrateTsc() Error!u64 {
 fn timer(_: *norn.interrupt.Context) void {
     jiffies += 1;
     arch.getLocalApic().eoi();
+
+    sched.schedule();
 }

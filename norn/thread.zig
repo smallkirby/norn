@@ -32,6 +32,30 @@ pub const State = enum {
     dead,
 };
 
+/// CPU time consumed for the thread.
+pub const CpuTime = struct {
+    /// CPU time consumed in user mode.
+    user: u64 = 0,
+    /// CPU time consumed in kernel mode.
+    kernel: u64 = 0,
+    /// Time when the thread was last executed in user mode.
+    user_last_start: ?u64 = null,
+    /// Time when the thread was last executed in kernel mode.
+    kernel_last_kernel: ?u64 = null,
+
+    /// Update to record the time when the thread enters user mode.
+    pub fn updateEnterUser(self: *CpuTime, now: u64) void {
+        self.user_last_start = now;
+    }
+
+    /// Update to record the time when the thread exits user mode.
+    pub fn updateExitUser(self: *CpuTime, now: u64) void {
+        if (self.user_last_start) |last_start| {
+            self.user += now - last_start;
+        }
+    }
+};
+
 /// Default stack size of a kernel thread.
 const default_stack_size: usize = 1 * mem.size_4kib;
 /// Default number of pages for kernel stack.
@@ -48,17 +72,19 @@ pub const Thread = struct {
     /// Thread ID.
     tid: Tid,
     /// Kernel stack.
-    stack: []u8,
+    stack: []u8 = undefined,
     /// Kernel stack pointer.
-    stack_ptr: [*]u8,
+    stack_ptr: [*]u8 = undefined,
     /// Thread state.
     state: State = .running,
     /// Thread name with null-termination.
     name: [name_max_len:0]u8 = undefined,
     /// CR3 of the user space.
-    pgtbl: mem.Virt,
+    pgtbl: mem.Virt = undefined,
+    /// CPU time consumed for the thread.
+    cpu_time: CpuTime = .{},
     /// Arch-specific context.
-    arch_ctx: *anyopaque,
+    arch_ctx: *anyopaque = undefined,
 
     /// User stack pointer.
     user_stack_ptr: ?mem.Virt = null, // TODO
@@ -74,12 +100,12 @@ pub const Thread = struct {
     fn create(name: []const u8) Error!*Thread {
         const self = try general_allocator.create(Thread);
         errdefer general_allocator.destroy(self);
+        self.* = Thread{
+            .tid = assignNewTid(),
+        };
 
         // Initialize arch-specific context.
         try arch.task.setupNewTask(self);
-
-        // Assign an unique TID.
-        self.tid = assignNewTid();
 
         // Initialize thread name.
         truncCopyName(&self.name, name);
