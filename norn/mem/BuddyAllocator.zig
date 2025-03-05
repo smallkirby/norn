@@ -92,7 +92,11 @@ const FreeList = struct {
 
     /// Add a block of pages to the free list.
     pub fn freeBlock(self: *FreeList, block: []u8) *FreePage {
-        const page: *FreePage = @alignCast(@ptrCast(block));
+        // BUG: Zig v0.14.0 : https://github.com/ziglang/zig/issues/22885
+        // const page: *FreePage = @alignCast(@ptrCast(block));
+        const work_around_ptr: u64 = @intFromPtr(block.ptr);
+        const page: *FreePage = @ptrFromInt(work_around_ptr);
+
         self.insertSorted(page);
         return page;
     }
@@ -468,9 +472,9 @@ fn freePagesRaw(ctx: *anyopaque, addr: Virt, num_pages: usize) Error!void {
 /// You MUST copy them before using the area.
 inline fn isUsableMemory(descriptor: *MemoryDescriptor) bool {
     return switch (descriptor.type) {
-        .ConventionalMemory,
-        .BootServicesCode,
-        .BootServicesData,
+        .conventional_memory,
+        .boot_services_code,
+        .boot_services_data,
         => true,
         else => false,
     };

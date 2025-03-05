@@ -25,11 +25,7 @@ var idt: [max_num_gates]GateDescriptor align(mem.page_size) = [_]GateDescriptor{
 /// IDT Register.
 var idtr = IdtRegister{
     .limit = @sizeOf(@TypeOf(idt)) - 1,
-    // TODO: BUG: Zig v0.13.0. https://github.com/ziglang/zig/issues/17856
-    //.base = &idt,
-    // This initialization leads to LLVM error.
-    // As a workaround, we make `idtr` mutable and initialize it in `init()`.
-    .base = undefined,
+    .base = &idt,
 };
 
 const Ist = [mem.size_4kib]u8;
@@ -110,7 +106,7 @@ pub fn setHandler(vector: u8, handler: Handler) Error!void {
 }
 
 fn unhandledHandler(context: *Context) void {
-    @setCold(true);
+    @branchHint(.cold);
 
     const exception: Exception = @enumFromInt(context.vector);
     log.err("============ Oops! ===================", .{});

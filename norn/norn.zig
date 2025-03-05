@@ -47,7 +47,7 @@ var serial = Serial{};
 ///
 /// - `msg`: Message to print.
 pub fn unimplemented(comptime msg: []const u8) noreturn {
-    @setCold(true);
+    @branchHint(.cold);
 
     if (serial.isInited()) {
         serial.writeString("UNIMPLEMENTED: ");

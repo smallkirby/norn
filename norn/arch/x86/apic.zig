@@ -95,9 +95,9 @@ pub const LocalApic = struct {
     pub fn write(self: Self, T: type, reg: Register, value: anytype) void {
         const ptr: *volatile T = @ptrFromInt(@intFromPtr(self._base) + @intFromEnum(reg));
         ptr.* = switch (@typeInfo(@TypeOf(value))) {
-            .ComptimeInt => @as(T, value),
-            .Int => value,
-            .Struct => @as(T, @bitCast(value)),
+            .comptime_int => @as(T, value),
+            .int => value,
+            .@"struct" => @as(T, @bitCast(value)),
             else => @compileError("Invalid type"),
         };
     }
