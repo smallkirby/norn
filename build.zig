@@ -218,7 +218,7 @@ pub fn build(b: *std.Build) !void {
         .link_libc = true,
     });
     unit_test.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
-    unit_test.root_module.addImport("norn", &unit_test.root_module);
+    unit_test.root_module.addImport("norn", unit_test.root_module);
     unit_test.root_module.addImport("surtr", surtr_module);
     unit_test.root_module.addOptions("option", options);
     const run_unit_tests = b.addRunArtifact(unit_test);

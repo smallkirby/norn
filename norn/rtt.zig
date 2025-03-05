@@ -45,14 +45,14 @@ fn write(_: void, bytes: []const u8) WriterError!usize {
 
 /// Init runtime testing framework.
 pub fn init() void {
-    @setCold(true);
+    @branchHint(.cold);
 
     onlyForTest();
     serial = norn.getSerial();
 }
 
 pub fn expect(condition: bool) void {
-    @setCold(true);
+    @branchHint(.cold);
     if (!norn.is_runtime_test) return;
 
     if (!condition) {
@@ -62,7 +62,7 @@ pub fn expect(condition: bool) void {
 }
 
 pub fn expectEqual(expected: anytype, actual: anytype) void {
-    @setCold(true);
+    @branchHint(.cold);
     if (!norn.is_runtime_test) return;
 
     inner.expectEqual(expected, actual) catch {
@@ -85,68 +85,68 @@ const inner = struct {
 
     fn expectEqualInner(comptime T: type, expected: T, actual: T) !void {
         switch (@typeInfo(@TypeOf(actual))) {
-            .NoReturn,
-            .Opaque,
-            .Frame,
-            .AnyFrame,
+            .noreturn,
+            .@"opaque",
+            .frame,
+            .@"anyframe",
             => @compileError("value of type " ++ @typeName(@TypeOf(actual)) ++ " encountered"),
 
-            .Undefined,
-            .Null,
-            .Void,
+            .undefined,
+            .null,
+            .void,
             => return,
 
-            .Type => {
+            .type => {
                 if (actual != expected) {
-                    log.err("expected type {s}, found type {s}", .{ @typeName(expected), @typeName(actual) });
+                    log.err("expected type {s}, found type {s}\n", .{ @typeName(expected), @typeName(actual) });
                     return error.TestExpectedEqual;
                 }
             },
 
-            .Bool,
-            .Int,
-            .Float,
-            .ComptimeFloat,
-            .ComptimeInt,
-            .EnumLiteral,
-            .Enum,
-            .Fn,
-            .ErrorSet,
+            .bool,
+            .int,
+            .float,
+            .comptime_float,
+            .comptime_int,
+            .enum_literal,
+            .@"enum",
+            .@"fn",
+            .error_set,
             => {
                 if (actual != expected) {
-                    log.err("expected {}, found {}", .{ expected, actual });
+                    log.err("expected {}, found {}\n", .{ expected, actual });
                     return error.TestExpectedEqual;
                 }
             },
 
-            .Pointer => |pointer| {
+            .pointer => |pointer| {
                 switch (pointer.size) {
-                    .One, .Many, .C => {
+                    .one, .many, .c => {
                         if (actual != expected) {
-                            log.err("expected {*}, found {*}", .{ expected, actual });
+                            log.err("expected {*}, found {*}\n", .{ expected, actual });
                             return error.TestExpectedEqual;
                         }
                     },
-                    .Slice => {
+                    .slice => {
                         if (actual.ptr != expected.ptr) {
-                            log.err("expected slice ptr {*}, found {*}", .{ expected.ptr, actual.ptr });
+                            log.err("expected slice ptr {*}, found {*}\n", .{ expected.ptr, actual.ptr });
                             return error.TestExpectedEqual;
                         }
                         if (actual.len != expected.len) {
-                            log.err("expected slice len {}, found {}", .{ expected.len, actual.len });
+                            log.err("expected slice len {}, found {}\n", .{ expected.len, actual.len });
                             return error.TestExpectedEqual;
                         }
                     },
                 }
             },
 
-            .Array => |array| try expectEqualSlices(array.child, &expected, &actual),
+            .array => |array| try expectEqualSlices(array.child, &expected, &actual),
 
-            .Vector => |info| {
+            .vector => |info| {
                 var i: usize = 0;
                 while (i < info.len) : (i += 1) {
                     if (!std.meta.eql(expected[i], actual[i])) {
-                        log.err("index {} incorrect. expected {}, found {}", .{
+                        log.err("index {d} incorrect. expected {any}, found {any}\n", .{
                             i, expected[i], actual[i],
                         });
                         return error.TestExpectedEqual;
@@ -154,13 +154,13 @@ const inner = struct {
                 }
             },
 
-            .Struct => |structType| {
+            .@"struct" => |structType| {
                 inline for (structType.fields) |field| {
                     try inner.expectEqual(@field(expected, field.name), @field(actual, field.name));
                 }
             },
 
-            .Union => |union_info| {
+            .@"union" => |union_info| {
                 if (union_info.tag_type == null) {
                     @compileError("Unable to compare untagged union values");
                 }
@@ -172,47 +172,39 @@ const inner = struct {
 
                 try inner.expectEqual(expectedTag, actualTag);
 
-                // we only reach this loop if the tags are equal
-                inline for (std.meta.fields(@TypeOf(actual))) |fld| {
-                    if (std.mem.eql(u8, fld.name, @tagName(actualTag))) {
-                        try inner.expectEqual(@field(expected, fld.name), @field(actual, fld.name));
-                        return;
-                    }
+                // we only reach this switch if the tags are equal
+                switch (expected) {
+                    inline else => |val, tag| try inner.expectEqual(val, @field(actual, @tagName(tag))),
                 }
-
-                // we iterate over *all* union fields
-                // => we should never get here as the loop above is
-                //    including all possible values.
-                unreachable;
             },
 
-            .Optional => {
+            .optional => {
                 if (expected) |expected_payload| {
                     if (actual) |actual_payload| {
                         try inner.expectEqual(expected_payload, actual_payload);
                     } else {
-                        log.err("expected {any}, found null", .{expected_payload});
+                        log.err("expected {any}, found null\n", .{expected_payload});
                         return error.TestExpectedEqual;
                     }
                 } else {
                     if (actual) |actual_payload| {
-                        log.err("expected null, found {any}", .{actual_payload});
+                        log.err("expected null, found {any}\n", .{actual_payload});
                         return error.TestExpectedEqual;
                     }
                 }
             },
 
-            .ErrorUnion => {
+            .error_union => {
                 if (expected) |expected_payload| {
                     if (actual) |actual_payload| {
                         try inner.expectEqual(expected_payload, actual_payload);
                     } else |actual_err| {
-                        log.err("expected {any}, found {}", .{ expected_payload, actual_err });
+                        log.err("expected {any}, found {}\n", .{ expected_payload, actual_err });
                         return error.TestExpectedEqual;
                     }
                 } else |expected_err| {
                     if (actual) |actual_payload| {
-                        log.err("expected {}, found {any}", .{ expected_err, actual_payload });
+                        log.err("expected {}, found {any}\n", .{ expected_err, actual_payload });
                         return error.TestExpectedEqual;
                     } else |actual_err| {
                         try inner.expectEqual(expected_err, actual_err);
@@ -234,7 +226,7 @@ const inner = struct {
             pub fn write(self: Self) !void {
                 for (self.expected, 0..) |value, i| {
                     const full_index = self.start_index + i;
-                    if (@typeInfo(T) == .Pointer) {
+                    if (@typeInfo(T) == .pointer) {
                         try writer.print("[{}]{*}: {any}", .{ full_index, value, value });
                     } else {
                         try writer.print("[{}]: {any}", .{ full_index, value });
@@ -406,7 +398,7 @@ inline fn onlyForTest() void {
 }
 
 fn failure() noreturn {
-    @setCold(true);
+    @branchHint(.cold);
 
     // Terminate QEMU if isa-debug-exit device is available.
     norn.terminateQemu(1);

@@ -41,10 +41,10 @@ const percpu_base = 0xFFFF_FFFF_8010_0000;
 pub fn main() uefi.Status {
     boot() catch |e| {
         log.err("Failed to boot: {s}", .{@errorName(e)});
-        return .Aborted;
+        return .aborted;
     };
 
-    return .Success;
+    return .success;
 }
 
 pub fn boot() Error!void {
@@ -65,14 +65,14 @@ pub fn boot() Error!void {
     // Locate simple file system protocol.
     var fs: *uefi.protocol.SimpleFileSystem = undefined;
     status = bs.locateProtocol(&uefi.protocol.SimpleFileSystem.guid, null, @ptrCast(&fs));
-    if (status != .Success)
+    if (status != .success)
         return Error.Fs;
     log.info("Located simple file system protocol.", .{});
 
     // Open volume.
-    var root_dir: *uefi.protocol.File = undefined;
+    var root_dir: *const uefi.protocol.File = undefined;
     status = fs.openVolume(&root_dir);
-    if (status != .Success)
+    if (status != .success)
         return Error.Fs;
     log.info("Opened filesystem volume.", .{});
 
@@ -81,7 +81,7 @@ pub fn boot() Error!void {
     log.info("Opened kernel file.", .{});
 
     // Read kernel ELF header
-    const kernel_header = try allocatePool(bs, @sizeOf(elf.Elf64_Ehdr), .LoaderData);
+    const kernel_header = try allocatePool(bs, @sizeOf(elf.Elf64_Ehdr), .loader_data);
     const header_size = try readFile(kernel, kernel_header);
     assert(header_size == @sizeOf(elf.Elf64_Ehdr), "invalid ELF header size");
 
@@ -110,7 +110,7 @@ pub fn boot() Error!void {
     var kernel_start_phys: Addr align(page_size) = std.math.maxInt(Addr);
     var kernel_end_phys: Addr = 0;
 
-    var iter = elf_header.program_header_iterator(kernel);
+    var iter = elf_header.program_header_iterator(@as(*File, @constCast(kernel)));
     while (true) {
         const phdr = iter.next() catch |err| {
             log.err("Failed to get program header: {?}\n", .{err});
@@ -131,8 +131,8 @@ pub fn boot() Error!void {
     log.info("Kernel image: 0x{X:0>16} - 0x{X:0>16} (0x{X} pages)", .{ kernel_start_phys, kernel_end_phys, pages_4kib });
 
     // Allocate memory for kernel image.
-    status = bs.allocatePages(.AllocateAddress, .LoaderData, pages_4kib, @ptrCast(&kernel_start_phys));
-    if (status != .Success) {
+    status = bs.allocatePages(.allocate_address, .loader_data, pages_4kib, @ptrCast(&kernel_start_phys));
+    if (status != .success) {
         log.err("Failed to allocate memory for kernel image: {?}", .{status});
         return Error.AllocatePool;
     }
@@ -154,7 +154,7 @@ pub fn boot() Error!void {
 
     // Load kernel image.
     log.info("Loading kernel image...", .{});
-    iter = elf_header.program_header_iterator(kernel);
+    iter = elf_header.program_header_iterator(@constCast(kernel));
     while (true) {
         const phdr = iter.next() catch |err| {
             log.err("Failed to get program header: {?}\n", .{err});
@@ -164,7 +164,7 @@ pub fn boot() Error!void {
 
         // Load data
         status = kernel.setPosition(phdr.p_offset);
-        if (status != .Success) {
+        if (status != .success) {
             log.err("Failed to set position for kernel image.", .{});
             return Error.Fs;
         }
@@ -172,7 +172,7 @@ pub fn boot() Error!void {
         const segment: [*]u8 = @ptrFromInt(vaddr);
         var mem_size = phdr.p_memsz;
         status = kernel.read(&mem_size, segment);
-        if (status != .Success) {
+        if (status != .success) {
             log.err("Failed to read kernel image.", .{});
             return Error.Fs;
         }
@@ -215,12 +215,12 @@ pub fn boot() Error!void {
 
     // Clean up memory.
     status = kernel.close();
-    if (status != .Success) {
+    if (status != .success) {
         log.err("Failed to close kernel file.", .{});
         return Error.Fs;
     }
     status = root_dir.close();
-    if (status != .Success) {
+    if (status != .success) {
         log.err("Failed to close filesystem volume.", .{});
         return Error.Fs;
     }
@@ -265,7 +265,7 @@ pub fn boot() Error!void {
     // After this point, we can't use any boot services including logging.
     log.info("Exiting boot services.", .{});
     status = bs.exitBootServices(uefi.handle, map.map_key);
-    if (status != .Success) {
+    if (status != .success) {
         // May fail if the memory map has been changed.
         // Retry after getting the memory map again.
         map.buffer_size = map_buffer.len;
@@ -273,7 +273,7 @@ pub fn boot() Error!void {
         try getMemoryMap(&map, bs);
 
         status = bs.exitBootServices(uefi.handle, map.map_key);
-        if (status != .Success) {
+        if (status != .success) {
             log.err("Failed to exit boot services.", .{});
             return Error.ExitBootServices;
         }
@@ -310,10 +310,10 @@ inline fn toUcs2(comptime s: [:0]const u8) [s.len * 2:0]u16 {
 
 /// Open a file using Simple File System protocol.
 fn openFile(
-    root: *File,
+    root: *const File,
     comptime name: [:0]const u8,
-) Error!*File {
-    var file: *File = undefined;
+) Error!*const File {
+    var file: *const File = undefined;
     const status = root.open(
         &file,
         &toUcs2(name),
@@ -321,21 +321,21 @@ fn openFile(
         0,
     );
 
-    return if (status == .Success) file else Error.Fs;
+    return if (status == .success) file else Error.Fs;
 }
 
 /// Allocate memory pool.
 fn allocatePool(bs: *BootServices, size: usize, mem_type: MemoryType) Error![]align(8) u8 {
     var out_buffer: [*]align(8) u8 = undefined;
     const status = bs.allocatePool(mem_type, size, &out_buffer);
-    return if (status == .Success) out_buffer[0..size] else Error.AllocatePool;
+    return if (status == .success) out_buffer[0..size] else Error.AllocatePool;
 }
 
 /// Read file content to the buffer.
-fn readFile(file: *File, buffer: []u8) Error!usize {
+fn readFile(file: *const File, buffer: []u8) Error!usize {
     var size = buffer.len;
     const status = file.read(&size, buffer.ptr);
-    return if (status == .Success) size else Error.Fs;
+    return if (status == .success) size else Error.Fs;
 }
 
 fn getMemoryMap(map: *surtr.MemoryMap, boot_services: *BootServices) Error!void {
@@ -346,7 +346,7 @@ fn getMemoryMap(map: *surtr.MemoryMap, boot_services: *BootServices) Error!void 
         &map.descriptor_size,
         &map.descriptor_version,
     );
-    return if (status == .Success) {} else Error.MemoryMap;
+    return if (status == .success) {} else Error.MemoryMap;
 }
 
 /// Find ACPI v2.0 table from UEFI configuration table.
@@ -361,7 +361,7 @@ fn getRsdp() ?*anyopaque {
 }
 
 /// Load initramfs from EFI filesystem.
-fn loadInitramfs(root: *File, bs: *BootServices) Error![]u8 {
+fn loadInitramfs(root: *const File, bs: *BootServices) Error![]u8 {
     var status: uefi.Status = undefined;
 
     const initramfs = try openFile(root, "rootfs.cpio");
@@ -377,21 +377,21 @@ fn loadInitramfs(root: *File, bs: *BootServices) Error![]u8 {
         &initramfs_info_actual_size,
         &initramfs_info_buffer,
     );
-    if (status != .Success) return Error.Fs;
+    if (status != .success) return Error.Fs;
 
     const initramfs_info: *const uefi.FileInfo = @alignCast(@ptrCast(&initramfs_info_buffer));
     const initramfs_size = initramfs_info.file_size;
 
-    // Allocate memory for initramfs in .LoaderData pages.
+    // Allocate memory for initramfs in .loader_data pages.
     var initramfs_start: u64 = undefined;
     const initramfs_size_pages = (initramfs_size + (page_size - 1)) / page_size;
     status = bs.allocatePages(
-        .AllocateAnyPages,
-        .LoaderData,
+        .allocate_any_pages,
+        .loader_data,
         initramfs_size_pages,
         @ptrCast(&initramfs_start),
     );
-    if (status != .Success) {
+    if (status != .success) {
         return Error.AllocatePool;
     }
 
