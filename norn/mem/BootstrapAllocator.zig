@@ -178,8 +178,8 @@ fn freePagesRaw(_: *anyopaque, _: mem.Virt, _: usize) Error!void {
 /// Page tables are not reconstructed, so BootServicesData is not usable here.
 inline fn isUsableMemory(descriptor: *uefi.tables.MemoryDescriptor) bool {
     return switch (descriptor.type) {
-        .ConventionalMemory,
-        .BootServicesCode,
+        .conventional_memory,
+        .boot_services_code,
         => true,
         else => false,
     };

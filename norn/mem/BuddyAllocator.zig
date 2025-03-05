@@ -468,9 +468,9 @@ fn freePagesRaw(ctx: *anyopaque, addr: Virt, num_pages: usize) Error!void {
 /// You MUST copy them before using the area.
 inline fn isUsableMemory(descriptor: *MemoryDescriptor) bool {
     return switch (descriptor.type) {
-        .ConventionalMemory,
-        .BootServicesCode,
-        .BootServicesData,
+        .conventional_memory,
+        .boot_services_code,
+        .boot_services_data,
         => true,
         else => false,
     };

@@ -110,7 +110,7 @@ pub fn setHandler(vector: u8, handler: Handler) Error!void {
 }
 
 fn unhandledHandler(context: *Context) void {
-    @setCold(true);
+    @branchHint(.cold);
 
     const exception: Exception = @enumFromInt(context.vector);
     log.err("============ Oops! ===================", .{});
