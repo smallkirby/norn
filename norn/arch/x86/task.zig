@@ -109,8 +109,8 @@ pub fn initOrphanFrame(rsp: [*]u8, ip: u64) [*]u8 {
 ///
 /// Different from switchTo(), this function is called only once.
 /// No callee-saved registers are saved and restored.
-pub const initialSwitchTo: *const fn (init: *Thread) callconv(.C) noreturn = @ptrCast(&initialSwitchToImpl);
-noinline fn initialSwitchToImpl() callconv(.Naked) noreturn {
+pub const initialSwitchTo: *const fn (init: *Thread) callconv(.c) noreturn = @ptrCast(&initialSwitchToImpl);
+noinline fn initialSwitchToImpl() callconv(.naked) noreturn {
     const sp_offset = @offsetOf(Thread, "stack_ptr");
 
     asm volatile (std.fmt.comptimePrint(
@@ -140,8 +140,8 @@ noinline fn initialSwitchToImpl() callconv(.Naked) noreturn {
 /// But it would be the crafted address if the next task is an orphaned task.
 ///
 /// We cast the function pointer to call it in C convention though actually it must be naked.
-pub const switchTo: *const fn (prev: *Thread, next: *Thread) callconv(.C) void = @ptrCast(&switchToImpl);
-noinline fn switchToImpl() callconv(.Naked) void {
+pub const switchTo: *const fn (prev: *Thread, next: *Thread) callconv(.c) void = @ptrCast(&switchToImpl);
+noinline fn switchToImpl() callconv(.naked) void {
     const sp_offset = @offsetOf(Thread, "stack_ptr");
 
     asm volatile (std.fmt.comptimePrint(
@@ -176,7 +176,7 @@ noinline fn switchToImpl() callconv(.Naked) void {
 /// Callee-saved registers are already saved and restored, so we don't care about them.
 ///
 /// This function returns to the caller of switchTo().
-export fn switchToInternal(_: *Thread, next: *Thread) callconv(.C) void {
+export fn switchToInternal(_: *Thread, next: *Thread) callconv(.c) void {
     // Restore TSS.RSP0.
     const rsp0 = @intFromPtr(next.stack_ptr);
     x64ctx(next).tss.rsp0 = rsp0;
