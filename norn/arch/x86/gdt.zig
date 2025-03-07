@@ -118,7 +118,8 @@ pub fn init() void {
     // Load GDTR.
     const early_gdtr = GdtRegister{
         .limit = @sizeOf(DescriptorTable) - 1,
-        .base = &early_gdt,
+        // BUG: Zig 0.14.0: https://github.com/ziglang/zig/issues/23101
+        .base = @ptrFromInt(@intFromPtr(&early_gdt)),
     };
 
     // Load segment selectors.
