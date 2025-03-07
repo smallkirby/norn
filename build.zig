@@ -1,9 +1,16 @@
 const std = @import("std");
+const zon: ZonStruct = @import("build.zig.zon");
 
-// TODO: Zig 0.14.0 can import build.zig.zon.
-// const zon = @import("build.zig.zon");
-// const norn_version = zon.version;
-const norn_version = "0.0.0";
+const ZonStruct = struct {
+    version: []const u8,
+    name: @Type(.enum_literal),
+    fingerprint: u64,
+    minimum_zig_version: []const u8,
+    dependencies: struct {},
+    paths: []const []const u8,
+};
+
+const norn_version = zon.version;
 
 /// Get SHA-1 hash of the current Git commit.
 fn getGitSha(b: *std.Build) ![]const u8 {
