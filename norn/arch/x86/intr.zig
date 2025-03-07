@@ -138,6 +138,10 @@ fn unhandledHandler(context: *Context) void {
     log.err("R14    : 0x{X:0>16}", .{context.registers.r14});
     log.err("R15    : 0x{X:0>16}", .{context.registers.r15});
     log.err("CS     : 0x{X:0>4}", .{context.cs});
+    if (context.isFromUserMode()) {
+        log.err("SS     : 0x{X:0>4}", .{context.ss});
+        log.err("RSP    : 0x{X:0>16}", .{context.rsp});
+    }
 
     const cr0: u64 = @bitCast(am.readCr0());
     const cr2: u64 = @bitCast(am.readCr2());

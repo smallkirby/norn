@@ -56,6 +56,14 @@ pub const Context = packed struct {
     rip: u64,
     cs: u64,
     rflags: u64,
+    // Available only when interrupt is called from user mode.
+    rsp: u64,
+    ss: u64,
+
+    /// Check if the interrupt is called from user mode.
+    pub inline fn isFromUserMode(self: Context) bool {
+        return (self.cs & 0b11) == 0b11; // Check RPL
+    }
 };
 
 /// Structure holding general purpose registers as saved by PUSHA.
