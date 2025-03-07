@@ -51,7 +51,7 @@ fn debugEnterUser(sp: u64, ip: u64) callconv(.C) void {
     asm volatile (
         \\cli
         // SS (RPL = 3)
-        \\movq $(4 << 3 + 3), %%r8
+        \\movq %[ss], %%r8
         \\pushq %%r8
         // RSP
         \\movq %[rsp], %%r8
@@ -60,7 +60,7 @@ fn debugEnterUser(sp: u64, ip: u64) callconv(.C) void {
         \\movq $0x202, %%r8
         \\pushq %%r8
         // CS (RPL = 3)
-        \\movq $(3 << 3 + 3), %%r8
+        \\movq %[cs], %%r8
         \\pushq %%r8
         // RIP
         \\movq %[rip], %%r8
@@ -89,5 +89,7 @@ fn debugEnterUser(sp: u64, ip: u64) callconv(.C) void {
         : [rip] "r" (ip),
           [rsp] "r" (sp),
           [kernel_stack] "{r11}" (&norn.arch.task.current_tss.rsp0),
+          [cs] "i" (0x06 << 3 | 0b11),
+          [ss] "i" (0x05 << 3 | 0b11),
     );
 }

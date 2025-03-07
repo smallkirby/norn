@@ -62,10 +62,10 @@ pub fn init() Error!void {
     const star = regs.MsrStar{
         .syscall_cs_ss = @bitCast(gdt.SegmentSelector{
             .index = gdt.kernel_cs_index,
-            .rpl = 0,
+            .rpl = 0, // RPL is ignored by HW.
         }),
         .sysret_cs_ss = @bitCast(gdt.SegmentSelector{
-            .index = gdt.user_cs_index,
+            .index = gdt.user_cs32_index,
             .rpl = 3,
         }),
     };

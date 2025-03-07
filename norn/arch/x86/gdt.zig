@@ -26,14 +26,20 @@ var gdt_initialized: bool linksection(pcpu.section) = false;
 /// TSS is initialized and set for this CPU.
 var tss_initialized: bool linksection(pcpu.section) = false;
 
+/// Index of the kernel 32-bit code segment.
+/// Not used in Norn.
+pub const kernel_cs32_index: u16 = 0x01;
 /// Index of the kernel code segment.
-pub const kernel_cs_index: u16 = 0x01;
+pub const kernel_cs_index: u16 = 0x02;
 /// Index of the kernel data segment.
-pub const kernel_ds_index: u16 = 0x02;
-/// Index of the user code segment.
-pub const user_cs_index: u16 = 0x03;
+pub const kernel_ds_index: u16 = 0x03;
+/// Index of the user 32-bit code segment.
+/// Not used in Norn.
+pub const user_cs32_index: u16 = 0x04;
 /// Index of the user data segment.
-pub const user_ds_index: u16 = 0x04;
+pub const user_ds_index: u16 = 0x05;
+/// Index of the user code segment.
+pub const user_cs_index: u16 = 0x06;
 /// Index of the kernel TSS.
 /// Note that TSS descriptor occupies two GDT entries.
 pub const kernel_tss_index: u16 = 0x08;
@@ -51,8 +57,7 @@ comptime {
 
 const null_descriptor =
     SegmentDescriptor.newNull();
-const kernel_ds =
-    SegmentDescriptor.new(
+const kernel_ds = SegmentDescriptor.new(
     0,
     std.math.maxInt(u20),
     .{ .app = .{
@@ -64,8 +69,7 @@ const kernel_ds =
     0,
     .kbyte,
 );
-const kernel_cs =
-    SegmentDescriptor.new(
+const kernel_cs = SegmentDescriptor.new(
     0,
     std.math.maxInt(u20),
     .{ .app = .{
@@ -77,8 +81,7 @@ const kernel_cs =
     0,
     .kbyte,
 );
-const user_ds =
-    SegmentDescriptor.new(
+const user_ds = SegmentDescriptor.new(
     0,
     std.math.maxInt(u20),
     .{ .app = .{
@@ -90,8 +93,7 @@ const user_ds =
     3,
     .kbyte,
 );
-const user_cs =
-    SegmentDescriptor.new(
+const user_cs = SegmentDescriptor.new(
     0,
     std.math.maxInt(u20),
     .{ .app = .{
