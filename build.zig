@@ -1,9 +1,16 @@
 const std = @import("std");
+const zon: ZonStruct = @import("build.zig.zon");
 
-// TODO: Zig 0.14.0 can import build.zig.zon.
-// const zon = @import("build.zig.zon");
-// const norn_version = zon.version;
-const norn_version = "0.0.0";
+const ZonStruct = struct {
+    version: []const u8,
+    name: @Type(.enum_literal),
+    fingerprint: u64,
+    minimum_zig_version: []const u8,
+    dependencies: struct {},
+    paths: []const []const u8,
+};
+
+const norn_version = zon.version;
 
 /// Get SHA-1 hash of the current Git commit.
 fn getGitSha(b: *std.Build) ![]const u8 {
@@ -218,7 +225,7 @@ pub fn build(b: *std.Build) !void {
         .link_libc = true,
     });
     unit_test.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
-    unit_test.root_module.addImport("norn", &unit_test.root_module);
+    unit_test.root_module.addImport("norn", unit_test.root_module);
     unit_test.root_module.addImport("surtr", surtr_module);
     unit_test.root_module.addOptions("option", options);
     const run_unit_tests = b.addRunArtifact(unit_test);

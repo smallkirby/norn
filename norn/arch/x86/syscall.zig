@@ -80,7 +80,7 @@ pub fn init() Error!void {
 }
 
 /// Dispatch system call.
-export fn dispatchSyscall(nr: u64, ctx: *Registers) callconv(.C) i64 {
+export fn dispatchSyscall(nr: u64, ctx: *Registers) callconv(.c) i64 {
     asm volatile (
         \\mov %[kernel_ds], %dx
         \\mov %%dx, %%ds
@@ -114,7 +114,7 @@ export fn dispatchSyscall(nr: u64, ctx: *Registers) callconv(.C) i64 {
 }
 
 /// SYSCALL entry point.
-export fn syscallEntry() callconv(.Naked) void {
+export fn syscallEntry() callconv(.naked) void {
     // SYSCALL sets below registers.
     //  R11: RFLAGS
     //  RCX: RIP

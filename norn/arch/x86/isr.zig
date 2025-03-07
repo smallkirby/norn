@@ -41,7 +41,7 @@ const log = std.log.scoped(.isr);
 const intr = @import("intr.zig");
 
 /// ISR signature.
-pub const Isr = fn () callconv(.Naked) void;
+pub const Isr = fn () callconv(.naked) void;
 
 // Execution Context
 pub const Context = packed struct {
@@ -87,14 +87,14 @@ pub const Registers = packed struct {
 };
 
 /// Zig entry point of the interrupt handler.
-export fn intrZigEntry(ctx: *Context) callconv(.C) void {
+export fn intrZigEntry(ctx: *Context) callconv(.c) void {
     intr.dispatch(ctx);
 }
 
 /// Get ISR function for the given vector.
 pub fn generateIsr(comptime vector: usize) Isr {
     return struct {
-        fn handler() callconv(.Naked) void {
+        fn handler() callconv(.naked) void {
             // Clear the interrupt flag.
             asm volatile (
                 \\cli
@@ -123,7 +123,7 @@ pub fn generateIsr(comptime vector: usize) Isr {
 
 /// Common stub for all ISR, that all the ISRs will use.
 /// This function assumes that `Context` is saved at the top of the stack except for general-purpose registers.
-export fn isrCommon() callconv(.Naked) void {
+export fn isrCommon() callconv(.naked) void {
     // Save the general-purpose registers.
     asm volatile (
         \\pushq %%rax

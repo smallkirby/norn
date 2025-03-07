@@ -22,7 +22,7 @@ extern const __early_stack_bottom: [*]const u8;
 
 /// Entry point from the bootloader.
 /// BSP starts here with its early stack.
-export fn kernelEntry() callconv(.Naked) noreturn {
+export fn kernelEntry() callconv(.naked) noreturn {
     asm volatile (
         \\movq %[new_stack], %%rsp
         \\call kernelTrampoline

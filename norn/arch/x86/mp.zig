@@ -182,7 +182,7 @@ fn bootAp(ap_id: u8, lapic: apic.LocalApic, ap_entry: Phys) void {
 /// At this point, CR3 is set to BSP's one.
 /// GDT is temporary. IDT is not set. Interrupts are disabled.
 /// Stack is shared and temporary.
-fn apEntry64() callconv(.C) noreturn {
+fn apEntry64() callconv(.c) noreturn {
     // Allocate stack.
     // TODO: set guard page.
     const stack_top = page_allocator.allocPages(num_ap_stack_pages + 1, .normal) catch @panic("Failed to allocate stack for AP");
@@ -202,7 +202,7 @@ fn apEntry64() callconv(.C) noreturn {
 
 /// Final function before entering the AP main function.
 /// AP uses its own stack here. The only shared resource is the lock.
-export fn apTrampolineToMain() callconv(.C) noreturn {
+export fn apTrampolineToMain() callconv(.c) noreturn {
     // Unlock the lock for BSP to continue booting other APs.
     lock.unlock();
 

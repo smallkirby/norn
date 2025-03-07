@@ -157,8 +157,8 @@ pub fn rdmsr(T: type, comptime msr: Msr) T {
 
     const value = bits.concat(u64, edx, eax);
     return switch (@typeInfo(T)) {
-        .Int, .ComptimeInt => value,
-        .Struct => @bitCast(value),
+        .int, .comptime_int => value,
+        .@"struct" => @bitCast(value),
         else => @compileError("rdmsr: invalid type"),
     };
 }
@@ -198,8 +198,8 @@ pub fn writeCr4(cr4: regs.Cr4) void {
 
 pub fn wrmsr(comptime msr: Msr, value: anytype) void {
     const val: u64 = switch (@typeInfo(@TypeOf(value))) {
-        .Int, .ComptimeInt => value,
-        .Struct => @bitCast(value),
+        .int, .comptime_int => value,
+        .@"struct" => @bitCast(value),
         else => @compileError("wrmsr: invalid type"),
     };
     const eax: u32 = @truncate(val);

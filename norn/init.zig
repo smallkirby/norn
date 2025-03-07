@@ -47,7 +47,7 @@ pub export fn debugUserTask() noreturn {
 /// Enter userland task with hardcoded context.
 ///
 /// TODO: Debug-purpose only. Remove this.
-fn debugEnterUser(sp: u64, ip: u64) callconv(.C) void {
+fn debugEnterUser(sp: u64, ip: u64) callconv(.c) void {
     asm volatile (
         \\cli
         // SS (RPL = 3)

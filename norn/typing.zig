@@ -25,7 +25,7 @@ pub fn Partialable(Type: type) type {
 
         /// Set the part of fields of the inner struct.
         pub fn set(self: *Self, partial: anytype) void {
-            inline for (@typeInfo(@TypeOf(partial)).Struct.fields) |field| {
+            inline for (@typeInfo(@TypeOf(partial)).@"struct".fields) |field| {
                 @field(self.inner, field.name) = @field(partial, field.name);
             }
         }

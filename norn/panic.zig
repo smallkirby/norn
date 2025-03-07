@@ -15,7 +15,7 @@ pub const panic_fn = panic;
 var panicked = atomic.Value(bool).init(false);
 
 fn panic(msg: []const u8, _: ?*builtin.StackTrace, _: ?usize) noreturn {
-    @setCold(true);
+    @branchHint(.cold);
     arch.disableIrq();
 
     // Print the panic message.

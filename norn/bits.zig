@@ -10,8 +10,8 @@ const std = @import("std");
 /// - `nth` : The bit position to set.
 pub fn tobit(T: type, nth: anytype) T {
     const val = switch (@typeInfo(@TypeOf(nth))) {
-        .Int, .ComptimeInt => nth,
-        .Enum => @intFromEnum(nth),
+        .int, .comptime_int => nth,
+        .@"enum" => @intFromEnum(nth),
         else => @compileError("setbit: invalid type"),
     };
     return @as(T, 1) << @intCast(val);
@@ -23,8 +23,8 @@ pub fn tobit(T: type, nth: anytype) T {
 /// - `nth` : The bit position to check.
 pub inline fn isset(val: anytype, nth: anytype) bool {
     const int_nth = switch (@typeInfo(@TypeOf(nth))) {
-        .Int, .ComptimeInt => nth,
-        .Enum => @intFromEnum(nth),
+        .int, .comptime_int => nth,
+        .@"enum" => @intFromEnum(nth),
         else => @compileError("isset: invalid type"),
     };
     return ((val >> @intCast(int_nth)) & 1) != 0;
@@ -37,10 +37,10 @@ pub inline fn isset(val: anytype, nth: anytype) bool {
 /// - `b` : The second value. Must be the same type as `a`. Becomes the lower half of the output.
 pub inline fn concat(T: type, a: anytype, b: @TypeOf(a)) T {
     const U = @TypeOf(a);
-    const width_T = @typeInfo(T).Int.bits;
+    const width_T = @typeInfo(T).int.bits;
     const width_U = switch (@typeInfo(U)) {
-        .Int => |t| t.bits,
-        .ComptimeInt => width_T / 2,
+        .int => |t| t.bits,
+        .comptime_int => width_T / 2,
         else => @compileError("concat: invalid type"),
     };
     if (width_T != width_U * 2) @compileError("concat: invalid type");
@@ -60,18 +60,18 @@ pub fn concatMany(T: type, args: anytype) T {
     // Check if the total width of the args is equal to the output type.
     comptime {
         switch (@typeInfo(@TypeOf(args))) {
-            .Struct => {},
+            .@"struct" => {},
             else => @compileError("concatMany: invalid type"),
         }
 
         var width = 0;
         for (fields) |field| {
             width += switch (@typeInfo(field.type)) {
-                .Int => |t| t.bits,
+                .int => |t| t.bits,
                 else => @compileError("concatMany: invalid type of entry"),
             };
         }
-        if (width != @typeInfo(T).Int.bits) @compileError("concatMany: total width mismatch");
+        if (width != @typeInfo(T).int.bits) @compileError("concatMany: total width mismatch");
     }
 
     // Calculate the result.
@@ -82,7 +82,7 @@ pub fn concatMany(T: type, args: anytype) T {
         const field = fields[index - 1];
         const val = @field(args, field.name);
         const val_width = switch (@typeInfo(field.type)) {
-            .Int => |t| t.bits,
+            .int => |t| t.bits,
             else => @compileError("concatMany: invalid type of entry"),
         };
         result |= @as(T, val) << cur_width;
