@@ -39,6 +39,11 @@ pub const FileSystem = struct {
     pub fn lookup(self: *FileSystem, dentry: *Dentry, name: []const u8) Error!?*Dentry {
         return self.vtable.lookup(self, dentry, name);
     }
+
+    /// TODO: doc
+    pub fn read(self: *FileSystem, inode: *Inode, buf: []u8, pos: usize) Error!usize {
+        return self.vtable.read(self, inode, buf, pos);
+    }
 };
 
 /// Dentry that connects an inode with its name.

@@ -10,6 +10,8 @@ const cpio = @import("fs/cpio.zig");
 const RamFs = @import("fs/RamFs.zig");
 const vfs = @import("fs/vfs.zig");
 
+const allocator = norn.mem.general_allocator;
+
 /// FS Error.
 pub const Error = error{
     /// File not found.
@@ -54,13 +56,15 @@ var root: *vfs.Dentry = undefined;
 var cwd: *vfs.Dentry = undefined;
 
 /// Initialize filesystem.
-pub fn init(allocator: Allocator) Error!void {
+pub fn init() Error!void {
     const rfs = try RamFs.init(allocator);
     root = rfs.root;
     cwd = rfs.root;
 }
 
 /// Load initramfs image and create entries.
+///
+/// - `initimg`: Initramfs image. Caller can free this memory after this function returns.
 pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
     var fs = &root.fs;
     var iter = cpio.CpioIterator.new(initimg);
@@ -91,7 +95,8 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
         if (bits.isset(mode, 14)) {
             _ = try fs.createDirectory(parent, basename);
         } else {
-            _ = try fs.createFile(parent, basename);
+            const dentry = try fs.createFile(parent, basename);
+            _ = try fs.vtable.write(fs, dentry.inode, try c.getData(), 0);
         }
     }
 
@@ -102,14 +107,32 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
     log.debug("=====================================", .{});
 }
 
-/// TODO: doc
-pub const OpenFlags = struct {
-    /// Create a regular file if it doesn't exist.
-    create: bool = false,
+pub const OpenMode = enum {
+    /// Open the file in read-only mode.
+    read_only,
+    /// Open the file in write-only mode.
+    read_write,
 };
 
 /// TODO: doc
-pub fn open(path: []const u8, flags: OpenFlags, allocator: Allocator) Error!*File {
+pub const OpenFlags = struct {
+    const Self = @This();
+
+    /// Mode to open the file.
+    mode: OpenMode = .read_write,
+    /// Create a new file if it does not exist.
+    create: bool = false,
+
+    pub const create_rw = Self{
+        .mode = .read_write,
+        .create = true,
+    };
+};
+
+/// TODO: doc
+pub fn open(path: []const u8, flags: OpenFlags) Error!*File {
+    // TODO: use mode
+
     const dentry = if (try lookup(path)) |dent| dent else blk: {
         if (!flags.create) return Error.NotFound;
         // Try to create the file.
@@ -126,9 +149,10 @@ pub fn open(path: []const u8, flags: OpenFlags, allocator: Allocator) Error!*Fil
 }
 
 pub fn read(file: *File, buf: []u8) Error!usize {
-    _ = file; // autofix
-    _ = buf; // autofix
-    norn.unimplemented("fs.read");
+    const inode = file.dentry.inode;
+    const bytesRead = try file.dentry.fs.read(inode, buf, file.pos);
+    file.pos += bytesRead;
+    return bytesRead;
 }
 
 pub fn write(file: *File, buf: []const u8) Error!usize {
@@ -149,7 +173,7 @@ pub fn mkdir(path: []const u8) Error!void {
     norn.unimplemented("fs.mkdir");
 }
 
-pub fn close(file: *File, allocator: Allocator) Error!void {
+pub fn close(file: *File) Error!void {
     allocator.destroy(file);
 }
 

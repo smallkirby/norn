@@ -115,7 +115,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     try arch.initGdtThisCpu(norn.mem.page_allocator);
 
     // Initialize filesystem.
-    try norn.fs.init(norn.mem.general_allocator);
+    try norn.fs.init();
     log.info("Initialized filesystem.", .{});
 
     // Read initramfs
