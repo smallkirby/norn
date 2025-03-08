@@ -146,7 +146,7 @@ fn createFileInternal(self: *Self, dir: *Dentry, name: []const u8) Error!*Dentry
         self.filesystem(),
         inode,
         dir,
-        name,
+        try self.allocator.dupe(u8, name),
         self.allocator,
     );
 
@@ -165,7 +165,7 @@ fn createDirectoryInternal(self: *Self, dir: *Dentry, name: []const u8) Error!*D
         self.filesystem(),
         inode,
         dir,
-        name,
+        try self.allocator.dupe(u8, name),
         self.allocator,
     );
 
