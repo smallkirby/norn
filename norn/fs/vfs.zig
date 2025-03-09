@@ -7,6 +7,12 @@ pub const Error = error{
     OutOfMemory,
 };
 
+/// Stat information.
+pub const Stat = struct {
+    /// Size of the file.
+    size: usize,
+};
+
 /// VFS operations.
 pub const Vtable = struct {
     read: *const fn (self: *FileSystem, inode: *Inode, buf: []u8, pos: usize) Error!usize,
@@ -14,6 +20,7 @@ pub const Vtable = struct {
     lookup: *const fn (self: *FileSystem, dentry: *Dentry, name: []const u8) Error!?*Dentry,
     createFile: *const fn (self: *FileSystem, dentry: *Dentry, name: []const u8) Error!*Dentry,
     createDirectory: *const fn (self: *FileSystem, dentry: *Dentry, name: []const u8) Error!*Dentry,
+    stat: *const fn (self: *FileSystem, inode: *Inode) Error!Stat,
 };
 
 /// Virtual filesystem.
@@ -43,6 +50,11 @@ pub const FileSystem = struct {
     /// TODO: doc
     pub fn read(self: *FileSystem, inode: *Inode, buf: []u8, pos: usize) Error!usize {
         return self.vtable.read(self, inode, buf, pos);
+    }
+
+    /// TODO: doc
+    pub fn stat(self: *FileSystem, inode: *Inode) Error!Stat {
+        return self.vtable.stat(self, inode);
     }
 };
 

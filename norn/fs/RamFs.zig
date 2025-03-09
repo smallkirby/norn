@@ -2,6 +2,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const DoublyLinkedList = std.DoublyLinkedList;
 
+const norn = @import("norn");
+
 const vfs = @import("vfs.zig");
 const Error = vfs.Error;
 const Dentry = vfs.Dentry;
@@ -19,6 +21,7 @@ const vtable = vfs.Vtable{
     .lookup = lookup,
     .read = read,
     .write = write,
+    .stat = stat,
 };
 
 /// Backing allocator.
@@ -91,6 +94,17 @@ pub fn write(fs: *vfs.FileSystem, inode: *Inode, data: []const u8, pos: usize) E
 pub fn lookup(fs: *vfs.FileSystem, dir: *Dentry, name: []const u8) Error!?*Dentry {
     const self: *Self = @alignCast(@ptrCast(fs.ctx));
     return self.lookupInternal(dir, name);
+}
+
+pub fn stat(fs: *vfs.FileSystem, inode: *Inode) Error!vfs.Stat {
+    _ = fs;
+
+    return switch (getNode(inode).*) {
+        .directory => norn.unimplemented("stat for directory"),
+        .file => |f| .{
+            .size = f.size,
+        },
+    };
 }
 
 /// Print the tree structure of the filesystem.

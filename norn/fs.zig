@@ -9,6 +9,7 @@ const bits = norn.bits;
 const cpio = @import("fs/cpio.zig");
 const RamFs = @import("fs/RamFs.zig");
 const vfs = @import("fs/vfs.zig");
+const Stat = vfs.Stat;
 
 const allocator = norn.mem.general_allocator;
 
@@ -119,7 +120,7 @@ pub const OpenFlags = struct {
     const Self = @This();
 
     /// Mode to open the file.
-    mode: OpenMode = .read_write,
+    mode: OpenMode = .read_only,
     /// Create a new file if it does not exist.
     create: bool = false,
 
@@ -168,12 +169,16 @@ pub fn seek(file: *File, offset: usize, whence: SeekMode) Error!usize {
     norn.unimplemented("fs.seek");
 }
 
+pub fn stat(file: *File) Error!Stat {
+    return try file.dentry.fs.stat(file.dentry.inode);
+}
+
 pub fn mkdir(path: []const u8) Error!void {
     _ = path; // autofix
     norn.unimplemented("fs.mkdir");
 }
 
-pub fn close(file: *File) Error!void {
+pub fn close(file: *File) void {
     allocator.destroy(file);
 }
 
