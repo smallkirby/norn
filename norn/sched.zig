@@ -15,7 +15,8 @@ const general_allocator = mem.general_allocator;
 /// Error.
 pub const Error =
     arch.Error ||
-    mem.Error;
+    mem.Error ||
+    thread.Error;
 
 /// Run queue of this CPU.
 ///
@@ -114,7 +115,7 @@ inline fn enqueueTask(task: *Thread) void {
 
 /// Create an initial task (PID 1) and set the current task to it.
 pub fn setupInitialTask() Error!void {
-    const init_task = try thread.createInitialThread();
+    const init_task = try thread.createInitialThread("/sbin/init");
     pcpu.thisCpuSet(&current_task, init_task);
 }
 

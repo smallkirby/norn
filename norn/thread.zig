@@ -5,6 +5,7 @@
 
 const norn = @import("norn");
 const arch = norn.arch;
+const loader = norn.loader;
 const mem = norn.mem;
 const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
 
@@ -14,6 +15,7 @@ const general_allocator = mem.general_allocator;
 /// Error.
 pub const Error =
     arch.Error ||
+    loader.Error ||
     mem.Error;
 
 /// Type of thread ID.
@@ -162,29 +164,16 @@ pub fn createKernelThread(name: []const u8, entry: KernelThreadEntry) Error!*Thr
 ///
 /// TODO: This function now has many hardcoded code for debug.
 /// TODO: Read init from FS and parse it.
-pub fn createInitialThread() Error!*Thread {
+pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
     const thread = try Thread.create("init");
 
     // Copy initial user function for debug.
-    const text_page = try norn.mem.page_allocator.allocPages(1, .normal);
-    const text_ptr: [*]const u8 = @ptrCast(&norn.init.debugUserTask);
-    @memcpy(text_page, text_ptr[0..text_page.len]);
+    var elf_loader = try loader.ElfLoader.new(filename, thread.pgtbl);
+    try elf_loader.load();
 
     // Create user stack.
     const stack_page = try norn.mem.page_allocator.allocPages(1, .normal);
     @memset(stack_page, 0);
-
-    // Map text segment.
-    const text_base = 0x100000;
-    const text_size = 0x1000;
-
-    try arch.mem.map(
-        thread.pgtbl,
-        text_base,
-        mem.virt2phys(text_page.ptr),
-        text_size,
-        .executable,
-    );
 
     // Map stack.
     const stack_base = 0x200000;
@@ -201,7 +190,7 @@ pub fn createInitialThread() Error!*Thread {
         thread.stack_ptr,
         @intFromPtr(&norn.init.initialTask),
     );
-    thread.user_ip = text_base;
+    thread.user_ip = elf_loader.entry_point;
     thread.user_stack_ptr = stack_base + stack_size - 0x10;
 
     return thread;
