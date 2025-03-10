@@ -13,11 +13,15 @@ pub const Handler = *const fn (*Context, u64, u64, u64, u64, u64) Error!i64;
 
 /// List of system calls.
 pub const Syscall = enum(u64) {
+    /// Output to debug log.
+    dlog = 255,
+
     _,
 
     /// Get a corresponding system call handler.
     pub fn getHandler(self: Syscall) Handler {
         return switch (self) {
+            .dlog => sysDebugLog,
             _ => unhandledSyscallHandler,
         };
     }
@@ -47,4 +51,16 @@ fn unhandledSyscallHandler(
     }
 
     return Error.Unimplemented;
+}
+
+/// Syscall handler for `dlog`.
+///
+/// Print the given string to the debug log.
+///
+/// - `str`: Pointer to the null-terminated string.
+/// - `size`: Size of the string.
+fn sysDebugLog(_: *Context, str: u64, size: u64, _: u64, _: u64, _: u64) Error!i64 {
+    const s: []const u8 = @as([*]const u8, @ptrFromInt(str))[0..size];
+    log.debug("{s}", .{s});
+    return 0;
 }
