@@ -89,6 +89,8 @@ export fn syscallEntry() callconv(.naked) void {
     // SYSCALL sets below registers.
     //  R11: RFLAGS
     //  RCX: RIP
+    //
+    // On entry, interrupts are disabled since IA32_FMASK masks IF bit.
     asm volatile (
         \\
         // NOTE: Norn kernel shares the same page tables with user (no KPTI).
