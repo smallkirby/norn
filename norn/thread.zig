@@ -8,6 +8,7 @@ const arch = norn.arch;
 const loader = norn.loader;
 const mem = norn.mem;
 const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
+const SpinLock = norn.SpinLock;
 
 const page_allocator = mem.page_allocator;
 const general_allocator = mem.general_allocator;
@@ -59,12 +60,18 @@ pub const CpuTime = struct {
 };
 
 /// Default stack size of a kernel thread.
-const default_stack_size: usize = 1 * mem.size_4kib;
+pub const kernel_stack_size: usize = 2 * mem.size_4kib;
 /// Default number of pages for kernel stack.
-const default_stack_pgnum: usize = @divFloor(default_stack_size - 1, mem.size_4kib) + 1;
+const kernel_stack_pgnum: usize = @divFloor(kernel_stack_size - 1, mem.size_4kib) + 1;
+
+comptime {
+    norn.comptimeAssert(kernel_stack_pgnum == 2, "kernel_stack_pgnum must be 2");
+}
 
 /// Next thread ID.
 var tid_next: Tid = 0;
+/// Spin lock for thread module.
+var thread_lock = SpinLock{};
 
 /// Execution context and resources.
 pub const Thread = struct {
@@ -81,7 +88,8 @@ pub const Thread = struct {
     state: State = .running,
     /// Thread name with null-termination.
     name: [name_max_len:0]u8 = undefined,
-    /// CR3 of the user space.
+    /// CR3 of this task.
+    /// User and kernel has a same page table.
     pgtbl: mem.Virt = undefined,
     /// CPU time consumed for the thread.
     cpu_time: CpuTime = .{},
@@ -144,6 +152,9 @@ pub const Thread = struct {
 
 /// Consume TID pool to allocate a new unique TID.
 fn assignNewTid() Tid {
+    const ie = thread_lock.lockDisableIrq();
+    defer thread_lock.unlockRestoreIrq(ie);
+
     const tid = tid_next;
     tid_next +%= 1;
     return tid;

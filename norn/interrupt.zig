@@ -12,8 +12,5 @@ pub const VectorTable = enum(u8) {
 /// Context for interrupt handlers.
 pub const Context = arch.InterruptContext;
 
-/// Saved registers on interrupt entry.
-pub const Registers = arch.InterruptRegisters;
-
 /// Interrupt handler function signature.
 pub const Handler = *const fn (*Context) void;

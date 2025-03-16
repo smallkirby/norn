@@ -3,6 +3,66 @@ const mem = norn.mem;
 
 const Phys = mem.Phys;
 
+/// x64 CPU context.
+pub const CpuContext = packed struct {
+    // Callee-saved registers.
+    r15: u64,
+    r14: u64,
+    r13: u64,
+    r12: u64,
+    rbp: u64,
+    rbx: u64,
+
+    // Caller-saved registers.
+    r11: u64,
+    r10: u64,
+    r9: u64,
+    r8: u64,
+    rax: u64,
+    rcx: u64,
+    rdx: u64,
+    rsi: u64,
+    rdi: u64,
+
+    // Context-specific data.
+    spec1: SpecData1,
+    spec2: SpecData2,
+
+    // Interrupt frame.
+    rip: u64,
+    cs: u64,
+    rflags: u64,
+    // Available only when interrupt is called from user mode.
+    rsp: u64,
+    ss: u64,
+
+    const SpecData1 = packed union {
+        /// Interrupt vector on interrupt.
+        vector: u64,
+        /// Unused.
+        unused: u64,
+    };
+
+    const SpecData2 = packed union {
+        /// Original RAX on syscall.
+        orig_rax: u64,
+        /// Error code on interrupt.
+        error_code: u64,
+        /// Unused.
+        unused: u64,
+    };
+
+    comptime {
+        norn.comptimeAssert(@bitSizeOf(SpecData1) == 64, "Invalid size of SpecData1");
+        norn.comptimeAssert(@bitSizeOf(SpecData2) == 64, "Invalid size of SpecData2");
+    }
+
+    /// Check if the interrupt is called from user mode.
+    pub inline fn isFromUserMode(self: CpuContext) bool {
+        return (self.cs & 0b11) == 0b11; // Check RPL
+    }
+};
+
 pub const Rflags = packed struct(u64) {
     /// Carry flag.
     cf: bool,

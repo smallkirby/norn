@@ -9,8 +9,9 @@ const am = @import("asm.zig");
 const arch = @import("arch.zig");
 const gdt = @import("gdt.zig");
 const isr = @import("isr.zig");
+const regs = @import("registers.zig");
 
-const Context = interrupt.Context;
+const Context = regs.CpuContext;
 const Handler = interrupt.Handler;
 
 pub const Error = error{
@@ -94,7 +95,7 @@ fn setGate(
 /// Called from the ISR stub.
 /// Dispatches the interrupt to the appropriate handler.
 pub fn dispatch(context: *Context) void {
-    handlers[context.vector](context);
+    handlers[context.spec1.vector](context);
 }
 
 /// Set an interrupt handler for the given vector.
@@ -108,31 +109,31 @@ pub fn setHandler(vector: u8, handler: Handler) Error!void {
 fn unhandledHandler(context: *Context) void {
     @branchHint(.cold);
 
-    const exception: Exception = @enumFromInt(context.vector);
+    const exception: Exception = @enumFromInt(context.spec1.vector);
     log.err("============ Oops! ===================", .{});
     // TODO Print the CPU ID
     log.err("Unhandled interrupt: {s} ({})", .{
         exception.name(),
-        context.vector,
+        context.spec1.vector,
     });
-    log.err("Error Code: 0x{X}", .{context.error_code});
+    log.err("Error Code: 0x{X}", .{context.spec2.error_code});
     log.err("RIP    : 0x{X:0>16}", .{context.rip});
     log.err("RFLAGS : 0x{X:0>16}", .{context.rflags});
-    log.err("RAX    : 0x{X:0>16}", .{context.registers.rax});
-    log.err("RBX    : 0x{X:0>16}", .{context.registers.rbx});
-    log.err("RCX    : 0x{X:0>16}", .{context.registers.rcx});
-    log.err("RDX    : 0x{X:0>16}", .{context.registers.rdx});
-    log.err("RSI    : 0x{X:0>16}", .{context.registers.rsi});
-    log.err("RDI    : 0x{X:0>16}", .{context.registers.rdi});
-    log.err("RBP    : 0x{X:0>16}", .{context.registers.rbp});
-    log.err("R8     : 0x{X:0>16}", .{context.registers.r8});
-    log.err("R9     : 0x{X:0>16}", .{context.registers.r9});
-    log.err("R10    : 0x{X:0>16}", .{context.registers.r10});
-    log.err("R11    : 0x{X:0>16}", .{context.registers.r11});
-    log.err("R12    : 0x{X:0>16}", .{context.registers.r12});
-    log.err("R13    : 0x{X:0>16}", .{context.registers.r13});
-    log.err("R14    : 0x{X:0>16}", .{context.registers.r14});
-    log.err("R15    : 0x{X:0>16}", .{context.registers.r15});
+    log.err("RAX    : 0x{X:0>16}", .{context.rax});
+    log.err("RBX    : 0x{X:0>16}", .{context.rbx});
+    log.err("RCX    : 0x{X:0>16}", .{context.rcx});
+    log.err("RDX    : 0x{X:0>16}", .{context.rdx});
+    log.err("RSI    : 0x{X:0>16}", .{context.rsi});
+    log.err("RDI    : 0x{X:0>16}", .{context.rdi});
+    log.err("RBP    : 0x{X:0>16}", .{context.rbp});
+    log.err("R8     : 0x{X:0>16}", .{context.r8});
+    log.err("R9     : 0x{X:0>16}", .{context.r9});
+    log.err("R10    : 0x{X:0>16}", .{context.r10});
+    log.err("R11    : 0x{X:0>16}", .{context.r11});
+    log.err("R12    : 0x{X:0>16}", .{context.r12});
+    log.err("R13    : 0x{X:0>16}", .{context.r13});
+    log.err("R14    : 0x{X:0>16}", .{context.r14});
+    log.err("R15    : 0x{X:0>16}", .{context.r15});
     log.err("CS     : 0x{X:0>4}", .{context.cs});
     if (context.isFromUserMode()) {
         log.err("SS     : 0x{X:0>4}", .{context.ss});

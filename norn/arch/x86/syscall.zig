@@ -13,40 +13,11 @@ const cpuid = @import("cpuid.zig");
 const gdt = @import("gdt.zig");
 const regs = @import("registers.zig");
 const task = @import("task.zig");
+const CpuContext = regs.CpuContext;
 
 pub const Error = error{
     /// The operation is not supported.
     NotSupported,
-};
-
-/// Register context for x86-64 syscall.
-pub const Registers = packed struct {
-    // Callee-saved registers.
-    r15: u64,
-    r14: u64,
-    r13: u64,
-    r12: u64,
-    rbp: u64,
-    rbx: u64,
-
-    // Caller-saved registers.
-    r11: u64,
-    r10: u64,
-    r9: u64,
-    r8: u64,
-    rax: u64,
-    rcx: u64,
-    rdx: u64,
-    rsi: u64,
-    rdi: u64,
-
-    // Special registers.
-    orig_rax: u64,
-    rip: u64,
-    cs: u64,
-    rflags: u64,
-    rsp: u64,
-    ss: u64,
 };
 
 /// Setup and enable system calls for this CPU.
@@ -80,7 +51,7 @@ pub fn init() Error!void {
 }
 
 /// Dispatch system call.
-export fn dispatchSyscall(nr: u64, ctx: *Registers) callconv(.c) i64 {
+export fn dispatchSyscall(nr: u64, ctx: *CpuContext) callconv(.c) i64 {
     asm volatile (
         \\mov %[kernel_ds], %dx
         \\mov %%dx, %%ds
@@ -138,6 +109,7 @@ export fn syscallEntry() callconv(.naked) void {
         \\pushq %[cs]                   # cs
         \\pushq %%rcx                   # rip
         \\pushq %%rax                   # orig_rax
+        \\pushq $0                      # unused
         \\pushq %%rdi                   # rdi
         \\pushq %%rsi                   # rsi
         \\pushq %%rdx                   # rdx
@@ -177,7 +149,7 @@ export fn syscallEntry() callconv(.naked) void {
         \\popq %%rdx                    # rdx
         \\popq %%rsi                    # rsi
         \\popq %%rdi                    # rdi
-        \\add  $8, %%rsp                # orig_rax
+        \\add  $0x10, %%rsp             # orig_rax & unused
         \\popq %%rcx                    # rip
         \\add  $8, %%rsp                # cs
         \\popq %%r11                    # rflags
@@ -194,6 +166,6 @@ export fn syscallEntry() callconv(.naked) void {
         : [ss] "i" (gdt.SegmentSelector{ .index = gdt.user_ds_index, .rpl = 3 }),
           [cs] "i" (gdt.SegmentSelector{ .index = gdt.user_cs_index, .rpl = 3 }),
           [user_stack] "{r9}" (&task.current_tss.rsp1), // We can use caller-saved register here
-          [kernel_stack] "{r10}" (&task.current_tss.rsp0),
+          [kernel_stack] "{r11}" (&task.current_tss.rsp0),
     );
 }

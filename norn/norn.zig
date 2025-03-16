@@ -96,3 +96,10 @@ pub fn endlessHalt() noreturn {
 test {
     std.testing.refAllDeclsRecursive(@This());
 }
+
+/// Assert at compile time.
+pub fn comptimeAssert(cond: bool, comptime msg: []const u8) void {
+    if (!cond) {
+        @compileError(msg);
+    }
+}

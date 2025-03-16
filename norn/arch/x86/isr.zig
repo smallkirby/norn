@@ -39,55 +39,14 @@ const std = @import("std");
 const log = std.log.scoped(.isr);
 
 const intr = @import("intr.zig");
+const regs = @import("registers.zig");
+const CpuContext = regs.CpuContext;
 
 /// ISR signature.
 pub const Isr = fn () callconv(.naked) void;
 
-// Execution Context
-pub const Context = packed struct {
-    /// General purpose registers.
-    registers: Registers,
-    /// Interrupt Vector.
-    vector: u64,
-    /// Error Code.
-    error_code: u64,
-
-    // CPU status:
-    rip: u64,
-    cs: u64,
-    rflags: u64,
-    // Available only when interrupt is called from user mode.
-    rsp: u64,
-    ss: u64,
-
-    /// Check if the interrupt is called from user mode.
-    pub inline fn isFromUserMode(self: Context) bool {
-        return (self.cs & 0b11) == 0b11; // Check RPL
-    }
-};
-
-/// Structure holding general purpose registers as saved by PUSHA.
-pub const Registers = packed struct {
-    r8: u64,
-    r9: u64,
-    r10: u64,
-    r11: u64,
-    r12: u64,
-    r13: u64,
-    r14: u64,
-    r15: u64,
-    rdi: u64,
-    rsi: u64,
-    rbp: u64,
-    rsp: u64,
-    rbx: u64,
-    rdx: u64,
-    rcx: u64,
-    rax: u64,
-};
-
 /// Zig entry point of the interrupt handler.
-export fn intrZigEntry(ctx: *Context) callconv(.c) void {
+export fn intrZigEntry(ctx: *CpuContext) callconv(.c) void {
     intr.dispatch(ctx);
 }
 
@@ -126,22 +85,21 @@ pub fn generateIsr(comptime vector: usize) Isr {
 export fn isrCommon() callconv(.naked) void {
     // Save the general-purpose registers.
     asm volatile (
-        \\pushq %%rax
-        \\pushq %%rcx
-        \\pushq %%rdx
-        \\pushq %%rbx
-        \\pushq %%rsp
-        \\pushq %%rbp
-        \\pushq %%rsi
         \\pushq %%rdi
-        \\pushq %%r15
-        \\pushq %%r14
-        \\pushq %%r13
-        \\pushq %%r12
-        \\pushq %%r11
-        \\pushq %%r10
-        \\pushq %%r9
+        \\pushq %%rsi
+        \\pushq %%rdx
+        \\pushq %%rcx
+        \\pushq %%rax
         \\pushq %%r8
+        \\pushq %%r9
+        \\pushq %%r10
+        \\pushq %%r11
+        \\pushq %%rbx
+        \\pushq %%rbp
+        \\pushq %%r12
+        \\pushq %%r13
+        \\pushq %%r14
+        \\pushq %%r15
     );
 
     // Push the context and call the handler.
@@ -160,22 +118,21 @@ export fn isrCommon() callconv(.naked) void {
 
     // Remove general-purpose registers, error code, and vector from the stack.
     asm volatile (
-        \\popq %%r8
-        \\popq %%r9
-        \\popq %%r10
-        \\popq %%r11
-        \\popq %%r12
-        \\popq %%r13
-        \\popq %%r14
         \\popq %%r15
-        \\popq %%rdi
-        \\popq %%rsi
+        \\popq %%r14
+        \\popq %%r13
+        \\popq %%r12
         \\popq %%rbp
-        \\popq %%rsp
         \\popq %%rbx
-        \\popq %%rdx
-        \\popq %%rcx
+        \\popq %%r11
+        \\popq %%r10
+        \\popq %%r9
+        \\popq %%r8
         \\popq %%rax
+        \\popq %%rcx
+        \\popq %%rdx
+        \\popq %%rsi
+        \\popq %%rdi
         \\add   $0x10, %%rsp
         \\iretq
     );

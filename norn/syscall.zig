@@ -41,9 +41,9 @@ fn unhandledSyscallHandler(
     arg4: u64,
     arg5: u64,
 ) Error!i64 {
-    log.err("Unhandled syscall (nr={d})", .{ctx.orig_rax});
-    log.err("  [0]={X:0>16} [1]={X:0>16}", .{ arg1, arg2 });
-    log.err("  [2]={X:0>16} [3]={X:0>16} [4]={X:0>16}", .{ arg3, arg4, arg5 });
+    log.err("Unhandled syscall (nr={d})", .{ctx.spec2.orig_rax});
+    log.err("  [1]={X:0>16} [2]={X:0>16}", .{ arg1, arg2 });
+    log.err("  [3]={X:0>16} [4]={X:0>16} [5]={X:0>16}", .{ arg3, arg4, arg5 });
 
     if (norn.is_runtime_test) {
         log.info("Reached unreachable unhandled syscall handler.", .{});

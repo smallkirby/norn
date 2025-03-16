@@ -39,7 +39,7 @@ export fn main() noreturn {
     dlog("Hello, from userland!");
 
     while (true) {
-        _ = syscall(std.math.maxInt(u64), 0, 0, 0, 0);
+        _ = syscall(std.math.maxInt(u64), 0, 1, 2, 3);
     }
 
     unreachable;

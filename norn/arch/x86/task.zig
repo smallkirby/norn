@@ -10,6 +10,7 @@ const gdt = @import("gdt.zig");
 const isr = @import("isr.zig");
 const regs = @import("registers.zig");
 const syscall = @import("syscall.zig");
+const CpuContext = isr.Context;
 const TaskStateSegment = gdt.TaskStateSegment;
 
 pub const Error = mem.Error || arch.Error;
