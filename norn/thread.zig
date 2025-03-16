@@ -80,10 +80,12 @@ pub const Thread = struct {
 
     /// Thread ID.
     tid: Tid,
-    /// Kernel stack.
-    stack: []u8 = undefined,
+    /// Kernel stack top.
+    kernel_stack: []u8 = undefined,
     /// Kernel stack pointer.
-    stack_ptr: [*]u8 = undefined,
+    kernel_stack_ptr: [*]u8 = undefined,
+    /// User stack top.
+    user_stack: []u8 = undefined,
     /// Thread state.
     state: State = .running,
     /// Thread name with null-termination.
@@ -95,11 +97,6 @@ pub const Thread = struct {
     cpu_time: CpuTime = .{},
     /// Arch-specific context.
     arch_ctx: *anyopaque = undefined,
-
-    /// User stack pointer.
-    user_stack_ptr: ?mem.Virt = null, // TODO
-    /// User IP.
-    user_ip: ?mem.Virt = null, // TODO
 
     /// Linked list of threads.
     list_head: ThreadList.Head = .{},
@@ -125,7 +122,7 @@ pub const Thread = struct {
 
     /// Destroy the thread.
     fn destroy(self: *Thread) void {
-        page_allocator.freePages(self.stack);
+        page_allocator.freePages(self.kernel_stack);
         general_allocator.destroy(self);
     }
 
@@ -166,7 +163,7 @@ fn assignNewTid() Tid {
 /// - `entry`: Entry point of the kernel thread.
 pub fn createKernelThread(name: []const u8, entry: KernelThreadEntry) Error!*Thread {
     const thread = try Thread.create(name);
-    thread.stack_ptr = arch.task.initOrphanFrame(thread.stack_ptr, @intFromPtr(entry));
+    arch.task.initKernelStack(thread, @intFromPtr(entry));
 
     return thread;
 }
@@ -197,12 +194,14 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
         .read_write,
     );
 
-    thread.stack_ptr = arch.task.initOrphanFrame(
-        thread.stack_ptr,
-        @intFromPtr(&norn.init.initialTask),
+    arch.task.initKernelStack(thread, @intFromPtr(&norn.init.initialTask));
+
+    // Set up user stack.
+    arch.task.setupUserContext(
+        thread,
+        elf_loader.entry_point,
+        stack_base + stack_size,
     );
-    thread.user_ip = elf_loader.entry_point;
-    thread.user_stack_ptr = stack_base + stack_size - 0x10;
 
     return thread;
 }

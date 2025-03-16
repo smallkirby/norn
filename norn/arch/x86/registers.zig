@@ -25,8 +25,8 @@ pub const CpuContext = packed struct {
     rdi: u64,
 
     // Context-specific data.
-    spec1: SpecData1,
-    spec2: SpecData2,
+    spec1: SpecData1 = .zero,
+    spec2: SpecData2 = .zero,
 
     // Interrupt frame.
     rip: u64,
@@ -41,6 +41,8 @@ pub const CpuContext = packed struct {
         vector: u64,
         /// Unused.
         unused: u64,
+
+        const zero = SpecData1{ .unused = 0 };
     };
 
     const SpecData2 = packed union {
@@ -50,11 +52,14 @@ pub const CpuContext = packed struct {
         error_code: u64,
         /// Unused.
         unused: u64,
+
+        const zero = SpecData2{ .unused = 0 };
     };
 
     comptime {
         norn.comptimeAssert(@bitSizeOf(SpecData1) == 64, "Invalid size of SpecData1");
         norn.comptimeAssert(@bitSizeOf(SpecData2) == 64, "Invalid size of SpecData2");
+        norn.comptimeAssert(@sizeOf(@This()) % 0x10 == 0, "Invalid size of CpuContext");
     }
 
     /// Check if the interrupt is called from user mode.
