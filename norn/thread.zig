@@ -44,7 +44,7 @@ pub const CpuTime = struct {
     /// Time when the thread was last executed in user mode.
     user_last_start: ?u64 = null,
     /// Time when the thread was last executed in kernel mode.
-    kernel_last_kernel: ?u64 = null,
+    kernel_last_start: ?u64 = null,
 
     /// Update to record the time when the thread enters user mode.
     pub fn updateEnterUser(self: *CpuTime, now: u64) void {
