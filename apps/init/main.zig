@@ -15,7 +15,7 @@ fn syscall(nr: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64) i64 {
           [arg2] "r" (arg2),
           [arg3] "r" (arg3),
           [arg4] "r" (arg4),
-        : "rax", "rdi", "rsi", "rdx", "r10"
+        : "rax", "rcx", "rdx", "rdi", "rsi", "r8", "r9", "r10", "r11"
     );
 }
 
