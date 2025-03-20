@@ -1,6 +1,3 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-
 /// VFS error.
 pub const Error = error{
     /// Failed to allocate memory.
@@ -106,3 +103,6 @@ pub const Inode = struct {
         return inode;
     }
 };
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;

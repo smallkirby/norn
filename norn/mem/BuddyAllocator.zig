@@ -1,22 +1,3 @@
-const std = @import("std");
-const uefi = std.os.uefi;
-const DoublyLinkedList = std.DoublyLinkedList;
-const MemoryDescriptor = uefi.tables.MemoryDescriptor;
-
-const surtr = @import("surtr");
-const MemoryDescriptorIterator = surtr.MemoryDescriptorIterator;
-const MemoryMap = surtr.MemoryMap;
-
-const norn = @import("norn");
-const mem = norn.mem;
-const PageAllocator = mem.PageAllocator;
-const Phys = mem.Phys;
-const Virt = mem.Virt;
-const Zone = mem.Zone;
-const SpinLock = norn.SpinLock;
-
-const BootstrapAllocator = @import("BootstrapAllocator.zig");
-
 const Self = @This();
 const Error = PageAllocator.Error;
 
@@ -650,3 +631,24 @@ test "Arena.roundUpToOrder" {
     try testing.expectEqual(4, Arena.roundUpToOrder(9));
     try testing.expectEqual(4, Arena.roundUpToOrder(16));
 }
+
+// ====================================================
+
+const std = @import("std");
+const uefi = std.os.uefi;
+const DoublyLinkedList = std.DoublyLinkedList;
+const MemoryDescriptor = uefi.tables.MemoryDescriptor;
+
+const surtr = @import("surtr");
+const MemoryDescriptorIterator = surtr.MemoryDescriptorIterator;
+const MemoryMap = surtr.MemoryMap;
+
+const norn = @import("norn");
+const mem = norn.mem;
+const PageAllocator = mem.PageAllocator;
+const Phys = mem.Phys;
+const Virt = mem.Virt;
+const Zone = mem.Zone;
+const SpinLock = norn.SpinLock;
+
+const BootstrapAllocator = @import("BootstrapAllocator.zig");

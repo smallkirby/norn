@@ -1,10 +1,3 @@
-const std = @import("std");
-const io = std.io;
-const option = @import("option");
-
-const norn = @import("norn");
-const Serial = norn.Serial;
-
 /// Logger function type
 pub const LogFn = *const fn (comptime format: []const u8, args: anytype) void;
 
@@ -70,3 +63,10 @@ pub fn log(
         args,
     ) catch {};
 }
+
+const std = @import("std");
+const io = std.io;
+const option = @import("option");
+
+const norn = @import("norn");
+const Serial = norn.Serial;

@@ -3,16 +3,6 @@
 //! This filed provides a thread structure and related functions,
 //! that are independent from the specific architecture.
 
-const norn = @import("norn");
-const arch = norn.arch;
-const loader = norn.loader;
-const mem = norn.mem;
-const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
-const SpinLock = norn.SpinLock;
-
-const page_allocator = mem.page_allocator;
-const general_allocator = mem.general_allocator;
-
 /// Error.
 pub const Error =
     arch.Error ||
@@ -205,3 +195,13 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
 
     return thread;
 }
+
+const norn = @import("norn");
+const arch = norn.arch;
+const loader = norn.loader;
+const mem = norn.mem;
+const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
+const SpinLock = norn.SpinLock;
+
+const page_allocator = mem.page_allocator;
+const general_allocator = mem.general_allocator;

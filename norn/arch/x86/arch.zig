@@ -4,27 +4,6 @@ pub const task = @import("task.zig");
 pub const ApicTimer = apic.Timer;
 pub const InterruptContext = regs.CpuContext;
 pub const LocalApic = apic.LocalApic;
-const Msr = regs.Msr;
-
-const std = @import("std");
-const log = std.log.scoped(.arch);
-
-const norn = @import("norn");
-const bits = norn.bits;
-const interrupt = norn.interrupt;
-const PageAllocator = norn.mem.PageAllocator;
-const Phys = norn.mem.Phys;
-const Virt = norn.mem.Virt;
-
-const am = @import("asm.zig");
-const apic = @import("apic.zig");
-const cpuid = @import("cpuid.zig");
-const gdt = @import("gdt.zig");
-const intr = @import("intr.zig");
-const isr = @import("isr.zig");
-const pg = @import("page.zig");
-const regs = @import("registers.zig");
-const syscall = @import("syscall.zig");
 
 // Architecture-specific error type.
 pub const Error =
@@ -236,3 +215,25 @@ pub const mem = struct {
 test {
     std.testing.refAllDeclsRecursive(@This());
 }
+
+// ========================================
+
+const std = @import("std");
+const log = std.log.scoped(.arch);
+
+const norn = @import("norn");
+const bits = norn.bits;
+const interrupt = norn.interrupt;
+const PageAllocator = norn.mem.PageAllocator;
+const Phys = norn.mem.Phys;
+const Virt = norn.mem.Virt;
+
+const am = @import("asm.zig");
+const apic = @import("apic.zig");
+const cpuid = @import("cpuid.zig");
+const gdt = @import("gdt.zig");
+const intr = @import("intr.zig");
+const isr = @import("isr.zig");
+const pg = @import("page.zig");
+const regs = @import("registers.zig");
+const syscall = @import("syscall.zig");

@@ -1,8 +1,3 @@
-const norn = @import("norn");
-const mem = norn.mem;
-
-const Phys = mem.Phys;
-
 /// x64 CPU context.
 pub const CpuContext = packed struct {
     // Callee-saved registers.
@@ -307,3 +302,8 @@ pub const MsrStar = packed struct(u64) {
     /// SS is computed by subtracting 8 from the value.
     sysret_cs_ss: u16,
 };
+
+const norn = @import("norn");
+const mem = norn.mem;
+
+const Phys = mem.Phys;

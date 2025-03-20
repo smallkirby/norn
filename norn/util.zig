@@ -1,7 +1,5 @@
 //! This file provides a miscellaneous utilities.
 
-const std = @import("std");
-
 /// Round up the value to the given alignment.
 pub inline fn roundup(value: usize, alignment: usize) usize {
     return (value + alignment - 1) & ~(alignment - 1);
@@ -37,3 +35,7 @@ test "rounddown" {
     try testing.expectEqual(0x1000, rounddown(0x1120, 0x1000));
     try testing.expectEqual(0x1000, rounddown(0x1FFF, 0x1000));
 }
+
+// =======================================
+
+const std = @import("std");

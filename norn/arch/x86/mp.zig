@@ -1,24 +1,3 @@
-const std = @import("std");
-const atomic = std.atomic;
-const log = std.log.scoped(.mp);
-
-const norn = @import("norn");
-const acpi = norn.acpi;
-const bits = norn.bits;
-const mem = norn.mem;
-const Phys = mem.Phys;
-const SpinLock = norn.SpinLock;
-
-const page_allocator = mem.page_allocator;
-const PageAllocator = mem.PageAllocator;
-
-const am = @import("asm.zig");
-const apic = @import("apic.zig");
-const arch = @import("arch.zig");
-const gdt = @import("gdt.zig");
-const intr = @import("intr.zig");
-const pg = @import("page.zig");
-
 const Error = mem.Error || pg.Error;
 
 /// Number of pages for the each AP stack.
@@ -316,3 +295,24 @@ fn relocateZigEntry(trampoline: []u8) void {
         reloc[2 + i] = @truncate(zigentry_addr >> (@as(u6, @intCast(i)) * 8));
     }
 }
+
+const std = @import("std");
+const atomic = std.atomic;
+const log = std.log.scoped(.mp);
+
+const norn = @import("norn");
+const acpi = norn.acpi;
+const bits = norn.bits;
+const mem = norn.mem;
+const Phys = mem.Phys;
+const SpinLock = norn.SpinLock;
+
+const page_allocator = mem.page_allocator;
+const PageAllocator = mem.PageAllocator;
+
+const am = @import("asm.zig");
+const apic = @import("apic.zig");
+const arch = @import("arch.zig");
+const gdt = @import("gdt.zig");
+const intr = @import("intr.zig");
+const pg = @import("page.zig");

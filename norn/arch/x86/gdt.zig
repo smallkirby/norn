@@ -1,15 +1,3 @@
-const std = @import("std");
-
-const norn = @import("norn");
-const mem = norn.mem;
-const pcpu = norn.pcpu;
-
-const am = @import("asm.zig");
-
-const PageAllocator = mem.PageAllocator;
-const Phys = mem.Phys;
-const Virt = mem.Virt;
-
 /// Maximum number of GDT entries.
 const max_num_gdt = 0x10;
 
@@ -521,3 +509,15 @@ fn testTssDescriptor(base: Virt) void {
         );
     }
 }
+
+const std = @import("std");
+
+const norn = @import("norn");
+const mem = norn.mem;
+const pcpu = norn.pcpu;
+
+const am = @import("asm.zig");
+
+const PageAllocator = mem.PageAllocator;
+const Phys = mem.Phys;
+const Virt = mem.Virt;

@@ -1,18 +1,3 @@
-const std = @import("std");
-const atomic = std.atomic;
-const meta = std.meta;
-const Allocator = std.mem.Allocator;
-
-const surtr = @import("surtr");
-const MemoryMap = surtr.MemoryMap;
-
-const norn = @import("norn");
-const arch = norn.arch;
-
-const BootstrapAllocator = @import("mem/BootstrapAllocator.zig");
-const BuddyAllocator = @import("mem/BuddyAllocator.zig");
-const BinAllocator = @import("mem/BinAllocator.zig");
-
 /// Allocator interface to manage pages.
 pub const PageAllocator = @import("mem/PageAllocator.zig");
 
@@ -187,3 +172,18 @@ pub fn phys2virt(addr: anytype) Virt {
     };
     return value + direct_map_base;
 }
+
+const std = @import("std");
+const atomic = std.atomic;
+const meta = std.meta;
+const Allocator = std.mem.Allocator;
+
+const surtr = @import("surtr");
+const MemoryMap = surtr.MemoryMap;
+
+const norn = @import("norn");
+const arch = norn.arch;
+
+const BootstrapAllocator = @import("mem/BootstrapAllocator.zig");
+const BuddyAllocator = @import("mem/BuddyAllocator.zig");
+const BinAllocator = @import("mem/BinAllocator.zig");

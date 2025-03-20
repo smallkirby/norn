@@ -11,17 +11,6 @@
 //! Note that pointer returned by `thisCpuVar()` is in the per-CPU address space.
 //! So you cannot pass the pointer to the function that expects a pointer in the umua address space.
 
-const std = @import("std");
-
-const norn = @import("norn");
-const arch = norn.arch;
-const mem = norn.mem;
-const util = norn.util;
-const PageAllocator = mem.PageAllocator;
-const Virt = mem.Virt;
-
-const page_allocator = mem.page_allocator;
-
 /// Section name where per-CPU data is placed.
 pub const section = ".data..percpu";
 
@@ -128,3 +117,14 @@ pub const mock_for_testing = struct {
         pointer.* = value;
     }
 };
+
+const std = @import("std");
+
+const norn = @import("norn");
+const arch = norn.arch;
+const mem = norn.mem;
+const util = norn.util;
+const PageAllocator = mem.PageAllocator;
+const Virt = mem.Virt;
+
+const page_allocator = mem.page_allocator;

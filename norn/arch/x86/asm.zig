@@ -1,11 +1,3 @@
-const std = @import("std");
-
-const regs = @import("registers.zig");
-const Msr = regs.Msr;
-
-const norn = @import("norn");
-const bits = norn.bits;
-
 pub inline fn cli() void {
     asm volatile ("cli");
 }
@@ -213,3 +205,11 @@ pub fn wrmsr(comptime msr: Msr, value: anytype) void {
         : "eax", "edx", "ecx"
     );
 }
+
+const std = @import("std");
+
+const regs = @import("registers.zig");
+const Msr = regs.Msr;
+
+const norn = @import("norn");
+const bits = norn.bits;

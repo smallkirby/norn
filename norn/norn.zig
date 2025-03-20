@@ -2,11 +2,6 @@
 //!
 //! The operating system written from scratch in Zig.
 
-const std = @import("std");
-const log = std.log;
-const option = @import("option");
-const is_test = @import("builtin").is_test;
-
 pub const acpi = @import("acpi.zig");
 pub const arch = @import("arch.zig");
 pub const bits = @import("bits.zig");
@@ -103,3 +98,10 @@ pub fn comptimeAssert(cond: bool, comptime msg: []const u8) void {
         @compileError(msg);
     }
 }
+
+// =======================================
+
+const std = @import("std");
+const log = std.log;
+const option = @import("option");
+const is_test = @import("builtin").is_test;

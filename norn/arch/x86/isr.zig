@@ -35,13 +35,6 @@
 //!
 //!
 
-const std = @import("std");
-const log = std.log.scoped(.isr);
-
-const intr = @import("intr.zig");
-const regs = @import("registers.zig");
-const CpuContext = regs.CpuContext;
-
 /// ISR signature.
 pub const Isr = fn () callconv(.naked) void;
 
@@ -137,3 +130,10 @@ export fn isrCommon() callconv(.naked) void {
         \\iretq
     );
 }
+
+const std = @import("std");
+const log = std.log.scoped(.isr);
+
+const intr = @import("intr.zig");
+const regs = @import("registers.zig");
+const CpuContext = regs.CpuContext;

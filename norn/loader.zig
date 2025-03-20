@@ -1,19 +1,3 @@
-const std = @import("std");
-const elf = std.elf;
-const log = std.log.scoped(.loader);
-
-const norn = @import("norn");
-const arch = norn.arch;
-const fs = norn.fs;
-const mem = norn.mem;
-const util = norn.util;
-
-const Attribute = arch.mem.Attribute;
-const Virt = mem.Virt;
-
-const general_allocator = mem.general_allocator;
-const page_allocator = mem.page_allocator;
-
 pub const Error =
     arch.Error ||
     fs.Error ||
@@ -113,3 +97,19 @@ fn getAttribute(phdr: elf.Elf64_Phdr) Attribute {
     const flags = phdr.p_flags;
     return if (flags & elf.PF_X != 0) .executable else if (flags & elf.PF_W != 0) .read_write else .read_only;
 }
+
+const std = @import("std");
+const elf = std.elf;
+const log = std.log.scoped(.loader);
+
+const norn = @import("norn");
+const arch = norn.arch;
+const fs = norn.fs;
+const mem = norn.mem;
+const util = norn.util;
+
+const Attribute = arch.mem.Attribute;
+const Virt = mem.Virt;
+
+const general_allocator = mem.general_allocator;
+const page_allocator = mem.page_allocator;

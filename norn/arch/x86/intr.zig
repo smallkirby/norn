@@ -1,19 +1,3 @@
-const std = @import("std");
-const log = std.log.scoped(.intr);
-
-const norn = @import("norn");
-const mem = norn.mem;
-const interrupt = norn.interrupt;
-
-const am = @import("asm.zig");
-const arch = @import("arch.zig");
-const gdt = @import("gdt.zig");
-const isr = @import("isr.zig");
-const regs = @import("registers.zig");
-
-const Context = regs.CpuContext;
-const Handler = interrupt.Handler;
-
 pub const Error = error{
     /// Handler is already registered for the vector.
     AlreadyRegistered,
@@ -310,3 +294,21 @@ test {
 test "IDT size" {
     try testing.expectEqual(4096, @sizeOf(@TypeOf(idt)));
 }
+
+// ====================================================
+
+const std = @import("std");
+const log = std.log.scoped(.intr);
+
+const norn = @import("norn");
+const mem = norn.mem;
+const interrupt = norn.interrupt;
+
+const am = @import("asm.zig");
+const arch = @import("arch.zig");
+const gdt = @import("gdt.zig");
+const isr = @import("isr.zig");
+const regs = @import("registers.zig");
+
+const Context = regs.CpuContext;
+const Handler = interrupt.Handler;

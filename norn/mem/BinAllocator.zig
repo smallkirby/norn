@@ -1,12 +1,3 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-const Alignment = std.mem.Alignment;
-
-const norn = @import("norn");
-const mem = norn.mem;
-const PageAllocator = mem.PageAllocator;
-const SpinLock = norn.SpinLock;
-
 const Self = @This();
 const BinAllocator = Self;
 
@@ -220,7 +211,7 @@ test {
 
 fn getTestingAllocator() Allocator {
     var bin_allocator_instance // we don't want an error check
-        = std.heap.page_allocator.create(Self) catch unreachable;
+    = std.heap.page_allocator.create(Self) catch unreachable;
     bin_allocator_instance.init(test_page_allocator.allocator());
 
     return Allocator{
@@ -278,3 +269,14 @@ test "no mitigation against double free" {
     ba.free(ptr);
     ba.free(ptr);
 }
+
+// ========================================
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Alignment = std.mem.Alignment;
+
+const norn = @import("norn");
+const mem = norn.mem;
+const PageAllocator = mem.PageAllocator;
+const SpinLock = norn.SpinLock;

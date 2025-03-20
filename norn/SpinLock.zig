@@ -1,9 +1,3 @@
-const atomic = @import("std").atomic;
-const is_test = @import("builtin").is_test;
-
-const norn = @import("norn");
-const arch = norn.arch;
-
 const Self = @This();
 const SpinLock = Self;
 
@@ -56,3 +50,9 @@ pub fn unlockRestoreIrq(self: *SpinLock, ie: bool) void {
 pub fn isLocked(self: *Self) bool {
     return self._state.load(.acquire);
 }
+
+const atomic = @import("std").atomic;
+const is_test = @import("builtin").is_test;
+
+const norn = @import("norn");
+const arch = norn.arch;

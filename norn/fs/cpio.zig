@@ -1,5 +1,3 @@
-const std = @import("std");
-
 pub const Error = std.fmt.ParseIntError;
 
 /// Iterator over the CPIO entries.
@@ -276,3 +274,7 @@ test "Iterator: read all entries" {
     try testing.expectEqualStrings(NewAsciiCpio.trailer_name, try cpio.getPath());
     try testing.expectEqual(0, (try cpio.getData()).len);
 }
+
+// =======================================
+
+const std = @import("std");

@@ -1,10 +1,3 @@
-const std = @import("std");
-const log = std.log.scoped(.timer);
-
-const norn = @import("norn");
-const arch = norn.arch;
-const sched = norn.sched;
-
 pub const Error = error{
     /// Required feature is not supported.
     NotSupported,
@@ -87,3 +80,10 @@ fn timer(_: *norn.interrupt.Context) void {
 
     sched.schedule();
 }
+
+const std = @import("std");
+const log = std.log.scoped(.timer);
+
+const norn = @import("norn");
+const arch = norn.arch;
+const sched = norn.sched;

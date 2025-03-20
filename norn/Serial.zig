@@ -1,11 +1,3 @@
-const std = @import("std");
-const atomic = std.atomic;
-
-const norn = @import("norn");
-const arch = norn.arch;
-const serial8250 = norn.drivers.serial8250;
-const SpinLock = norn.SpinLock;
-
 const Self = @This();
 
 const WriteFn = *const fn (u8) void;
@@ -65,3 +57,11 @@ pub fn init(self: *Self) void {
 pub fn isInited(self: Self) bool {
     return self.inited.load(.acquire);
 }
+
+const std = @import("std");
+const atomic = std.atomic;
+
+const norn = @import("norn");
+const arch = norn.arch;
+const serial8250 = norn.drivers.serial8250;
+const SpinLock = norn.SpinLock;

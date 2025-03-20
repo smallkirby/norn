@@ -1,11 +1,3 @@
-const std = @import("std");
-const log = std.log.scoped(.syscall);
-
-const norn = @import("norn");
-const arch = norn.arch;
-const errno = norn.errno;
-
-const Context = arch.SyscallContext;
 const Error = errno.Error;
 
 /// System call handler function signature.
@@ -64,3 +56,12 @@ fn sysDebugLog(_: *Context, str: u64, size: u64, _: u64, _: u64, _: u64) Error!i
     log.debug("{s}", .{s});
     return 0;
 }
+
+const std = @import("std");
+const log = std.log.scoped(.syscall);
+
+const norn = @import("norn");
+const arch = norn.arch;
+const errno = norn.errno;
+
+const Context = arch.SyscallContext;

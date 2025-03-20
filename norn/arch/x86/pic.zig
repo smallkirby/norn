@@ -9,12 +9,6 @@
 //! - https://wiki.osdev.org/8259_PIC
 //! - https://pdos.csail.mit.edu/6.828/2014/readings/hardware/8259A.pdf
 
-const std = @import("std");
-
-const VectorTable = @import("norn").interrupt.VectorTable;
-
-const am = @import("asm.zig");
-
 const icw = enum { icw1, icw2, icw3, icw4 };
 const ocw = enum { ocw1, ocw2, ocw3 };
 
@@ -160,3 +154,9 @@ fn issue(cw: anytype, port: u16) void {
 inline fn setImr(imr: u8, port: u16) void {
     issue(Ocw{ .ocw1 = .{ .imr = imr } }, port);
 }
+
+const std = @import("std");
+
+const VectorTable = @import("norn").interrupt.VectorTable;
+
+const am = @import("asm.zig");

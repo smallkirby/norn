@@ -1,19 +1,3 @@
-const std = @import("std");
-
-const norn = @import("norn");
-const arch = norn.arch;
-const mem = norn.mem;
-const pcpu = norn.pcpu;
-const sched = norn.sched;
-const Thread = norn.thread.Thread;
-
-const gdt = @import("gdt.zig");
-const isr = @import("isr.zig");
-const regs = @import("registers.zig");
-const syscall = @import("syscall.zig");
-const CpuContext = regs.CpuContext;
-const TaskStateSegment = gdt.TaskStateSegment;
-
 pub const Error = mem.Error || arch.Error;
 
 /// Current TSS.
@@ -269,3 +253,19 @@ export fn enterUserRestoreRegisters() callconv(.naked) noreturn {
             },
         ));
 }
+
+const std = @import("std");
+
+const norn = @import("norn");
+const arch = norn.arch;
+const mem = norn.mem;
+const pcpu = norn.pcpu;
+const sched = norn.sched;
+const Thread = norn.thread.Thread;
+
+const gdt = @import("gdt.zig");
+const isr = @import("isr.zig");
+const regs = @import("registers.zig");
+const syscall = @import("syscall.zig");
+const CpuContext = regs.CpuContext;
+const TaskStateSegment = gdt.TaskStateSegment;

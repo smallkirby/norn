@@ -8,20 +8,6 @@
 //! The allocation and management mechanism is so naive.
 //! This allocator must be used only before the buddy allocator is initialized.
 
-const std = @import("std");
-const log = std.log.scoped(.pa);
-const uefi = std.os.uefi;
-const MemoryDescriptor = uefi.tables.MemoryDescriptor;
-
-const surtr = @import("surtr");
-const MemoryMap = surtr.MemoryMap;
-const MemoryDescriptorIterator = surtr.MemoryDescriptorIterator;
-
-const norn = @import("norn");
-const mem = norn.mem;
-const PageAllocator = mem.PageAllocator;
-const Phys = norn.mem.Phys;
-
 const Self = @This();
 const Error = PageAllocator.Error;
 
@@ -202,3 +188,19 @@ inline fn rttExpectNewMap() void {
         norn.endlessHalt();
     }
 }
+
+// ====================================================
+
+const std = @import("std");
+const log = std.log.scoped(.pa);
+const uefi = std.os.uefi;
+const MemoryDescriptor = uefi.tables.MemoryDescriptor;
+
+const surtr = @import("surtr");
+const MemoryMap = surtr.MemoryMap;
+const MemoryDescriptorIterator = surtr.MemoryDescriptorIterator;
+
+const norn = @import("norn");
+const mem = norn.mem;
+const PageAllocator = mem.PageAllocator;
+const Phys = norn.mem.Phys;

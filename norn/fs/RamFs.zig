@@ -1,15 +1,3 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-const DoublyLinkedList = std.DoublyLinkedList;
-
-const norn = @import("norn");
-
-const vfs = @import("vfs.zig");
-const Error = vfs.Error;
-const Dentry = vfs.Dentry;
-const Inode = vfs.Inode;
-const Vtable = vfs.Vtable;
-
 /// Filesystem for ramfs.
 const RamFs = Self;
 const Self = @This();
@@ -398,3 +386,17 @@ test "Operation via VFS" {
     try testing.expectEqual(dir1, try fs.lookup(root, "dir1"));
     try testing.expectEqual(dir2, try fs.lookup(dir1, "dir2"));
 }
+
+// ==============================
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const DoublyLinkedList = std.DoublyLinkedList;
+
+const norn = @import("norn");
+
+const vfs = @import("vfs.zig");
+const Error = vfs.Error;
+const Dentry = vfs.Dentry;
+const Inode = vfs.Inode;
+const Vtable = vfs.Vtable;

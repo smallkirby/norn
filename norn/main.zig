@@ -1,13 +1,3 @@
-const std = @import("std");
-const log = std.log.scoped(.main);
-
-const surtr = @import("surtr");
-const norn = @import("norn");
-const arch = norn.arch;
-const klog = norn.klog;
-
-const BootInfo = surtr.BootInfo;
-
 /// Override the standard options.
 pub const std_options = std.Options{
     // Logging
@@ -177,3 +167,13 @@ fn spriousInterruptHandler(_: *norn.interrupt.Context) void {
     std.log.scoped(.spurious).warn("Detected a spurious interrupt.", .{});
     arch.getLocalApic().eoi();
 }
+
+const std = @import("std");
+const log = std.log.scoped(.main);
+
+const surtr = @import("surtr");
+const norn = @import("norn");
+const arch = norn.arch;
+const klog = norn.klog;
+
+const BootInfo = surtr.BootInfo;

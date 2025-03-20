@@ -1,11 +1,3 @@
-const std = @import("std");
-const meta = std.meta;
-
-const norn = @import("norn");
-const mem = norn.mem;
-const Phys = mem.Phys;
-const Zone = mem.Zone;
-
 /// The type erased pointer to the allocator implementation.
 ptr: *anyopaque,
 /// The vtable for the allocator.
@@ -42,3 +34,11 @@ pub fn freePagesRaw(self: Self, addr: norn.mem.Virt, num_pages: usize) Error!voi
     if (addr % norn.mem.size_4kib != 0) return Error.InvalidRegion;
     return self.vtable.freePagesRaw(self.ptr, addr, num_pages);
 }
+
+const std = @import("std");
+const meta = std.meta;
+
+const norn = @import("norn");
+const mem = norn.mem;
+const Phys = mem.Phys;
+const Zone = mem.Zone;

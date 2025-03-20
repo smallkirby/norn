@@ -1,9 +1,3 @@
-const std = @import("std");
-const log = std.log.scoped(.init);
-
-const norn = @import("norn");
-const arch = norn.arch;
-
 /// Initial task of Norn kernel with PID 1.
 pub fn initialTask() noreturn {
     log.debug("Initial task started.", .{});
@@ -18,3 +12,9 @@ pub fn initialTask() noreturn {
         norn.unimplemented("initialTask() reached its end.");
     }
 }
+
+const std = @import("std");
+const log = std.log.scoped(.init);
+
+const norn = @import("norn");
+const arch = norn.arch;

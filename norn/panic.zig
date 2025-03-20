@@ -1,13 +1,3 @@
-const std = @import("std");
-const atomic = std.atomic;
-const builtin = std.builtin;
-const debug = std.debug;
-const log = std.log.scoped(.panic);
-const format = std.fmt.format;
-
-const norn = @import("norn");
-const arch = norn.arch;
-
 /// Implementation of the panic function.
 pub const panic_fn = panic;
 
@@ -39,3 +29,13 @@ fn panic(msg: []const u8, _: ?*builtin.StackTrace, _: ?usize) noreturn {
     // Halt the CPU.
     norn.endlessHalt();
 }
+
+const std = @import("std");
+const atomic = std.atomic;
+const builtin = std.builtin;
+const debug = std.debug;
+const log = std.log.scoped(.panic);
+const format = std.fmt.format;
+
+const norn = @import("norn");
+const arch = norn.arch;

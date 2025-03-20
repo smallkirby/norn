@@ -1,20 +1,5 @@
 //! cf. SDM Vol.3A 5.8.8
 
-const std = @import("std");
-
-const norn = @import("norn");
-const bits = norn.bits;
-const errno = norn.errno;
-const pcpu = norn.pcpu;
-const Syscall = norn.syscall.Syscall;
-
-const am = @import("asm.zig");
-const cpuid = @import("cpuid.zig");
-const gdt = @import("gdt.zig");
-const regs = @import("registers.zig");
-const task = @import("task.zig");
-const CpuContext = regs.CpuContext;
-
 pub const Error = error{
     /// The operation is not supported.
     NotSupported,
@@ -171,3 +156,18 @@ export fn syscallEntry() callconv(.naked) void {
           [kernel_stack] "{r11}" (&task.current_tss.rsp0),
     );
 }
+
+const std = @import("std");
+
+const norn = @import("norn");
+const bits = norn.bits;
+const errno = norn.errno;
+const pcpu = norn.pcpu;
+const Syscall = norn.syscall.Syscall;
+
+const am = @import("asm.zig");
+const cpuid = @import("cpuid.zig");
+const gdt = @import("gdt.zig");
+const regs = @import("registers.zig");
+const task = @import("task.zig");
+const CpuContext = regs.CpuContext;

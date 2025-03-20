@@ -1,15 +1,5 @@
 //! https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html
 
-const std = @import("std");
-const atomic = std.atomic;
-const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
-
-const norn = @import("norn");
-const arch = norn.arch;
-const mem = norn.mem;
-const SpinLock = norn.SpinLock;
-
 pub const Error = error{
     /// Failed to validate SDT.
     InvalidTable,
@@ -673,3 +663,13 @@ fn checksum(data: []u8) u8 {
     }
     return sum;
 }
+
+const std = @import("std");
+const atomic = std.atomic;
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
+
+const norn = @import("norn");
+const arch = norn.arch;
+const mem = norn.mem;
+const SpinLock = norn.SpinLock;

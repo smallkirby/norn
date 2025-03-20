@@ -1,18 +1,3 @@
-const std = @import("std");
-
-const norn = @import("norn");
-const acpi = norn.acpi;
-const mem = norn.mem;
-const Partialable = norn.Partialable;
-const Phys = mem.Phys;
-const VectorTable = norn.interrupt.VectorTable;
-
-const am = @import("asm.zig");
-const arch = @import("arch.zig");
-const cpuid = @import("cpuid.zig");
-const pic = @import("pic.zig");
-const regs = @import("registers.zig");
-
 pub const Error = error{
     /// APIC is not on the chip.
     ApicNotAvailable,
@@ -363,3 +348,18 @@ pub fn init() Error!void {
     svr.apic_enabled = true;
     lapic.write(LocalApic.Svr, .svr, svr);
 }
+
+const std = @import("std");
+
+const norn = @import("norn");
+const acpi = norn.acpi;
+const mem = norn.mem;
+const Partialable = norn.Partialable;
+const Phys = mem.Phys;
+const VectorTable = norn.interrupt.VectorTable;
+
+const am = @import("asm.zig");
+const arch = @import("arch.zig");
+const cpuid = @import("cpuid.zig");
+const pic = @import("pic.zig");
+const regs = @import("registers.zig");

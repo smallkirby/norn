@@ -1,18 +1,3 @@
-const std = @import("std");
-const log = std.log.scoped(.fs);
-const Allocator = std.mem.Allocator;
-const ComponentIterator = std.fs.path.ComponentIterator;
-
-const norn = @import("norn");
-const bits = norn.bits;
-
-const cpio = @import("fs/cpio.zig");
-const RamFs = @import("fs/RamFs.zig");
-const vfs = @import("fs/vfs.zig");
-const Stat = vfs.Stat;
-
-const allocator = norn.mem.general_allocator;
-
 /// FS Error.
 pub const Error = error{
     /// File not found.
@@ -230,3 +215,20 @@ fn lookupParent(path: []const u8) Error!?*vfs.Dentry {
 test {
     std.testing.refAllDeclsRecursive(@This());
 }
+
+// ==============================
+
+const std = @import("std");
+const log = std.log.scoped(.fs);
+const Allocator = std.mem.Allocator;
+const ComponentIterator = std.fs.path.ComponentIterator;
+
+const norn = @import("norn");
+const bits = norn.bits;
+
+const cpio = @import("fs/cpio.zig");
+const RamFs = @import("fs/RamFs.zig");
+const vfs = @import("fs/vfs.zig");
+const Stat = vfs.Stat;
+
+const allocator = norn.mem.general_allocator;

@@ -1,5 +1,3 @@
-const std = @import("std");
-
 fn syscall(nr: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64) i64 {
     return asm volatile (
         \\movq %[nr], %%rax
@@ -45,3 +43,5 @@ export fn main() noreturn {
 
     unreachable;
 }
+
+const std = @import("std");

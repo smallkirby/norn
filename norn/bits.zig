@@ -2,8 +2,6 @@
 //!
 //! This file provides a numeric utilities for bit manipulation.
 
-const std = @import("std");
-
 /// Set the integer where only the nth bit is set.
 ///
 /// - `T`   : Type of the integer.
@@ -156,3 +154,7 @@ test "unset" {
     try testing.expectEqual(0b0000_0000, unset(u8, 0b0001_0000, 4));
     try testing.expectEqual(0b0000_0000, unset(u8, 0b1000_0000, 7));
 }
+
+// =======================================
+
+const std = @import("std");

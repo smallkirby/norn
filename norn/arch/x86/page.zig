@@ -1,20 +1,3 @@
-const std = @import("std");
-
-const norn = @import("norn");
-const mem = norn.mem;
-
-const arch = @import("arch.zig");
-const am = @import("asm.zig");
-const cpuid = @import("cpuid.zig");
-
-const direct_map_base = mem.direct_map_base;
-const direct_map_size = mem.direct_map_size;
-const virt2phys = mem.virt2phys;
-const phys2virt = mem.phys2virt;
-const Virt = mem.Virt;
-const Phys = mem.Phys;
-const PageAllocator = mem.PageAllocator;
-
 pub const Error = error{
     /// Invalid address.
     InvalidAddress,
@@ -601,3 +584,22 @@ test "isCanonical" {
     try testing.expectEqual(true, isCanonical(0xFFFF_FFFF_8000_0000));
     try testing.expectEqual(true, isCanonical(0xFFFF_8880_0000_0000));
 }
+
+// ========================================
+
+const std = @import("std");
+
+const norn = @import("norn");
+const mem = norn.mem;
+
+const arch = @import("arch.zig");
+const am = @import("asm.zig");
+const cpuid = @import("cpuid.zig");
+
+const direct_map_base = mem.direct_map_base;
+const direct_map_size = mem.direct_map_size;
+const virt2phys = mem.virt2phys;
+const phys2virt = mem.phys2virt;
+const Virt = mem.Virt;
+const Phys = mem.Phys;
+const PageAllocator = mem.PageAllocator;

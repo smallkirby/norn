@@ -1,17 +1,3 @@
-const std = @import("std");
-const log = std.log.scoped(.sched);
-
-const norn = @import("norn.zig");
-const arch = norn.arch;
-const mem = norn.mem;
-const pcpu = norn.pcpu;
-const timer = norn.timer;
-const thread = norn.thread;
-const Thread = thread.Thread;
-const ThreadList = thread.ThreadList;
-
-const general_allocator = mem.general_allocator;
-
 /// Error.
 pub const Error =
     arch.Error ||
@@ -144,3 +130,17 @@ pub fn debugPrintRunQueue(logger: anytype) void {
         node = th.list_head.next;
     }
 }
+
+const std = @import("std");
+const log = std.log.scoped(.sched);
+
+const norn = @import("norn.zig");
+const arch = norn.arch;
+const mem = norn.mem;
+const pcpu = norn.pcpu;
+const timer = norn.timer;
+const thread = norn.thread;
+const Thread = thread.Thread;
+const ThreadList = thread.ThreadList;
+
+const general_allocator = mem.general_allocator;
