@@ -31,7 +31,7 @@ const ContextStackFrame = packed struct {
 /// TODO: doc
 pub fn setupNewTask(task: *Thread) Error!void {
     // Init page table.
-    task.pgtbl = try arch.mem.createPageTables();
+    task.mm.pgtbl = try arch.mem.createPageTables();
 
     // Init kernel stack.
     const stack = try mem.page_allocator.allocPages(kernel_stack_num_pages, .normal);
@@ -171,7 +171,7 @@ export fn switchToInternal(_: *Thread, next: *Thread) callconv(.c) void {
     pcpu.thisCpuVar(&current_tss).rsp0 = rsp0;
 
     // Switch CR3.
-    norn.arch.mem.setPagetable(next.pgtbl);
+    norn.arch.mem.setPagetable(next.mm.pgtbl);
 
     // Return to the caller of switchTo().
     return;

@@ -13,6 +13,7 @@ pub const interrupt = @import("interrupt.zig");
 pub const klog = @import("log.zig");
 pub const loader = @import("loader.zig");
 pub const mem = @import("mem.zig");
+pub const mm = @import("mm.zig");
 pub const pcpu = if (!is_test) @import("percpu.zig") else @import("percpu.zig").mock_for_testing;
 pub const sched = @import("sched.zig");
 pub const rtt = @import("rtt.zig");

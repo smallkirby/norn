@@ -80,9 +80,8 @@ pub const Thread = struct {
     state: State = .running,
     /// Thread name with null-termination.
     name: [name_max_len:0]u8 = undefined,
-    /// CR3 of this task.
-    /// User and kernel has a same page table.
-    pgtbl: mem.Virt = undefined,
+    /// Memory map.
+    mm: *MemoryMap,
     /// CPU time consumed for the thread.
     cpu_time: CpuTime = .{},
     /// Arch-specific context.
@@ -99,6 +98,7 @@ pub const Thread = struct {
         errdefer general_allocator.destroy(self);
         self.* = Thread{
             .tid = assignNewTid(),
+            .mm = try MemoryMap.new(),
         };
 
         // Initialize arch-specific context.
@@ -166,18 +166,18 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
     const thread = try Thread.create("init");
 
     // Copy initial user function for debug.
-    var elf_loader = try loader.ElfLoader.new(filename, thread.pgtbl);
+    var elf_loader = try loader.ElfLoader.new(filename, thread.mm.pgtbl);
     try elf_loader.load();
 
     // Create user stack.
-    const stack_page = try norn.mem.page_allocator.allocPages(1, .normal);
+    const stack_page = try page_allocator.allocPages(1, .normal);
     @memset(stack_page, 0);
 
     // Map stack.
     const stack_base = 0x200000;
     const stack_size = 0x1000;
     try arch.mem.map(
-        thread.pgtbl,
+        thread.mm.pgtbl,
         stack_base,
         mem.virt2phys(stack_page.ptr),
         stack_size,
@@ -196,11 +196,16 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
     return thread;
 }
 
+// =============================================================
+// Imports
+// =============================================================
+
 const norn = @import("norn");
 const arch = norn.arch;
 const loader = norn.loader;
 const mem = norn.mem;
 const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
+const MemoryMap = norn.mm.MemoryMap;
 const SpinLock = norn.SpinLock;
 
 const page_allocator = mem.page_allocator;
