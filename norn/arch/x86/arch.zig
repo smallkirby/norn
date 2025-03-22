@@ -188,6 +188,11 @@ pub const mem = struct {
         try pg.boot.reconstruct(allocator);
     }
 
+    /// Convert VM flags to page attribute.
+    pub fn convertVmFlagToAttribute(flags: norn.mm.VmFlags) Attribute {
+        return pg.Attribute.fromVmFlags(flags);
+    }
+
     /// Create a new root of page tables.
     /// Returns a virtual address of the root table (CR).
     pub fn createPageTables() Error!Virt {

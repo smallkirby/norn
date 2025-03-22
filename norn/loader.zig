@@ -7,20 +7,21 @@ pub const Error =
         InvalidElf,
     };
 
-// TODO: doc
+/// ELF loader that parses an ELF file and loads it into process memory.
 pub const ElfLoader = struct {
     const Self = @This();
 
     const elf_header_size = @sizeOf(elf.Elf64_Ehdr);
 
     filename: []const u8,
-    elf_data: []align(8) u8,
-    elf_header: elf.Header,
+    _elf_data: []align(8) u8,
+    _elf_header: elf.Header,
+    entry_point: Virt,
 
-    pgtbl: Virt,
-    entry_point: u64,
-
-    pub fn new(filename: []const u8, pgtbl: Virt) Error!Self {
+    /// Read the ELF file and prepare for loading.
+    ///
+    /// Caller must deallocate the struct with `deinit`.
+    pub fn new(filename: []const u8) Error!Self {
         const elf_data = try readElfFile(filename);
         const elf_header = elf.Header.parse(elf_data[0..elf_header_size]) catch {
             return error.InvalidElf;
@@ -28,55 +29,39 @@ pub const ElfLoader = struct {
 
         return .{
             .filename = filename,
-            .elf_data = elf_data,
-            .elf_header = elf_header,
-            .pgtbl = pgtbl,
+            ._elf_data = elf_data,
+            ._elf_header = elf_header,
             .entry_point = elf_header.entry,
         };
     }
 
-    pub fn load(self: *Self) Error!void {
-        const elf_stream = std.io.fixedBufferStream(self.elf_data);
-        var prog_iter = self.elf_header.program_header_iterator(elf_stream);
+    pub fn load(self: *Self, mm: *MemoryMap) Error!void {
+        const elf_stream = std.io.fixedBufferStream(self._elf_data);
+        var prog_iter = self._elf_header.program_header_iterator(elf_stream);
 
+        // Iterate over program headers.
         var cur_prog = prog_iter.next() catch return error.InvalidElf;
         while (cur_prog) |cur| : (cur_prog = prog_iter.next() catch return error.InvalidElf) {
             if (cur.p_type != elf.PT_LOAD) continue;
 
             // Map pages.
-            const page = try self.mapSegment(
+            const vma = try mm.map(
                 cur.p_vaddr,
                 cur.p_memsz,
                 getAttribute(cur),
             );
+            mm.vm_areas.append(vma);
 
             // Copy segment data.
-            const segment_data = self.elf_data[cur.p_offset .. cur.p_offset + cur.p_filesz];
+            const segment_data = self._elf_data[cur.p_offset .. cur.p_offset + cur.p_filesz];
             const offset = cur.p_vaddr % mem.size_4kib;
+            const page: []u8 = @constCast(vma.slice());
             @memcpy(page[offset .. offset + cur.p_filesz], segment_data);
         }
     }
 
     pub fn deinit(self: *Self) void {
-        general_allocator.free(self.elf_data);
-    }
-
-    fn mapSegment(
-        self: *Self,
-        vaddr: Virt,
-        size: usize,
-        attr: Attribute,
-    ) Error![]align(mem.size_4kib) u8 {
-        const vaddr_aligned = util.rounddown(vaddr, mem.size_4kib);
-        const vaddr_end = util.roundup(vaddr + size, mem.size_4kib);
-        norn.rtt.expectEqual(0, (vaddr_end - vaddr_aligned) % mem.size_4kib);
-
-        const num_pages = (vaddr_end - vaddr_aligned) / mem.size_4kib;
-        const page = try page_allocator.allocPages(num_pages, .normal);
-        const paddr = mem.virt2phys(page.ptr);
-        try arch.mem.map(self.pgtbl, vaddr_aligned, paddr, page.len, attr);
-
-        return page;
+        general_allocator.free(self._elf_data);
     }
 };
 
@@ -93,10 +78,21 @@ fn readElfFile(filename: []const u8) Error![]align(8) u8 {
     return buf;
 }
 
-fn getAttribute(phdr: elf.Elf64_Phdr) Attribute {
+/// Get the VM flags from the ELF program header.
+fn getAttribute(phdr: elf.Elf64_Phdr) VmFlags {
     const flags = phdr.p_flags;
-    return if (flags & elf.PF_X != 0) .executable else if (flags & elf.PF_W != 0) .read_write else .read_only;
+    var vmflags: VmFlags = .none;
+
+    if (flags & elf.PF_R != 0) vmflags.read = true;
+    if (flags & elf.PF_W != 0) vmflags.write = true;
+    if (flags & elf.PF_X != 0) vmflags.exec = true;
+
+    return vmflags;
 }
+
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
 const elf = std.elf;
@@ -108,8 +104,9 @@ const fs = norn.fs;
 const mem = norn.mem;
 const util = norn.util;
 
-const Attribute = arch.mem.Attribute;
 const Virt = mem.Virt;
+const MemoryMap = norn.mm.MemoryMap;
+const VmFlags = norn.mm.VmFlags;
 
 const general_allocator = mem.general_allocator;
 const page_allocator = mem.page_allocator;

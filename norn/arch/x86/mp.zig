@@ -34,6 +34,7 @@ pub fn bootAllAps() Error!void {
     try pg.boot.map4kPageDirect(
         trampoline_page_phys,
         trampoline_page_phys,
+        .read_write_executable,
         page_allocator,
     );
 
@@ -44,6 +45,7 @@ pub fn bootAllAps() Error!void {
     try pg.boot.map4kPageDirect(
         mem.virt2phys(ap_stack.ptr),
         mem.virt2phys(ap_stack.ptr),
+        .read_write,
         page_allocator,
     );
 

@@ -1,6 +1,21 @@
 pub const MmError = error{
     /// Failed to allocate memory.
     OutOfMemory,
+    /// Requested memory region is invalid.
+    InvalidRegion,
+} || arch.Error;
+
+/// Memory attributes of a VM area.
+pub const VmFlags = packed struct {
+    read: bool,
+    write: bool,
+    exec: bool,
+
+    pub const none = VmFlags{
+        .read = false,
+        .write = false,
+        .exec = false,
+    };
 };
 
 /// Single contiguous area of virtual memory.
@@ -14,15 +29,17 @@ pub const VmArea = struct {
     /// Virtual address of the end of this VM area.
     end: Virt,
     /// Attributes of this VM area.
-    flags: Flags,
+    flags: VmFlags,
     /// List of VM areas.
     list_head: VmAreaListHead = .{},
 
-    pub const Flags = packed struct {
-        read: bool,
-        write: bool,
-        exec: bool,
-    };
+    /// Kernel pages corresponding to this VM area.
+    _kernel_page: []const u8,
+
+    /// Get the slice of the VM area.
+    pub fn slice(self: *Self) []const u8 {
+        return self._kernel_page[0..(self.end - self.start)];
+    }
 };
 
 /// Memory map of a process.
@@ -49,6 +66,44 @@ pub const MemoryMap = struct {
         mm.* = std.mem.zeroInit(Self, .{});
         return mm;
     }
+
+    /// Allocate new pages and map it to the process VM.
+    ///
+    /// Note that returned VM area is not linked to the list.
+    pub fn map(self: *Self, vaddr: Virt, size: usize, attr: VmFlags) MmError!*VmArea {
+        const vaddr_aligned = util.rounddown(vaddr, mem.size_4kib);
+        const vaddr_end = util.roundup(vaddr + size, mem.size_4kib);
+        norn.rtt.expectEqual(0, (vaddr_end - vaddr_aligned) % mem.size_4kib);
+
+        // Allocate physical pages.
+        const num_pages = (vaddr_end - vaddr_aligned) / mem.size_4kib;
+        const page = try page_allocator.allocPages(num_pages, .normal);
+        const page_phys = mem.virt2phys(page.ptr);
+
+        // Map the pages.
+        try arch.mem.map(
+            self.pgtbl,
+            vaddr_aligned,
+            page_phys,
+            page.len,
+            arch.mem.convertVmFlagToAttribute(attr),
+        );
+
+        const list_head = try allocator.create(VmAreaListHead);
+        list_head.* = VmAreaList.Head{};
+
+        const vma = try allocator.create(VmArea);
+        vma.* = .{
+            .mm = self,
+            .start = vaddr_aligned,
+            .end = vaddr_end,
+            .flags = attr,
+            .list_head = VmAreaList.Head{},
+            ._kernel_page = page,
+        };
+
+        return vma;
+    }
 };
 
 const VmAreaList = InlineDoublyLinkedList(VmArea, "list_head");
@@ -61,8 +116,11 @@ const VmAreaListHead = VmAreaList.Head;
 const std = @import("std");
 
 const norn = @import("norn");
+const arch = norn.arch;
 const mem = norn.mem;
+const util = norn.util;
 const Virt = mem.Virt;
 const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
 
 const allocator = norn.mem.general_allocator;
+const page_allocator = norn.mem.page_allocator;

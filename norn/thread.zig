@@ -166,8 +166,8 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
     const thread = try Thread.create("init");
 
     // Copy initial user function for debug.
-    var elf_loader = try loader.ElfLoader.new(filename, thread.mm.pgtbl);
-    try elf_loader.load();
+    var elf_loader = try loader.ElfLoader.new(filename);
+    try elf_loader.load(thread.mm);
 
     // Create user stack.
     const stack_page = try page_allocator.allocPages(1, .normal);

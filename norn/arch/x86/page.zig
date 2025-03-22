@@ -16,19 +16,16 @@ pub const Attribute = enum {
     /// Executable.
     executable,
     /// Read / Write / Executable.
-    /// TODO: Remove this attribute.
     read_write_executable,
-};
 
-const size_4k = mem.size_4kib;
-const size_2mb = mem.size_2mib;
-const size_1gb = mem.size_1gib;
-const page_shift_4k = mem.page_shift_4kib;
-const page_shift_2mb = mem.page_shift_2mib;
-const page_shift_1gb = mem.page_shift_1gib;
-const page_mask_4k = mem.page_mask_4kib;
-const page_mask_2mb = mem.page_mask_2mib;
-const page_mask_1gb = mem.page_mask_1gib;
+    /// Get a page attribute from VM flags.
+    pub fn fromVmFlags(flags: mm.VmFlags) Attribute {
+        if (flags.read and flags.write) return .read_write;
+        if (flags.read and flags.exec) return .executable;
+        if (flags.read) return .read_only;
+        @panic("Invalid VM flags");
+    }
+};
 
 /// Shift in bits to extract the level-4 index from a virtual address.
 const lv4_shift = 39;
@@ -241,7 +238,7 @@ pub const boot = struct {
             for (0..num_table_entries) |lv3idx| {
                 const phys: u64 = (i << lv4_shift) + (lv3idx << lv3_shift);
                 if (phys >= upper_bound) break;
-                lv3tbl[lv3idx] = Lv3Entry.newMapPage(phys, true, .read_write_executable, false);
+                lv3tbl[lv3idx] = Lv3Entry.newMapPage(phys, true, .read_write, false);
             }
             lv4ent.* = Lv4Entry{
                 .present = true,
@@ -288,7 +285,7 @@ pub const boot = struct {
     /// - `virt` is not page-aligned.
     /// - `phys` is not page-aligned.
     /// - `virt` is already mapped.
-    pub fn map4kPageDirect(virt: Virt, phys: Phys, allocator: PageAllocator) Error!void {
+    pub fn map4kPageDirect(virt: Virt, phys: Phys, attr: Attribute, allocator: PageAllocator) Error!void {
         if ((virt & page_mask_4k) != 0) return Error.InvalidAddress;
         if ((phys & page_mask_4k) != 0) return Error.InvalidAddress;
 
@@ -306,7 +303,7 @@ pub const boot = struct {
         const lv1ent = getLv1Entry(virt, lv2ent.address());
         if (lv1ent.present) return Error.AlreadyMapped;
 
-        lv1ent.* = Lv1Entry.newMapPage(phys, true, .read_write_executable, false);
+        lv1ent.* = Lv1Entry.newMapPage(phys, true, attr, false);
     }
 
     /// Unmap single 4KiB page at the given virtual address.
@@ -591,6 +588,7 @@ const std = @import("std");
 
 const norn = @import("norn");
 const mem = norn.mem;
+const mm = norn.mm;
 
 const arch = @import("arch.zig");
 const am = @import("asm.zig");
@@ -603,3 +601,13 @@ const phys2virt = mem.phys2virt;
 const Virt = mem.Virt;
 const Phys = mem.Phys;
 const PageAllocator = mem.PageAllocator;
+
+const size_4k = mem.size_4kib;
+const size_2mb = mem.size_2mib;
+const size_1gb = mem.size_1gib;
+const page_shift_4k = mem.page_shift_4kib;
+const page_shift_2mb = mem.page_shift_2mib;
+const page_shift_1gb = mem.page_shift_1gib;
+const page_mask_4k = mem.page_mask_4kib;
+const page_mask_2mb = mem.page_mask_2mib;
+const page_mask_1gb = mem.page_mask_1gib;
