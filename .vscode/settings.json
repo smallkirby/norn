@@ -1,3 +1,4 @@
 {
+  "chat.tools.autoApprove": true,
   "typos.config": "_typos.toml"
 }
