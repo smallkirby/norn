@@ -2,6 +2,8 @@
 pub const Error = error{
     /// Failed to allocate memory.
     OutOfMemory,
+    /// Invalid operation on the inode.
+    InvalidOperation,
 };
 
 /// Stat information.
@@ -10,53 +12,18 @@ pub const Stat = struct {
     size: usize,
 };
 
-/// VFS operations.
-pub const Vtable = struct {
-    read: *const fn (self: *FileSystem, inode: *Inode, buf: []u8, pos: usize) Error!usize,
-    write: *const fn (self: *FileSystem, inode: *Inode, data: []const u8, pos: usize) Error!usize,
-    lookup: *const fn (self: *FileSystem, dentry: *Dentry, name: []const u8) Error!?*Dentry,
-    createFile: *const fn (self: *FileSystem, dentry: *Dentry, name: []const u8) Error!*Dentry,
-    createDirectory: *const fn (self: *FileSystem, dentry: *Dentry, name: []const u8) Error!*Dentry,
-    stat: *const fn (self: *FileSystem, inode: *Inode) Error!Stat,
-};
-
 /// Virtual filesystem.
 pub const FileSystem = struct {
     /// Root directory of this filesystem.
     root: *Dentry,
-    /// VFS operations.
-    vtable: *const Vtable,
     /// Backing filesystem instance.
     ctx: *anyopaque,
-
-    /// Create a file.
-    pub fn createFile(self: *FileSystem, dentry: *Dentry, name: []const u8) Error!*Dentry {
-        return self.vtable.createFile(self, dentry, name);
-    }
-
-    /// Create a directory.
-    pub fn createDirectory(self: *FileSystem, dentry: *Dentry, name: []const u8) Error!*Dentry {
-        return self.vtable.createDirectory(self, dentry, name);
-    }
-
-    /// Lookup a directory entry.
-    pub fn lookup(self: *FileSystem, dentry: *Dentry, name: []const u8) Error!?*Dentry {
-        return self.vtable.lookup(self, dentry, name);
-    }
-
-    /// TODO: doc
-    pub fn read(self: *FileSystem, inode: *Inode, buf: []u8, pos: usize) Error!usize {
-        return self.vtable.read(self, inode, buf, pos);
-    }
-
-    /// TODO: doc
-    pub fn stat(self: *FileSystem, inode: *Inode) Error!Stat {
-        return self.vtable.stat(self, inode);
-    }
 };
 
 /// Dentry that connects an inode with its name.
 pub const Dentry = struct {
+    const Self = @This();
+
     /// Filesystem this dentry belongs to.
     fs: FileSystem,
     /// Inode this dentry points to.
@@ -66,43 +33,102 @@ pub const Dentry = struct {
     parent: *Dentry,
     /// Name of this dentry.
     name: []const u8,
+    /// Operations for this dentry.
+    ops: *const Vtable,
 
-    /// Create a new dentry.
-    pub fn new(
-        fs: FileSystem,
-        inode: *Inode,
-        parent: *Dentry,
-        name: []const u8,
-        allocator: Allocator,
-    ) Error!*Dentry {
-        const dentry = try allocator.create(Dentry);
-        dentry.* = .{
-            .fs = fs,
-            .inode = inode,
-            .parent = parent,
-            .name = name,
-        };
-        return dentry;
+    /// Dentry operations.
+    pub const Vtable = struct {
+        /// Create a file named `name` in this directory inode.
+        ///
+        /// If the file is created successfully, return the dentry.
+        createFile: *const fn (self: *Dentry, name: []const u8) Error!*Dentry,
+        /// Create a directory named `name` in this directory inode.
+        ///
+        /// If the directory is created successfully, return the dentry.
+        createDirectory: *const fn (self: *Dentry, name: []const u8) Error!*Dentry,
+    };
+
+    /// Create a file named `name` in this directory inode.
+    pub fn createFile(self: *Self, name: []const u8) Error!*Dentry {
+        const inode = self.inode;
+        if (inode.inode_type != InodeType.directory) return Error.InvalidOperation;
+
+        return self.ops.createFile(self, name);
     }
+
+    /// Create a directory named `name` in this directory inode.
+    pub fn createDirectory(self: *Self, name: []const u8) Error!*Dentry {
+        const inode = self.inode;
+        if (inode.inode_type != InodeType.directory) return Error.InvalidOperation;
+
+        return self.ops.createDirectory(self, name);
+    }
+};
+
+/// Inode type.
+pub const InodeType = enum {
+    /// File
+    file,
+    /// Directory
+    directory,
 };
 
 /// Inode.
 pub const Inode = struct {
+    const Self = @This();
+
+    /// Filesystem this inode belongs to.
+    fs: FileSystem,
     /// Inode number.
     number: u64,
+    /// Inode type.
+    inode_type: InodeType,
+    /// Operations for this inode.
+    ops: *const Vtable,
     /// Context of this inode.
     ctx: *anyopaque,
 
-    /// Create a new inode.
-    pub fn new(number: u64, ctx: *anyopaque, allocator: Allocator) Error!*Inode {
-        const inode = try allocator.create(Inode);
-        inode.* = .{
-            .number = number,
-            .ctx = ctx,
-        };
-        return inode;
+    /// Inode operations.
+    pub const Vtable = struct {
+        /// Find a file named `name` in this directory inode.
+        ///
+        /// If the file is found, return the dentry.
+        /// If the file is not found, return null.
+        lookup: *const fn (self: *Inode, name: []const u8) Error!?*Dentry,
+        /// TODO: doc
+        read: *const fn (inode: *Inode, buf: []u8, pos: usize) Error!usize,
+        /// TODO: doc
+        write: *const fn (inode: *Inode, data: []const u8, pos: usize) Error!usize,
+        /// TODO: doc
+        stat: *const fn (inode: *Inode) Error!Stat,
+    };
+
+    /// Lookup a file named `name` in this directory inode.
+    pub fn lookup(self: *Self, name: []const u8) Error!?*Dentry {
+        if (self.inode_type != InodeType.directory) return Error.InvalidOperation;
+        return self.ops.lookup(self, name);
+    }
+
+    /// Read data from this inode.
+    pub fn read(self: *Self, buf: []u8, pos: usize) Error!usize {
+        return self.ops.read(self, buf, pos);
+    }
+
+    /// Get stat information of this inode.
+    pub fn stat(self: *Self) Error!Stat {
+        return self.ops.stat(self);
+    }
+
+    /// Write data to this inode.
+    pub fn write(self: *Self, data: []const u8, pos: usize) Error!usize {
+        return self.ops.write(self, data, pos);
     }
 };
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+
+const norn = @import("norn");
+const mem = norn.mem;
+
+const allocator = mem.general_allocator;

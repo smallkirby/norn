@@ -52,7 +52,6 @@ pub fn init() Error!void {
 ///
 /// - `initimg`: Initramfs image. Caller can free this memory after this function returns.
 pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
-    var fs = &root.fs;
     var iter = cpio.CpioIterator.new(initimg);
     var cur = try iter.next();
 
@@ -79,10 +78,10 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
 
         // Create the file or directory.
         if (bits.isset(mode, 14)) {
-            _ = try fs.createDirectory(parent, basename);
+            _ = try parent.createDirectory(basename);
         } else {
-            const dentry = try fs.createFile(parent, basename);
-            _ = try fs.vtable.write(fs, dentry.inode, try c.getData(), 0);
+            const dentry = try parent.createFile(basename);
+            _ = try dentry.inode.write(try c.getData(), 0);
         }
     }
 
@@ -124,7 +123,7 @@ pub fn open(path: []const u8, flags: OpenFlags) Error!*File {
         // Try to create the file.
         const parent = try lookupParent(path) orelse return Error.NotFound;
         const basename = std.fs.path.basenamePosix(path);
-        break :blk try parent.fs.createFile(parent, basename);
+        break :blk try parent.createFile(basename);
     };
 
     const file = try allocator.create(File);
@@ -135,8 +134,7 @@ pub fn open(path: []const u8, flags: OpenFlags) Error!*File {
 }
 
 pub fn read(file: *File, buf: []u8) Error!usize {
-    const inode = file.dentry.inode;
-    const bytesRead = try file.dentry.fs.read(inode, buf, file.pos);
+    const bytesRead = try file.dentry.inode.read(buf, file.pos);
     file.pos += bytesRead;
     return bytesRead;
 }
@@ -155,7 +153,7 @@ pub fn seek(file: *File, offset: usize, whence: SeekMode) Error!usize {
 }
 
 pub fn stat(file: *File) Error!Stat {
-    return try file.dentry.fs.stat(file.dentry.inode);
+    return try file.dentry.inode.stat();
 }
 
 pub fn mkdir(path: []const u8) Error!void {
@@ -171,7 +169,7 @@ pub fn close(file: *File) void {
 fn lookup(path: []const u8) Error!?*vfs.Dentry {
     const parent = try lookupParent(path) orelse return null;
     const basename = std.fs.path.basenamePosix(path);
-    return parent.fs.lookup(parent, basename);
+    return parent.inode.lookup(basename);
 }
 
 /// Lookup the parent dentry of the given path.
@@ -199,7 +197,7 @@ fn lookupParent(path: []const u8) Error!?*vfs.Dentry {
             cur_dentry = cur_dentry.parent;
         } else {
             // Lookup the component.
-            if (try cur_dentry.fs.lookup(cur_dentry, component.name)) |next_dentry| {
+            if (try cur_dentry.inode.lookup(component.name)) |next_dentry| {
                 cur_dentry = next_dentry;
             } else {
                 return null;

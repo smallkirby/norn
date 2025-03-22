@@ -1,16 +1,7 @@
-/// Filesystem for ramfs.
+//! Implementation of a simple in-memory filesystem.
+
 const RamFs = Self;
 const Self = @This();
-
-/// Vtable for ramfs.
-const vtable = vfs.Vtable{
-    .createFile = createFile,
-    .createDirectory = createDirectory,
-    .lookup = lookup,
-    .read = read,
-    .write = write,
-    .stat = stat,
-};
 
 /// Backing allocator.
 allocator: Allocator,
@@ -18,28 +9,48 @@ allocator: Allocator,
 inum_next: usize = 0,
 /// Root directory.
 root: *Dentry,
+/// Spin lock.
+lock: SpinLock = SpinLock{},
 
-/// Initiate ramfs creating root directory.
+/// Dentry operations.
+const dentry_vtable = Dentry.Vtable{
+    .createFile = createFile,
+    .createDirectory = createDirectory,
+};
+
+/// Inode operations.
+const inode_vtable = Inode.Vtable{
+    .lookup = lookup,
+    .read = read,
+    .write = write,
+    .stat = stat,
+};
+
+/// Initialize ramfs creating root directory.
 pub fn init(allocator: Allocator) Error!*Self {
     const self = try allocator.create(Self);
     errdefer allocator.destroy(self);
+    self.* = std.mem.zeroInit(Self, .{
+        .allocator = allocator,
+        .root = undefined,
+    });
 
     // Create a root directory.
     const root_node = try Node.newDirectory(allocator);
-    const root_inode = try Inode.new(0, root_node, allocator);
-    const root_dentry = try Dentry.new(
-        undefined,
+    const root_inode = try self.createInode(
+        .directory,
+        self.assignInum(),
+        root_node,
+    );
+    const root_dentry = try self.createDentry(
         root_inode,
         undefined,
         "",
-        allocator,
     );
     root_dentry.parent = root_dentry;
 
-    self.* = .{
-        .allocator = allocator,
-        .root = root_dentry,
-    };
+    // Initialize myself.
+    self.root = root_dentry;
     root_dentry.fs = self.filesystem();
 
     return self;
@@ -48,166 +59,9 @@ pub fn init(allocator: Allocator) Error!*Self {
 /// Get the filesystem interface.
 pub fn filesystem(self: *Self) vfs.FileSystem {
     return .{
-        .vtable = &vtable,
         .root = self.root,
         .ctx = self,
     };
-}
-
-/// Create a file in the given directory.
-pub fn createFile(fs: *vfs.FileSystem, dir: *Dentry, name: []const u8) Error!*Dentry {
-    const self: *Self = @alignCast(@ptrCast(fs.ctx));
-    return self.createFileInternal(dir, name);
-}
-
-/// Create a directory in the given directory.
-pub fn createDirectory(fs: *vfs.FileSystem, dir: *Dentry, name: []const u8) Error!*Dentry {
-    const self: *Self = @alignCast(@ptrCast(fs.ctx));
-    return self.createDirectoryInternal(dir, name);
-}
-
-/// Read data from the given inode.
-pub fn read(fs: *vfs.FileSystem, inode: *Inode, buf: []u8, pos: usize) Error!usize {
-    const self: *Self = @alignCast(@ptrCast(fs.ctx));
-    return self.readInternal(inode, buf, pos);
-}
-
-/// Write data to the given inode.
-pub fn write(fs: *vfs.FileSystem, inode: *Inode, data: []const u8, pos: usize) Error!usize {
-    const self: *Self = @alignCast(@ptrCast(fs.ctx));
-    return self.writeInternal(inode, data, pos);
-}
-
-/// Lookup a dentry with the given name in the given directory.
-pub fn lookup(fs: *vfs.FileSystem, dir: *Dentry, name: []const u8) Error!?*Dentry {
-    const self: *Self = @alignCast(@ptrCast(fs.ctx));
-    return self.lookupInternal(dir, name);
-}
-
-pub fn stat(fs: *vfs.FileSystem, inode: *Inode) Error!vfs.Stat {
-    _ = fs;
-
-    return switch (getNode(inode).*) {
-        .directory => norn.unimplemented("stat for directory"),
-        .file => |f| .{
-            .size = f.size,
-        },
-    };
-}
-
-/// Print the tree structure of the filesystem.
-pub fn printTree(self: RamFs, log: anytype) void {
-    var current_path: [4096]u8 = undefined;
-    current_path[0] = 0;
-    self.printTreeSub(log, self.root, current_path[0..current_path.len]);
-}
-
-/// Print children of the given directory recursively.
-fn printTreeSub(self: RamFs, log: anytype, dir: *Dentry, current_path: []u8) void {
-
-    // Prepend separator.
-    const init_path_end = blk: {
-        for (current_path, 0..) |c, i| {
-            if (c == 0) break :blk i + 1;
-        } else {
-            break :blk current_path.len;
-        }
-    };
-    current_path[init_path_end - 1] = '/';
-
-    // Iterate over children of the directory.
-    var cur = getNode(dir.inode).directory.children.first;
-    while (cur) |entry| : (cur = entry.next) {
-        const node = entry.data;
-        const name_len = node.name.len;
-
-        // Copy entry name
-        std.mem.copyBackwards(u8, current_path[init_path_end..], node.name);
-        current_path[init_path_end + name_len] = 0;
-
-        // Print the entry.
-        log("{s}", .{current_path[0 .. init_path_end + name_len]});
-
-        // Recurse if the entry is a directory.
-        switch (getNode(entry.data.inode).*) {
-            .directory => self.printTreeSub(log, node, current_path),
-            else => {},
-        }
-    }
-}
-
-fn createFileInternal(self: *Self, dir: *Dentry, name: []const u8) Error!*Dentry {
-    // Create a new file node.
-    const node = try Node.newFile(self.allocator);
-    const inode = try Inode.new(
-        self.assignInum(),
-        node,
-        self.allocator,
-    );
-    const dentry = try Dentry.new(
-        self.filesystem(),
-        inode,
-        dir,
-        try self.allocator.dupe(u8, name),
-        self.allocator,
-    );
-
-    // Append the new dentry to the parent directory.
-    const dir_node: *Node = getNode(dir.inode);
-    try dir_node.directory.append(dentry, self.allocator);
-
-    return dentry;
-}
-
-fn createDirectoryInternal(self: *Self, dir: *Dentry, name: []const u8) Error!*Dentry {
-    // Create a new directory node.
-    const node = try Node.newDirectory(self.allocator);
-    const inode = try Inode.new(self.assignInum(), node, self.allocator);
-    const dentry = try Dentry.new(
-        self.filesystem(),
-        inode,
-        dir,
-        try self.allocator.dupe(u8, name),
-        self.allocator,
-    );
-
-    // Append the new dentry to the parent directory.
-    const dir_node: *Node = @alignCast(@ptrCast(dir.inode.ctx));
-    try dir_node.directory.append(dentry, self.allocator);
-
-    return dentry;
-}
-
-fn readInternal(_: *Self, inode: *Inode, buf: []u8, pos: usize) Error!usize {
-    const file = &getNode(inode).file;
-    return file.read(buf, pos);
-}
-
-fn writeInternal(self: *Self, inode: *Inode, data: []const u8, pos: usize) Error!usize {
-    const file = &getNode(inode).file;
-    return file.write(data, pos, self.allocator);
-}
-
-fn lookupInternal(_: *Self, dir: *Dentry, name: []const u8) Error!?*Dentry {
-    var child = getNode(dir.inode).directory.children.first;
-    while (child) |c| : (child = c.next) {
-        if (std.mem.eql(u8, c.data.name, name)) {
-            return c.data;
-        }
-    }
-    return null;
-}
-
-/// Assign a new unique inode number.
-fn assignInum(self: *Self) u64 {
-    const inum = self.inum_next;
-    self.inum_next +%= 1;
-    return inum;
-}
-
-/// Get the Node from the given inode.
-inline fn getNode(inode: *Inode) *Node {
-    return @alignCast(@ptrCast(inode.ctx));
 }
 
 /// Actual file or directory entity.
@@ -268,7 +122,7 @@ const File = struct {
     }
 
     /// Read data from the file.
-    pub fn read(self: *File, buf: []u8, pos: usize) Error!usize {
+    fn read(self: *File, buf: []u8, pos: usize) Error!usize {
         const end = if (pos + buf.len > self.size) self.size else buf.len;
         const len = end - pos;
         @memcpy(buf[0..len], self._data[pos..end]);
@@ -313,7 +167,155 @@ const Directory = struct {
     }
 };
 
-// ==============================
+/// Create a file in the given directory.
+fn createFile(dir: *Dentry, name: []const u8) Error!*Dentry {
+    const self: *Self = @alignCast(@ptrCast(dir.fs.ctx));
+
+    // Create a new file node.
+    const node = try Node.newFile(self.allocator);
+    const inode = try self.createInode(.file, self.assignInum(), node);
+    const dentry = try self.createDentry(inode, dir, name);
+
+    // Append the new dentry to the parent directory.
+    const dir_node: *Node = getNode(dir.inode);
+    try dir_node.directory.append(dentry, self.allocator);
+
+    return dentry;
+}
+
+/// Create a directory in the given directory.
+fn createDirectory(dir: *Dentry, name: []const u8) Error!*Dentry {
+    const self: *Self = @alignCast(@ptrCast(dir.fs.ctx));
+
+    // Create a new directory node.
+    const node = try Node.newDirectory(self.allocator);
+    const inode = try self.createInode(.directory, self.assignInum(), node);
+    const dentry = try self.createDentry(inode, dir, name);
+
+    // Append the new dentry to the parent directory.
+    const dir_node: *Node = @alignCast(@ptrCast(dir.inode.ctx));
+    try dir_node.directory.append(dentry, self.allocator);
+
+    return dentry;
+}
+
+/// Read data from the given inode.
+fn read(inode: *Inode, buf: []u8, pos: usize) Error!usize {
+    const file = &getNode(inode).file;
+    return file.read(buf, pos);
+}
+
+/// Write data to the given inode.
+fn write(inode: *Inode, data: []const u8, pos: usize) Error!usize {
+    const self: *Self = @alignCast(@ptrCast(inode.fs.ctx));
+    const file = &getNode(inode).file;
+    return file.write(data, pos, self.allocator);
+}
+
+/// Lookup a dentry with the given name in the given directory.
+fn lookup(dir: *Inode, name: []const u8) Error!?*Dentry {
+    var child = getNode(dir).directory.children.first;
+    while (child) |c| : (child = c.next) {
+        if (std.mem.eql(u8, c.data.name, name)) {
+            return c.data;
+        }
+    }
+    return null;
+}
+
+pub fn stat(inode: *Inode) Error!vfs.Stat {
+    return switch (getNode(inode).*) {
+        .directory => norn.unimplemented("stat for directory"),
+        .file => |f| .{
+            .size = f.size,
+        },
+    };
+}
+
+/// Print the tree structure of the filesystem.
+pub fn printTree(self: RamFs, log: anytype) void {
+    var current_path: [4096]u8 = undefined;
+    current_path[0] = 0;
+    self.printTreeSub(log, self.root, current_path[0..current_path.len]);
+}
+
+/// Print children of the given directory recursively.
+fn printTreeSub(self: RamFs, log: anytype, dir: *Dentry, current_path: []u8) void {
+    // Prepend separator.
+    const init_path_end = blk: {
+        for (current_path, 0..) |c, i| {
+            if (c == 0) break :blk i + 1;
+        } else {
+            break :blk current_path.len;
+        }
+    };
+    current_path[init_path_end - 1] = '/';
+
+    // Iterate over children of the directory.
+    var cur = getNode(dir.inode).directory.children.first;
+    while (cur) |entry| : (cur = entry.next) {
+        const node = entry.data;
+        const name_len = node.name.len;
+
+        // Copy entry name
+        std.mem.copyBackwards(u8, current_path[init_path_end..], node.name);
+        current_path[init_path_end + name_len] = 0;
+
+        // Print the entry.
+        log("{s}", .{current_path[0 .. init_path_end + name_len]});
+
+        // Recurse if the entry is a directory.
+        switch (getNode(entry.data.inode).*) {
+            .directory => self.printTreeSub(log, node, current_path),
+            else => {},
+        }
+    }
+}
+
+/// Atomically assigns a new unique inode number.
+fn assignInum(self: *Self) u64 {
+    const ie = self.lock.lockDisableIrq();
+    defer self.lock.unlockRestoreIrq(ie);
+
+    const inum = self.inum_next;
+    self.inum_next +%= 1;
+    return inum;
+}
+
+/// Get the Node from the given inode.
+inline fn getNode(inode: *Inode) *Node {
+    return @alignCast(@ptrCast(inode.ctx));
+}
+
+/// Create a new VFS inode.
+fn createInode(self: *Self, inode_type: InodeType, inum: usize, ctx: *anyopaque) Error!*Inode {
+    const inode = try self.allocator.create(Inode);
+    inode.* = .{
+        .fs = self.filesystem(),
+        .number = inum,
+        .inode_type = inode_type,
+        .ops = &inode_vtable,
+        .ctx = ctx,
+    };
+    return inode;
+}
+
+fn createDentry(self: *Self, inode: *Inode, parent: *Dentry, name: []const u8) Error!*Dentry {
+    const dentry = try self.allocator.create(Dentry);
+    dentry.* = .{
+        .fs = self.filesystem(),
+        .inode = inode,
+        .parent = parent,
+        .name = try self.allocator.dupe(u8, name),
+        .ops = &dentry_vtable,
+    };
+
+    return dentry;
+}
+
+// =============================================================
+// Tests
+// =============================================================
 
 const testing = std.testing;
 
@@ -322,34 +324,37 @@ var test_gpa = std.heap.GeneralPurposeAllocator(.{}){};
 test "Create directories" {
     const allocator = test_gpa.allocator();
     const rfs = try RamFs.init(allocator);
+    const root = rfs.root;
 
-    const dir1 = try rfs.createDirectoryInternal(rfs.root, "dir1");
-    const dir2 = try rfs.createDirectoryInternal(dir1, "dir2");
-    try testing.expectEqual(dir1, try rfs.lookupInternal(rfs.root, "dir1"));
-    try testing.expectEqual(dir2, try rfs.lookupInternal(dir1, "dir2"));
-    try testing.expectEqual(null, try rfs.lookupInternal(dir1, "dne"));
+    const dir1 = try root.createDirectory("dir1");
+    const dir2 = try dir1.createDirectory("dir2");
+    try testing.expectEqual(dir1, try root.inode.lookup("dir1"));
+    try testing.expectEqual(dir2, try dir1.inode.lookup("dir2"));
+    try testing.expectEqual(null, try root.inode.lookup("dne"));
 }
 
 test "Create files" {
     const allocator = test_gpa.allocator();
     const rfs = try RamFs.init(allocator);
+    const root = rfs.root;
 
-    const dir1 = try rfs.createDirectoryInternal(rfs.root, "dir1");
-    const file1 = try rfs.createFileInternal(dir1, "file1");
-    try testing.expectEqual(file1, try rfs.lookupInternal(dir1, "file1"));
+    const dir1 = try root.createDirectory("dir1");
+    const file1 = try dir1.createFile("file1");
+    try testing.expectEqual(file1, try dir1.inode.lookup("file1"));
 }
 
 test "Write to file" {
     const allocator = test_gpa.allocator();
     const rfs = try RamFs.init(allocator);
-    const file1 = try rfs.createFileInternal(rfs.root, "file1");
+    const root = rfs.root;
+    const file1 = try root.createFile("file1");
 
     const s1 = "Hello, world!";
     const s2 = "Hello, world and beyond!";
-    var len = try rfs.writeInternal(file1.inode, s1, 0);
+    var len = try file1.inode.write(s1, 0);
     try testing.expectEqual(len, s1.len);
     try testing.expectEqualStrings(s1, getNode(file1.inode).file._data);
-    len = try rfs.writeInternal(file1.inode, s2, 0);
+    len = try file1.inode.write(s2, 0);
     try testing.expectEqual(len, s2.len);
     try testing.expectEqualStrings(s2, getNode(file1.inode).file._data);
 }
@@ -357,46 +362,39 @@ test "Write to file" {
 test "Read from file" {
     const allocator = test_gpa.allocator();
     const rfs = try RamFs.init(allocator);
-    const file1 = try rfs.createFileInternal(rfs.root, "file1");
+    const root = rfs.root;
+    const file1 = try root.createFile("file1");
 
     const s1 = "Hello, world!";
     const s2 = "Hello, world and beyond!";
     var buf: [1024]u8 = undefined;
     var len: usize = undefined;
 
-    _ = try rfs.writeInternal(file1.inode, s1, 0);
-    len = try rfs.readInternal(file1.inode, buf[0..], 0);
+    _ = try file1.inode.write(s1, 0);
+    len = try file1.inode.read(buf[0..], 0);
     try testing.expectEqual(len, s1.len);
     try testing.expectEqualStrings(s1, buf[0..s1.len]);
 
-    _ = try rfs.writeInternal(file1.inode, s2, 0);
-    len = try rfs.readInternal(file1.inode, buf[0..], 0);
+    _ = try file1.inode.write(s2, 0);
+    len = try file1.inode.read(buf[0..], 0);
     try testing.expectEqual(len, s2.len);
     try testing.expectEqualStrings(s2, buf[0..s2.len]);
 }
 
-test "Operation via VFS" {
-    const allocator = test_gpa.allocator();
-    const rfs = try RamFs.init(allocator);
-    var fs = rfs.filesystem();
-
-    const root = fs.root;
-    const dir1 = try fs.createDirectory(root, "dir1");
-    const dir2 = try fs.createDirectory(dir1, "dir2");
-    try testing.expectEqual(dir1, try fs.lookup(root, "dir1"));
-    try testing.expectEqual(dir2, try fs.lookup(dir1, "dir2"));
-}
-
-// ==============================
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const DoublyLinkedList = std.DoublyLinkedList;
 
 const norn = @import("norn");
+const SpinLock = norn.SpinLock;
 
 const vfs = @import("vfs.zig");
 const Error = vfs.Error;
 const Dentry = vfs.Dentry;
 const Inode = vfs.Inode;
+const InodeType = vfs.InodeType;
 const Vtable = vfs.Vtable;
