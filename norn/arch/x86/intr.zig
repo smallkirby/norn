@@ -133,6 +133,17 @@ fn unhandledHandler(context: *Context) void {
     log.err("CR3    : 0x{X:0>16}", .{cr3});
     log.err("CR4    : 0x{X:0>16}", .{cr4});
 
+    // Print the stack trace.
+    log.err("", .{});
+    var it = std.debug.StackIterator.init(null, context.rbp);
+    var ix: usize = 0;
+    log.err("=== Stack Trace =====================", .{});
+    while (it.next()) |frame| : (ix += 1) {
+        log.err("#{d:0>2}: 0x{X:0>16}", .{ ix, frame });
+    }
+
+    log.err("=====================================", .{});
+    log.err("Halting...", .{});
     norn.endlessHalt();
 }
 
