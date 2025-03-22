@@ -4,6 +4,8 @@ pub const Error = error{
     NotFound,
     /// File already exists.
     AlreadyExists,
+    /// Invalid argument.
+    InvalidArgument,
 } || vfs.Error;
 
 /// Path separator.
@@ -48,7 +50,7 @@ pub fn init() Error!void {
     cwd = rfs.root;
 }
 
-/// Load initramfs image and create entries.
+/// Load initramfs cpio image and create entries.
 ///
 /// - `initimg`: Initramfs image. Caller can free this memory after this function returns.
 pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
@@ -59,7 +61,8 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
     while (cur) |c| : (cur = try iter.next()) {
         const path = try c.getPath();
         const basename = std.fs.path.basenamePosix(path);
-        const mode = try c.getMode();
+        const posix_mode = try c.getMode();
+        const mode = Mode.fromPosixMode(@truncate(posix_mode));
 
         if (std.mem.eql(u8, path, ".") or std.mem.eql(u8, path, "..")) {
             continue;
@@ -77,18 +80,19 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
         };
 
         // Create the file or directory.
-        if (bits.isset(mode, 14)) {
-            _ = try parent.createDirectory(basename);
+        if (bits.isset(posix_mode, 14)) {
+            _ = try parent.createDirectory(basename, mode);
         } else {
-            const dentry = try parent.createFile(basename);
+            const dentry = try parent.createFile(basename, mode);
             _ = try dentry.inode.write(try c.getData(), 0);
         }
     }
 
     // Debug print the loaded file tree.
-    const ramfs: *RamFs = @alignCast(@ptrCast(root.fs.ctx));
-    log.debug("=== Directory Tree ==================", .{});
-    ramfs.printTree(log.debug);
+    log.debug("=== Initial FS ======================", .{});
+    printDirectoryTree() catch |err| {
+        log.err("Failed to print directory tree: {s}", .{@errorName(err)});
+    };
     log.debug("=====================================", .{});
 }
 
@@ -115,15 +119,20 @@ pub const OpenFlags = struct {
 };
 
 /// TODO: doc
-pub fn open(path: []const u8, flags: OpenFlags) Error!*File {
+pub fn open(path: []const u8, flags: OpenFlags, mode: ?Mode) Error!*File {
     // TODO: use mode
 
     const dentry = if (try lookup(path)) |dent| dent else blk: {
         if (!flags.create) return Error.NotFound;
-        // Try to create the file.
-        const parent = try lookupParent(path) orelse return Error.NotFound;
-        const basename = std.fs.path.basenamePosix(path);
-        break :blk try parent.createFile(basename);
+        if (mode) |m| {
+            // Try to create the file.
+            const parent = try lookupParent(path) orelse return Error.NotFound;
+            const basename = std.fs.path.basenamePosix(path);
+            break :blk try parent.createFile(basename, m);
+        } else {
+            // TODO: use default mode.
+            return Error.InvalidArgument;
+        }
     };
 
     const file = try allocator.create(File);
@@ -208,13 +217,63 @@ fn lookupParent(path: []const u8) Error!?*vfs.Dentry {
     return cur_dentry;
 }
 
-// ==============================
+// =============================================================
+// Debug
+// =============================================================
+
+/// Print the directory tree.
+fn printDirectoryTree() Error!void {
+    var current_path = std.mem.zeroes([4096]u8);
+    try printDirectoryTreeSub(root, current_path[0..current_path.len]);
+}
+
+fn printDirectoryTreeSub(dir: *const Dentry, current_path: []u8) Error!void {
+    const parent_end_pos = blk: {
+        for (current_path, 0..) |c, i| {
+            if (c == 0) break :blk i;
+        } else {
+            break :blk current_path.len;
+        }
+    };
+    current_path[parent_end_pos] = separator;
+
+    const children = try dir.inode.iterate(allocator);
+    for (children) |child| {
+        // Copy entry name.
+        const len = parent_end_pos + 1 + child.name.len;
+        std.mem.copyBackwards(u8, current_path[parent_end_pos + 1 ..], child.name);
+        current_path[len] = 0;
+
+        // Print the entry.
+        log.debug(
+            "{[perm]s}  {[uid]d: <4} {[gid]d: <4} {[size]d: >8} {[name]s}",
+            .{
+                .perm = child.inode.mode.toString(),
+                .uid = child.inode.uid,
+                .gid = child.inode.gid,
+                .size = child.inode.size,
+                .name = current_path[0..len],
+            },
+        );
+
+        // Recurse if the entry is a directory.
+        if (child.inode.inode_type == .directory) {
+            try printDirectoryTreeSub(child, current_path);
+        }
+    }
+}
+
+// =============================================================
+// Tests
+// =============================================================
 
 test {
     std.testing.refAllDeclsRecursive(@This());
 }
 
-// ==============================
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
 const log = std.log.scoped(.fs);
@@ -227,6 +286,8 @@ const bits = norn.bits;
 const cpio = @import("fs/cpio.zig");
 const RamFs = @import("fs/RamFs.zig");
 const vfs = @import("fs/vfs.zig");
+const Dentry = vfs.Dentry;
 const Stat = vfs.Stat;
+const Mode = vfs.Mode;
 
 const allocator = norn.mem.general_allocator;

@@ -20,11 +20,19 @@ const dentry_vtable = Dentry.Vtable{
 
 /// Inode operations.
 const inode_vtable = Inode.Vtable{
+    .iterate = iterate,
     .lookup = lookup,
     .read = read,
     .write = write,
     .stat = stat,
 };
+
+/// Default file mode.
+const default_file_mode: Mode = .anybody_full;
+/// Default UID.
+const default_uid: Uid = 0; // TODO
+/// Default GID.
+const default_gid: Gid = 0; // TODO
 
 /// Initialize ramfs creating root directory.
 pub fn init(allocator: Allocator) Error!*Self {
@@ -40,6 +48,7 @@ pub fn init(allocator: Allocator) Error!*Self {
     const root_inode = try self.createInode(
         .directory,
         self.assignInum(),
+        default_file_mode,
         root_node,
     );
     const root_dentry = try self.createDentry(
@@ -140,6 +149,7 @@ const File = struct {
             self.size = end;
         }
         @memcpy(self._data[pos..end], data);
+
         return data.len;
     }
 };
@@ -168,13 +178,22 @@ const Directory = struct {
 };
 
 /// Create a file in the given directory.
-fn createFile(dir: *Dentry, name: []const u8) Error!*Dentry {
+fn createFile(dir: *Dentry, name: []const u8, mode: Mode) Error!*Dentry {
     const self: *Self = @alignCast(@ptrCast(dir.fs.ctx));
 
     // Create a new file node.
     const node = try Node.newFile(self.allocator);
-    const inode = try self.createInode(.file, self.assignInum(), node);
-    const dentry = try self.createDentry(inode, dir, name);
+    const inode = try self.createInode(
+        .file,
+        self.assignInum(),
+        mode,
+        node,
+    );
+    const dentry = try self.createDentry(
+        inode,
+        dir,
+        name,
+    );
 
     // Append the new dentry to the parent directory.
     const dir_node: *Node = getNode(dir.inode);
@@ -184,12 +203,17 @@ fn createFile(dir: *Dentry, name: []const u8) Error!*Dentry {
 }
 
 /// Create a directory in the given directory.
-fn createDirectory(dir: *Dentry, name: []const u8) Error!*Dentry {
+fn createDirectory(dir: *Dentry, name: []const u8, mode: Mode) Error!*Dentry {
     const self: *Self = @alignCast(@ptrCast(dir.fs.ctx));
 
     // Create a new directory node.
     const node = try Node.newDirectory(self.allocator);
-    const inode = try self.createInode(.directory, self.assignInum(), node);
+    const inode = try self.createInode(
+        .directory,
+        self.assignInum(),
+        mode,
+        node,
+    );
     const dentry = try self.createDentry(inode, dir, name);
 
     // Append the new dentry to the parent directory.
@@ -197,6 +221,26 @@ fn createDirectory(dir: *Dentry, name: []const u8) Error!*Dentry {
     try dir_node.directory.append(dentry, self.allocator);
 
     return dentry;
+}
+
+/// Iterate over children of the given directory.
+fn iterate(inode: *Inode, allocator: Allocator) Error![]*const Dentry {
+    const dir = getNode(inode).directory;
+    const num_children = dir.children.len;
+
+    const entries = try allocator.alloc(*const Dentry, num_children);
+    errdefer allocator.free(entries);
+
+    var child = dir.children.first;
+    var i: usize = 0;
+    while (child) |c| : ({
+        child = c.next;
+        i += 1;
+    }) {
+        entries[i] = c.data;
+    }
+
+    return entries;
 }
 
 /// Read data from the given inode.
@@ -209,7 +253,10 @@ fn read(inode: *Inode, buf: []u8, pos: usize) Error!usize {
 fn write(inode: *Inode, data: []const u8, pos: usize) Error!usize {
     const self: *Self = @alignCast(@ptrCast(inode.fs.ctx));
     const file = &getNode(inode).file;
-    return file.write(data, pos, self.allocator);
+    const ret = file.write(data, pos, self.allocator);
+
+    inode.size = file.size;
+    return ret;
 }
 
 /// Lookup a dentry with the given name in the given directory.
@@ -232,46 +279,6 @@ pub fn stat(inode: *Inode) Error!vfs.Stat {
     };
 }
 
-/// Print the tree structure of the filesystem.
-pub fn printTree(self: RamFs, log: anytype) void {
-    var current_path: [4096]u8 = undefined;
-    current_path[0] = 0;
-    self.printTreeSub(log, self.root, current_path[0..current_path.len]);
-}
-
-/// Print children of the given directory recursively.
-fn printTreeSub(self: RamFs, log: anytype, dir: *Dentry, current_path: []u8) void {
-    // Prepend separator.
-    const init_path_end = blk: {
-        for (current_path, 0..) |c, i| {
-            if (c == 0) break :blk i + 1;
-        } else {
-            break :blk current_path.len;
-        }
-    };
-    current_path[init_path_end - 1] = '/';
-
-    // Iterate over children of the directory.
-    var cur = getNode(dir.inode).directory.children.first;
-    while (cur) |entry| : (cur = entry.next) {
-        const node = entry.data;
-        const name_len = node.name.len;
-
-        // Copy entry name
-        std.mem.copyBackwards(u8, current_path[init_path_end..], node.name);
-        current_path[init_path_end + name_len] = 0;
-
-        // Print the entry.
-        log("{s}", .{current_path[0 .. init_path_end + name_len]});
-
-        // Recurse if the entry is a directory.
-        switch (getNode(entry.data.inode).*) {
-            .directory => self.printTreeSub(log, node, current_path),
-            else => {},
-        }
-    }
-}
-
 /// Atomically assigns a new unique inode number.
 fn assignInum(self: *Self) u64 {
     const ie = self.lock.lockDisableIrq();
@@ -288,19 +295,35 @@ inline fn getNode(inode: *Inode) *Node {
 }
 
 /// Create a new VFS inode.
-fn createInode(self: *Self, inode_type: InodeType, inum: usize, ctx: *anyopaque) Error!*Inode {
+fn createInode(
+    self: *Self,
+    inode_type: InodeType,
+    inum: usize,
+    mode: Mode,
+    ctx: *anyopaque,
+) Error!*Inode {
     const inode = try self.allocator.create(Inode);
     inode.* = .{
         .fs = self.filesystem(),
         .number = inum,
         .inode_type = inode_type,
+        .mode = mode,
+        .uid = default_uid,
+        .gid = default_gid,
+        .size = 0,
         .ops = &inode_vtable,
         .ctx = ctx,
     };
     return inode;
 }
 
-fn createDentry(self: *Self, inode: *Inode, parent: *Dentry, name: []const u8) Error!*Dentry {
+/// Create a new VFS dentry.
+fn createDentry(
+    self: *Self,
+    inode: *Inode,
+    parent: *Dentry,
+    name: []const u8,
+) Error!*Dentry {
     const dentry = try self.allocator.create(Dentry);
     dentry.* = .{
         .fs = self.filesystem(),
@@ -326,8 +349,8 @@ test "Create directories" {
     const rfs = try RamFs.init(allocator);
     const root = rfs.root;
 
-    const dir1 = try root.createDirectory("dir1");
-    const dir2 = try dir1.createDirectory("dir2");
+    const dir1 = try root.createDirectory("dir1", .anybody_full);
+    const dir2 = try dir1.createDirectory("dir2", .anybody_full);
     try testing.expectEqual(dir1, try root.inode.lookup("dir1"));
     try testing.expectEqual(dir2, try dir1.inode.lookup("dir2"));
     try testing.expectEqual(null, try root.inode.lookup("dne"));
@@ -338,8 +361,8 @@ test "Create files" {
     const rfs = try RamFs.init(allocator);
     const root = rfs.root;
 
-    const dir1 = try root.createDirectory("dir1");
-    const file1 = try dir1.createFile("file1");
+    const dir1 = try root.createDirectory("dir1", .anybody_full);
+    const file1 = try dir1.createFile("file1", .anybody_full);
     try testing.expectEqual(file1, try dir1.inode.lookup("file1"));
 }
 
@@ -347,7 +370,7 @@ test "Write to file" {
     const allocator = test_gpa.allocator();
     const rfs = try RamFs.init(allocator);
     const root = rfs.root;
-    const file1 = try root.createFile("file1");
+    const file1 = try root.createFile("file1", .anybody_full);
 
     const s1 = "Hello, world!";
     const s2 = "Hello, world and beyond!";
@@ -363,7 +386,7 @@ test "Read from file" {
     const allocator = test_gpa.allocator();
     const rfs = try RamFs.init(allocator);
     const root = rfs.root;
-    const file1 = try root.createFile("file1");
+    const file1 = try root.createFile("file1", .anybody_full);
 
     const s1 = "Hello, world!";
     const s2 = "Hello, world and beyond!";
@@ -397,4 +420,6 @@ const Error = vfs.Error;
 const Dentry = vfs.Dentry;
 const Inode = vfs.Inode;
 const InodeType = vfs.InodeType;
-const Vtable = vfs.Vtable;
+const Uid = vfs.Uid;
+const Gid = vfs.Gid;
+const Mode = vfs.Mode;

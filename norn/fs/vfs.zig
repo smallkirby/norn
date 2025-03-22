@@ -43,27 +43,27 @@ pub const Dentry = struct {
         /// Create a directory named `name` in this directory inode.
         ///
         /// If the directory is created successfully, return the dentry.
-        createDirectory: *const fn (self: *Dentry, name: []const u8) Error!*Dentry,
+        createDirectory: *const fn (self: *Dentry, name: []const u8, mode: Mode) Error!*Dentry,
         /// Create a file named `name` in this directory inode.
         ///
         /// If the file is created successfully, return the dentry.
-        createFile: *const fn (self: *Dentry, name: []const u8) Error!*Dentry,
+        createFile: *const fn (self: *Dentry, name: []const u8, mode: Mode) Error!*Dentry,
     };
 
     /// Create a directory named `name` in this directory inode.
-    pub fn createDirectory(self: *Self, name: []const u8) Error!*Dentry {
+    pub fn createDirectory(self: *Self, name: []const u8, mode: Mode) Error!*Dentry {
         const inode = self.inode;
         if (inode.inode_type != InodeType.directory) return Error.NotDirectory;
 
-        return self.ops.createDirectory(self, name);
+        return self.ops.createDirectory(self, name, mode);
     }
 
     /// Create a file named `name` in this directory inode.
-    pub fn createFile(self: *Self, name: []const u8) Error!*Dentry {
+    pub fn createFile(self: *Self, name: []const u8, mode: Mode) Error!*Dentry {
         const inode = self.inode;
         if (inode.inode_type != InodeType.directory) return Error.NotDirectory;
 
-        return self.ops.createFile(self, name);
+        return self.ops.createFile(self, name, mode);
     }
 };
 
@@ -73,6 +73,63 @@ pub const InodeType = enum {
     file,
     /// Directory
     directory,
+};
+
+/// User ID.
+pub const Uid = u32;
+/// Group ID.
+pub const Gid = u32;
+
+/// File mode.
+pub const Mode = packed struct {
+    user: Permission,
+    group: Permission,
+    other: Permission,
+
+    /// Access permission for each access type.
+    const Permission = packed struct(u3) {
+        read: bool,
+        write: bool,
+        exec: bool,
+
+        pub const full = Permission{
+            .read = true,
+            .write = true,
+            .exec = true,
+        };
+    };
+
+    pub const anybody_full = Mode{
+        .user = .full,
+        .group = .full,
+        .other = .full,
+    };
+
+    /// Get a mode from POSIX mode integer.
+    pub fn fromPosixMode(mode: u32) Mode {
+        const other: Permission = @bitCast(@as(u3, @truncate(mode >> 0)));
+        const group: Permission = @bitCast(@as(u3, @truncate(mode >> 3)));
+        const user: Permission = @bitCast(@as(u3, @truncate(mode >> 6)));
+        return Mode{
+            .user = user,
+            .group = group,
+            .other = other,
+        };
+    }
+
+    pub fn toString(self: Mode) [9]u8 {
+        var buf: [9]u8 = undefined;
+        buf[0] = if (self.user.read) 'r' else '-';
+        buf[1] = if (self.user.write) 'w' else '-';
+        buf[2] = if (self.user.exec) 'x' else '-';
+        buf[3] = if (self.group.read) 'r' else '-';
+        buf[4] = if (self.group.write) 'w' else '-';
+        buf[5] = if (self.group.exec) 'x' else '-';
+        buf[6] = if (self.other.read) 'r' else '-';
+        buf[7] = if (self.other.write) 'w' else '-';
+        buf[8] = if (self.other.exec) 'x' else '-';
+        return buf;
+    }
 };
 
 /// Inode.
@@ -85,6 +142,14 @@ pub const Inode = struct {
     number: u64,
     /// Inode type.
     inode_type: InodeType,
+    /// File mode.
+    mode: Mode,
+    /// User ID.
+    uid: Uid,
+    /// Group ID.
+    gid: Gid,
+    /// File size.
+    size: usize,
     /// Operations for this inode.
     ops: *const Vtable,
     /// Context of this inode.
@@ -92,6 +157,10 @@ pub const Inode = struct {
 
     /// Inode operations.
     pub const Vtable = struct {
+        /// Iterate over all files in this directory inode.
+        ///
+        /// Caller must free the returned slice.
+        iterate: *const fn (self: *Inode, allocator: Allocator) Error![]*const Dentry,
         /// Find a file named `name` in this directory inode.
         ///
         /// If the file is found, return the dentry.
@@ -101,13 +170,19 @@ pub const Inode = struct {
         ///
         /// Return the number of bytes read.
         read: *const fn (inode: *Inode, buf: []u8, pos: usize) Error!usize,
+        /// Get stat information of this inode.
+        stat: *const fn (inode: *Inode) Error!Stat,
         /// Write data to this inode from position `pos` with `data`.
         ///
         /// Return the number of bytes written.
         write: *const fn (inode: *Inode, data: []const u8, pos: usize) Error!usize,
-        /// Get stat information of this inode.
-        stat: *const fn (inode: *Inode) Error!Stat,
     };
+
+    /// Iterate over all files in this directory inode.
+    pub fn iterate(self: *Self, allocator: Allocator) Error![]*const Dentry {
+        if (self.inode_type != InodeType.directory) return Error.NotDirectory;
+        return self.ops.iterate(self, allocator);
+    }
 
     /// Lookup a file named `name` in this directory inode.
     pub fn lookup(self: *Self, name: []const u8) Error!?*Dentry {
@@ -142,5 +217,3 @@ const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const mem = norn.mem;
-
-const allocator = mem.general_allocator;

@@ -81,7 +81,7 @@ pub const ElfLoader = struct {
 };
 
 fn readElfFile(filename: []const u8) Error![]align(8) u8 {
-    const file = try fs.open(filename, .{});
+    const file = try fs.open(filename, .{}, null);
     defer fs.close(file);
     const stat = try fs.stat(file);
     const size = stat.size;

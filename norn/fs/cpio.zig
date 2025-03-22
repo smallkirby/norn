@@ -166,7 +166,9 @@ const NewAsciiCpio = extern struct {
     }
 };
 
-// =======================================
+// =============================================================
+// Tests
+// =============================================================
 
 const testing = std.testing;
 const test_cpio = @embedFile("../tests/assets/test.cpio");
@@ -275,6 +277,11 @@ test "Iterator: read all entries" {
     try testing.expectEqual(0, (try cpio.getData()).len);
 }
 
-// =======================================
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
+
+const vfs = @import("vfs.zig");
+const Mode = vfs.Mode;
