@@ -37,6 +37,17 @@ fn unhandledSyscallHandler(
     log.err("  [1]={X:0>16} [2]={X:0>16}", .{ arg1, arg2 });
     log.err("  [3]={X:0>16} [4]={X:0>16} [5]={X:0>16}", .{ arg3, arg4, arg5 });
 
+    // Print memory map of the current task.
+    log.err("Memory map of the current task:", .{});
+    const task = norn.sched.getCurrentTask();
+    var node: ?*VmArea = task.mm.vm_areas.first;
+    while (node) |area| : (node = area.list_head.next) {
+        log.err(
+            "  {X}-{X} {s}",
+            .{ area.start, area.end, area.flags.toString() },
+        );
+    }
+
     if (norn.is_runtime_test) {
         log.info("Reached unreachable unhandled syscall handler.", .{});
         norn.terminateQemu(0);
@@ -65,3 +76,5 @@ const arch = norn.arch;
 const errno = norn.errno;
 
 const Context = arch.SyscallContext;
+const VmArea = norn.mm.VmArea;
+const VmFlags = norn.mm.VmFlags;

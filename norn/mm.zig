@@ -16,6 +16,15 @@ pub const VmFlags = packed struct {
         .write = false,
         .exec = false,
     };
+
+    /// Generate a string representation of the VM flags.
+    pub fn toString(self: VmFlags) [3]u8 {
+        var buf: [3]u8 = undefined;
+        buf[0] = if (self.read) 'r' else '-';
+        buf[1] = if (self.write) 'w' else '-';
+        buf[2] = if (self.exec) 'x' else '-';
+        return buf;
+    }
 };
 
 /// Single contiguous area of virtual memory.
