@@ -28,4 +28,4 @@ zig build test --summary all -Druntime_test=true
 
 ## LICENSE
 
-[Licnesed under the MIT License](LICENSE) unless otherwise specified.
+[Licensed under the MIT License](LICENSE) unless otherwise specified.
