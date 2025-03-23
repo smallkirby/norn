@@ -132,7 +132,7 @@ export fn syscallEntry() callconv(.naked) void {
         \\popq %%r10                    # r10
         \\popq %%r9                     # r9
         \\popq %%r8                     # r8
-        \\popq %%rax                    # rax
+        \\add  $8, %%rsp                # rax
         \\popq %%rcx                    # rcx
         \\popq %%rdx                    # rdx
         \\popq %%rsi                    # rsi
