@@ -48,6 +48,20 @@ fn unhandledSyscallHandler(
         );
     }
 
+    // Print task information.
+    log.err("Task Information:", .{});
+    log.err("  PID: {d}, comm={s}", .{ task.tid, task.comm });
+    log.err("  RIP: 0x{X:0>16}", .{ctx.rip});
+
+    // Stack trace.
+    var it = std.debug.StackIterator.init(null, ctx.rbp);
+    var ix: usize = 0;
+    log.err("=== Stack Trace =====================", .{});
+    while (it.next()) |frame| : (ix += 1) {
+        log.err("#{d:0>2}: 0x{X:0>16}", .{ ix, frame });
+    }
+    log.err("=====================================", .{});
+
     if (norn.is_runtime_test) {
         log.info("Reached unreachable unhandled syscall handler.", .{});
         norn.terminateQemu(0);
