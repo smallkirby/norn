@@ -13,8 +13,15 @@ pub const Syscall = enum(u64) {
     brk = 12,
     /// Not supported.
     arch_prctl = 158,
+    /// Set pointer to thread ID.
+    set_tid_address = 218,
+    /// Get or set list of robust futexes.
+    set_robust_list = 273,
     /// Output to debug log.
+    /// TODO: change the NR.
     dlog = 255,
+    /// Restartable sequences.
+    rseq = 334,
 
     _,
 
@@ -22,9 +29,12 @@ pub const Syscall = enum(u64) {
     pub fn getHandler(self: Syscall) Handler {
         return switch (self) {
             .write => sysWrite,
-            .brk => norn.mm.syscallBrk,
-            .arch_prctl => sysArchPrctl,
+            .brk => norn.mm.sysBrk,
+            .arch_prctl => norn.prctl.sysArchPrctl,
+            .set_tid_address => ignoredSyscallHandler,
+            .set_robust_list => ignoredSyscallHandler,
             .dlog => sysDebugLog,
+            .rseq => ignoredSyscallHandler,
             _ => unhandledSyscallHandler,
         };
     }
@@ -82,6 +92,12 @@ fn unhandledSyscallHandler(
     return Error.Unimplemented;
 }
 
+/// Handler for ignored syscalls.
+fn ignoredSyscallHandler(ctx: *Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+    log.warn("Syscall nr={d} is ignored.", .{ctx.spec2.orig_rax});
+    return error.Unimplemented;
+}
+
 /// Syscall handler for `write`.
 ///
 /// Currently, only supports writing to stdout (fd=1) and stderr (fd=2).
@@ -96,11 +112,6 @@ fn sysWrite(_: *Context, fd: u64, buf: u64, count: u64, _: u64, _: u64, _: u64) 
     norn.getSerial().writeString(msg[0..count]);
 
     return @bitCast(count);
-}
-
-/// Syscall handler for `arch_prctl`.
-fn sysArchPrctl(_: *Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
-    return Error.Unimplemented;
 }
 
 /// Syscall handler for `dlog`.

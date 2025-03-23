@@ -29,6 +29,14 @@ pub inline fn enableIrq() void {
 /// Enable system calls.
 pub const enableSyscall = syscall.init;
 
+/// Get FS base address.
+pub fn getFs() u64 {
+    return asm volatile (
+        \\rdfsbase %[fs]
+        : [fs] "={rax}" (-> u64),
+    );
+}
+
 /// Get frequency of TSC in Hz.
 pub fn getTscFrequency() error{NotEnumerated}!u64 {
     const res = cpuid.Leaf.from(0x15).query(0);
@@ -142,6 +150,15 @@ pub fn readTsc() u64 {
 /// Pause a CPU for a short period of time.
 pub fn relax() void {
     am.relax();
+}
+
+/// Set FS base address.
+pub fn setFs(base: u64) void {
+    asm volatile (
+        \\wrfsbase %[fs]
+        :
+        : [fs] "r" (base),
+    );
 }
 
 /// Set the interrupt handler.

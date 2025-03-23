@@ -179,18 +179,22 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
     // Map stack.
     const stack_base = 0x200000;
     const stack_size = 0x1000 * 20;
-    const vma = try thread.mm.map(stack_base, stack_size, .rw);
-    thread.mm.vm_areas.append(vma);
+    const stack_vma = try thread.mm.map(stack_base, stack_size, .rw);
+    thread.mm.vm_areas.append(stack_vma);
 
     arch.task.initKernelStack(thread, @intFromPtr(&norn.init.initialTask));
 
     // Initialize user stack.
-    const stack: []u8 = @constCast(vma.slice());
+    const stack: []u8 = @constCast(stack_vma.slice());
     var sc = StackCreator.new(stack) catch @panic("StackCreator.new");
-    sc.push(0) catch @panic("StackCreator.push"); // argc
-    sc.push(0) catch @panic("StackCreator.push"); // NULL (argv)
-    sc.push(0) catch @panic("StackCreator.push"); // NULL (envp)
-    sc.push(0) catch @panic("StackCreator.push"); // AT_NULL (auxvec)
+    sc.push(@as(u64, 0)); // padding for alignment
+    sc.push(@as(u64, 0)); // end marker
+    sc.push(@as(u128, 0x0123_4567_89AB_CDEF_1122_3344_5566_7788)); // Random value for AT_RANDOM
+    sc.push(AuxVector.new(.terminator, 0)); // AT_NULL (auxvec)
+    sc.push(AuxVector.new(.random, stack_base + stack_size - 0x20)); // AT_RANDOM (auxvec)
+    sc.push(@as(u64, 0)); // NULL (envp)
+    sc.push(@as(u64, 0)); // NULL (argv)
+    sc.push(@as(u64, 0)); // argc
 
     // Set up user stack.
     arch.task.setupUserContext(
@@ -202,38 +206,105 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
     return thread;
 }
 
+/// Construct stack frame in the given area.
 const StackCreator = struct {
     const Self = @This();
 
+    /// Upper limit of the stack.
+    _stack_top: [*]u8,
     /// Bottom of the stack.
-    _raw_stack: []u8,
-    /// 64-bit aligned stack.
-    _stack: [*]u64,
+    _stack_bottom: [*]u8,
     /// Stack pointer.
-    _sp: usize,
-    /// Maximum stack size.
-    _max_sp: usize,
+    _sp: [*]u8,
 
+    /// Instantiate a new stack creator.
+    ///
+    /// Cursor is set to the bottom of the stack.
     pub fn new(stack: []u8) !StackCreator {
         if (@intFromPtr(stack.ptr) % 8 != 0) return error.InvalidStack;
 
         return .{
-            ._raw_stack = stack,
-            ._stack = @ptrFromInt(@intFromPtr(stack.ptr) + stack.len),
-            ._sp = 0,
-            ._max_sp = stack.len / 8,
+            ._stack_top = @ptrCast(stack.ptr),
+            ._stack_bottom = @ptrFromInt(@intFromPtr(stack.ptr) + stack.len),
+            ._sp = @ptrFromInt(@intFromPtr(stack.ptr) + stack.len),
         };
     }
 
-    pub fn push(self: *Self, value: u64) !void {
-        if (self._sp >= self._max_sp) return error.StackOverflow;
+    /// Push a value to the stack.
+    ///
+    /// The size of value must be 8-byte aligned.
+    pub fn push(self: *Self, comptime value: anytype) void {
+        const T = @TypeOf(value);
 
-        self._stack[self._sp] = value;
-        self._sp += 1;
+        const value_size = @sizeOf(T);
+        comptime norn.comptimeAssert(
+            value_size != 0,
+            "StackCreator does not support zero-sized type",
+        );
+        comptime norn.comptimeAssert(
+            value_size % 8 == 0,
+            "StackCreator only supports 64-bit aligned types",
+        );
+
+        if (util.ptrLte(self._sp + value_size, self._stack_top)) {
+            @panic("StackCreator overflow");
+        }
+        self._sp -= value_size;
+
+        const ptr: *T = @alignCast(@ptrCast(self._sp));
+        ptr.* = value;
     }
 
+    /// Get the total size of the pushed values on the stack.
     pub fn size(self: *Self) usize {
-        return self._sp * 8;
+        return self._stack_bottom - self._sp;
+    }
+};
+
+/// Auxiliary vector for passing information to the program.
+const AuxVector = packed struct(u128) {
+    /// Type of the entry.
+    auxv_type: AuxvType,
+    /// Value of the entry.
+    value: u64,
+
+    const AuxvType = enum(u64) {
+        terminator = 0,
+        ignore = 1,
+        execfd = 2,
+        phdr = 3,
+        phent = 4,
+        phnum = 5,
+        pagesz = 6,
+        base = 7,
+        flags = 8,
+        entry = 9,
+        notelf = 10,
+        uid = 11,
+        euid = 12,
+        gid = 13,
+        egid = 14,
+        platform = 15,
+        hwcap = 16,
+        clktck = 17,
+        fpucw = 18,
+        dcachebsize = 19,
+        icachebsize = 20,
+        ucachebsize = 21,
+        ignorepc = 22,
+        secure = 23,
+        base_platform = 24,
+        random = 25,
+
+        sysinfo = 32,
+        sysinfo_ehdr = 33,
+    };
+
+    pub fn new(auxv_type: AuxvType, value: u64) AuxVector {
+        return .{
+            .auxv_type = auxv_type,
+            .value = value,
+        };
     }
 };
 
@@ -241,10 +312,13 @@ const StackCreator = struct {
 // Imports
 // =============================================================
 
+const std = @import("std");
+
 const norn = @import("norn");
 const arch = norn.arch;
 const loader = norn.loader;
 const mem = norn.mem;
+const util = norn.util;
 const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
 const MemoryMap = norn.mm.MemoryMap;
 const SpinLock = norn.SpinLock;
