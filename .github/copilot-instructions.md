@@ -30,6 +30,8 @@ cat /tmp/copilot-norn-autorun.log
 
 If successful, the first command will exit with exit code 3, and the log will contain the message: "Reached unreachable unhandled syscall handler."
 
+- Do not repeat the test run and self-check process if the necessary information is missing or if you need additional details or assistance. Instead, ask for help without hesitation.
+
 ## Code Generation Guidelines
 
 - Avoid making structs, variables, or constants public unless absolutely necessary.
