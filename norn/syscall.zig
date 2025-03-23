@@ -1,7 +1,9 @@
-const Error = errno.Error;
+pub const Error = errno.Error;
 
 /// System call handler function signature.
-pub const Handler = *const fn (*Context, u64, u64, u64, u64, u64) Error!i64;
+pub const Handler = *const fn (*Context, u64, u64, u64, u64, u64, u64) Error!i64;
+/// System call context.
+pub const Context = arch.SyscallContext;
 
 /// List of system calls.
 pub const Syscall = enum(u64) {
@@ -32,10 +34,11 @@ fn unhandledSyscallHandler(
     arg3: u64,
     arg4: u64,
     arg5: u64,
+    arg6: u64,
 ) Error!i64 {
     log.err("Unhandled syscall (nr={d})", .{ctx.spec2.orig_rax});
-    log.err("  [1]={X:0>16} [2]={X:0>16}", .{ arg1, arg2 });
-    log.err("  [3]={X:0>16} [4]={X:0>16} [5]={X:0>16}", .{ arg3, arg4, arg5 });
+    log.err("  [1]={X:0>16} [2]={X:0>16} [3]={X:0>16}", .{ arg1, arg2, arg3 });
+    log.err("  [4]={X:0>16} [5]={X:0>16} [6]={X:0>16}", .{ arg4, arg5, arg6 });
 
     // Print memory map of the current task.
     log.err("Memory map of the current task:", .{});
@@ -76,7 +79,7 @@ fn unhandledSyscallHandler(
 ///
 /// - `str`: Pointer to the null-terminated string.
 /// - `size`: Size of the string.
-fn sysDebugLog(_: *Context, str: u64, size: u64, _: u64, _: u64, _: u64) Error!i64 {
+fn sysDebugLog(_: *Context, str: u64, size: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
     const s: []const u8 = @as([*]const u8, @ptrFromInt(str))[0..size];
     log.debug("{s}", .{s});
     return 0;
@@ -89,6 +92,5 @@ const norn = @import("norn");
 const arch = norn.arch;
 const errno = norn.errno;
 
-const Context = arch.SyscallContext;
 const VmArea = norn.mm.VmArea;
 const VmFlags = norn.mm.VmFlags;

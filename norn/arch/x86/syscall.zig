@@ -54,6 +54,7 @@ export fn dispatchSyscall(nr: u64, ctx: *CpuContext) callconv(.c) i64 {
         ctx.rdx,
         ctx.r10,
         ctx.r8,
+        ctx.r9,
     ) catch |err| -@intFromEnum(errno.convertToErrno(err));
 
     asm volatile (
