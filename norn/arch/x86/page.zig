@@ -190,10 +190,10 @@ pub fn map(cr3: Virt, vaddr: Virt, paddr: Virt, size: usize, attr: Attribute) Er
 /// Translate the given virtual address to physical address by walking page tables.
 /// CR3 of the current CPU is used as the root of the page table.
 /// If the translation fails, return null.
-pub fn translateWalk(addr: Virt) ?Phys {
+pub fn translateWalk(cr3: Virt, addr: Virt) ?Phys {
     if (!isCanonical(addr)) return null;
 
-    const lv4ent = getLv4Entry(addr, am.readCr3());
+    const lv4ent = getLv4Entry(addr, virt2phys(cr3));
     if (!lv4ent.present) return null;
 
     const lv3ent = getLv3Entry(addr, lv4ent.address());

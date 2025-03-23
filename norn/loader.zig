@@ -7,6 +7,9 @@ pub const Error =
         InvalidElf,
     };
 
+/// Base address of a program break.
+const brk_base: u64 = 0x80_000_000;
+
 /// ELF loader that parses an ELF file and loads it into process memory.
 pub const ElfLoader = struct {
     const Self = @This();
@@ -61,6 +64,8 @@ pub const ElfLoader = struct {
             // Zero clear the rest of the page.
             @memset(page[offset + cur.p_filesz ..], 0);
         }
+
+        mm.brk = .{ .start = brk_base, .end = brk_base };
     }
 
     pub fn deinit(self: *Self) void {

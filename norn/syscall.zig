@@ -7,6 +7,12 @@ pub const Context = arch.SyscallContext;
 
 /// List of system calls.
 pub const Syscall = enum(u64) {
+    /// Write to a file descriptor.
+    write = 1,
+    /// Change data segment size.
+    brk = 12,
+    /// Not supported.
+    arch_prctl = 158,
     /// Output to debug log.
     dlog = 255,
 
@@ -15,6 +21,9 @@ pub const Syscall = enum(u64) {
     /// Get a corresponding system call handler.
     pub fn getHandler(self: Syscall) Handler {
         return switch (self) {
+            .write => sysWrite,
+            .brk => norn.mm.syscallBrk,
+            .arch_prctl => sysArchPrctl,
             .dlog => sysDebugLog,
             _ => unhandledSyscallHandler,
         };
@@ -70,6 +79,27 @@ fn unhandledSyscallHandler(
         norn.terminateQemu(0);
     }
 
+    return Error.Unimplemented;
+}
+
+/// Syscall handler for `write`.
+///
+/// Currently, only supports writing to stdout (fd=1) and stderr (fd=2).
+/// These outputs are printed to the debug log.
+fn sysWrite(_: *Context, fd: u64, buf: u64, count: u64, _: u64, _: u64, _: u64) Error!i64 {
+    if (fd != 1 and fd != 2) {
+        norn.unimplemented("sysWrite(): fd other than 1 or 2.");
+    }
+
+    // Print to the serial log.
+    const msg: [*]const u8 = @ptrFromInt(buf);
+    norn.getSerial().writeString(msg[0..count]);
+
+    return @bitCast(count);
+}
+
+/// Syscall handler for `arch_prctl`.
+fn sysArchPrctl(_: *Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
     return Error.Unimplemented;
 }
 

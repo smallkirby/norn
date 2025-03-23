@@ -68,6 +68,8 @@ pub const MemoryMap = struct {
     code: Region,
     /// Data region.
     data: Region,
+    /// Program break.
+    brk: Region,
 
     const Region = struct {
         start: Virt = 0,
@@ -118,7 +120,58 @@ pub const MemoryMap = struct {
 
         return vma;
     }
+
+    /// Find the VM area that contains the given address.
+    pub fn findVma(self: *Self, addr: Virt) ?*VmArea {
+        var iter = self.vm_areas.first;
+        while (iter) |vma| : (iter = vma.list_head.next) {
+            if (vma.start <= addr and addr < vma.end) {
+                return vma;
+            }
+        }
+        return null;
+    }
 };
+
+/// Syscall handler for `brk`.
+///
+/// Change the position of the program break.
+pub fn sysBrk(_: *syscall.Context, arg1: u64, _: u64, _: u64, _: u64, _: u64, _: u64) syscall.Error!i64 {
+    const task = norn.sched.getCurrentTask();
+    const mm = task.mm;
+    const requested_brk = arg1;
+    const current_brk_start = mm.brk.start;
+
+    if (requested_brk <= current_brk_start) {
+        return @bitCast(mm.brk.end);
+    }
+    // TODO: Shrinking the brk is not supported yet.
+    if (requested_brk <= mm.brk.end) {
+        return @bitCast(mm.brk.end);
+    }
+
+    const rounded_requested_brk = util.roundup(requested_brk, mem.size_4kib);
+
+    if (mm.findVma(current_brk_start)) |_| {
+        norn.unimplemented("syscallBrk(): grow.");
+    } else {
+        const vma = mm.map(
+            current_brk_start,
+            rounded_requested_brk - current_brk_start,
+            .rw,
+        ) catch |err| {
+            log.err("Failed to map new brk: {?}", .{err});
+            return @bitCast(mm.brk.end);
+        };
+        mm.vm_areas.append(vma);
+        mm.brk = .{
+            .start = current_brk_start,
+            .end = rounded_requested_brk,
+        };
+
+        return @bitCast(mm.brk.end);
+    }
+}
 
 const VmAreaList = InlineDoublyLinkedList(VmArea, "list_head");
 const VmAreaListHead = VmAreaList.Head;
@@ -128,10 +181,12 @@ const VmAreaListHead = VmAreaList.Head;
 // =============================================================
 
 const std = @import("std");
+const log = std.log.scoped(.mm);
 
 const norn = @import("norn");
 const arch = norn.arch;
 const mem = norn.mem;
+const syscall = norn.syscall;
 const util = norn.util;
 const Virt = mem.Virt;
 const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;

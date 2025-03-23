@@ -178,21 +178,64 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
 
     // Map stack.
     const stack_base = 0x200000;
-    const stack_size = 0x1000;
+    const stack_size = 0x1000 * 20;
     const vma = try thread.mm.map(stack_base, stack_size, .rw);
     thread.mm.vm_areas.append(vma);
 
     arch.task.initKernelStack(thread, @intFromPtr(&norn.init.initialTask));
 
+    // Initialize user stack.
+    const stack: []u8 = @constCast(vma.slice());
+    var sc = StackCreator.new(stack) catch @panic("StackCreator.new");
+    sc.push(0) catch @panic("StackCreator.push"); // argc
+    sc.push(0) catch @panic("StackCreator.push"); // NULL (argv)
+    sc.push(0) catch @panic("StackCreator.push"); // NULL (envp)
+    sc.push(0) catch @panic("StackCreator.push"); // AT_NULL (auxvec)
+
     // Set up user stack.
     arch.task.setupUserContext(
         thread,
         elf_loader.entry_point,
-        stack_base + stack_size,
+        stack_base + stack_size - sc.size(),
     );
 
     return thread;
 }
+
+const StackCreator = struct {
+    const Self = @This();
+
+    /// Bottom of the stack.
+    _raw_stack: []u8,
+    /// 64-bit aligned stack.
+    _stack: [*]u64,
+    /// Stack pointer.
+    _sp: usize,
+    /// Maximum stack size.
+    _max_sp: usize,
+
+    pub fn new(stack: []u8) !StackCreator {
+        if (@intFromPtr(stack.ptr) % 8 != 0) return error.InvalidStack;
+
+        return .{
+            ._raw_stack = stack,
+            ._stack = @ptrFromInt(@intFromPtr(stack.ptr) + stack.len),
+            ._sp = 0,
+            ._max_sp = stack.len / 8,
+        };
+    }
+
+    pub fn push(self: *Self, value: u64) !void {
+        if (self._sp >= self._max_sp) return error.StackOverflow;
+
+        self._stack[self._sp] = value;
+        self._sp += 1;
+    }
+
+    pub fn size(self: *Self) usize {
+        return self._sp * 8;
+    }
+};
 
 // =============================================================
 // Imports

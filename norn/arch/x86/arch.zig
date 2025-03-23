@@ -213,6 +213,11 @@ pub const mem = struct {
     pub inline fn setPagetable(cr3: Virt) void {
         am.writeCr3(norn.mem.virt2phys(cr3));
     }
+
+    /// Translate a virtual address to a physical address.
+    pub fn translate(cr3: Virt, vaddr: Virt) ?Phys {
+        return pg.translateWalk(cr3, vaddr);
+    }
 };
 
 // ========================================
