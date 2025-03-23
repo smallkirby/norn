@@ -57,6 +57,9 @@ pub const ElfLoader = struct {
             const offset = cur.p_vaddr % mem.size_4kib;
             const page: []u8 = @constCast(vma.slice());
             @memcpy(page[offset .. offset + cur.p_filesz], segment_data);
+
+            // Zero clear the rest of the page.
+            @memset(page[offset + cur.p_filesz ..], 0);
         }
     }
 
