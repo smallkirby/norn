@@ -16,6 +16,11 @@ pub const VmFlags = packed struct {
         .write = false,
         .exec = false,
     };
+    pub const rw = VmFlags{
+        .read = true,
+        .write = true,
+        .exec = false,
+    };
 
     /// Generate a string representation of the VM flags.
     pub fn toString(self: VmFlags) [3]u8 {

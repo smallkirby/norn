@@ -80,6 +80,8 @@ pub const Thread = struct {
     state: State = .running,
     /// Thread name with null-termination.
     name: [name_max_len:0]u8 = undefined,
+    /// Command line.
+    comm: []const u8 = undefined,
     /// Memory map.
     mm: *MemoryMap,
     /// CPU time consumed for the thread.
@@ -164,6 +166,7 @@ pub fn createKernelThread(name: []const u8, entry: KernelThreadEntry) Error!*Thr
 /// TODO: Read init from FS and parse it.
 pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
     const thread = try Thread.create("init");
+    thread.comm = try general_allocator.dupe(u8, filename);
 
     // Copy initial user function for debug.
     var elf_loader = try loader.ElfLoader.new(filename);
@@ -176,13 +179,8 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
     // Map stack.
     const stack_base = 0x200000;
     const stack_size = 0x1000;
-    try arch.mem.map(
-        thread.mm.pgtbl,
-        stack_base,
-        mem.virt2phys(stack_page.ptr),
-        stack_size,
-        .read_write,
-    );
+    const vma = try thread.mm.map(stack_base, stack_size, .rw);
+    thread.mm.vm_areas.append(vma);
 
     arch.task.initKernelStack(thread, @intFromPtr(&norn.init.initialTask));
 
