@@ -47,7 +47,7 @@ export fn dispatchSyscall(nr: u64, ctx: *CpuContext) callconv(.c) i64 {
           }))),
     );
 
-    const ret = Syscall.from(nr).getHandler()(
+    const ret = Syscall.from(nr).invoke(
         ctx,
         ctx.rdi,
         ctx.rsi,

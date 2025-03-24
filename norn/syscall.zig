@@ -25,18 +25,41 @@ pub const Syscall = enum(u64) {
 
     _,
 
+    /// Maximum number of system calls.
+    const nr_max = 512;
+
+    /// System call table.
+    const syscall_table: [nr_max]Handler = blk: {
+        var table: [nr_max]Handler = undefined;
+
+        for (std.enums.values(Syscall)) |e| {
+            table[@intFromEnum(e)] = switch (e) {
+                .write => sys(sysWrite),
+                .brk => sys(norn.mm.sysBrk),
+                .arch_prctl => sys(norn.prctl.sysArchPrctl),
+                .set_tid_address => sys(ignoredSyscallHandler),
+                .set_robust_list => sys(ignoredSyscallHandler),
+                .dlog => sys(sysDebugLog),
+                .rseq => sys(ignoredSyscallHandler),
+                else => sys(unhandledSyscallHandler),
+            };
+        }
+
+        break :blk table;
+    };
+
     /// Get a corresponding system call handler.
-    pub fn getHandler(self: Syscall) Handler {
-        return switch (self) {
-            .write => sysWrite,
-            .brk => norn.mm.sysBrk,
-            .arch_prctl => norn.prctl.sysArchPrctl,
-            .set_tid_address => ignoredSyscallHandler,
-            .set_robust_list => ignoredSyscallHandler,
-            .dlog => sysDebugLog,
-            .rseq => ignoredSyscallHandler,
-            _ => unhandledSyscallHandler,
-        };
+    pub fn invoke(
+        self: Syscall,
+        ctx: *Context,
+        arg1: u64,
+        arg2: u64,
+        arg3: u64,
+        arg4: u64,
+        arg5: u64,
+        arg6: u64,
+    ) Error!i64 {
+        return syscall_table[@intFromEnum(self)](ctx, arg1, arg2, arg3, arg4, arg5, arg6);
     }
 
     /// Create a system call enum from a syscall number.
@@ -44,6 +67,51 @@ pub const Syscall = enum(u64) {
         return @enumFromInt(nr);
     }
 };
+
+/// Syscall wrapper.
+///
+/// This function converts an syscall handler function to have the fixed signature `Handler`.
+fn sys(comptime handler: anytype) Handler {
+    const S = struct {
+        fn f0(ctx: *Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+            return handler(ctx);
+        }
+        fn f1(ctx: *Context, arg1: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+            return handler(ctx, arg1);
+        }
+        fn f2(ctx: *Context, arg1: u64, arg2: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+            return handler(ctx, arg1, arg2);
+        }
+        fn f3(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, _: u64, _: u64, _: u64) Error!i64 {
+            return handler(ctx, arg1, arg2, arg3);
+        }
+        fn f4(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, _: u64, _: u64) Error!i64 {
+            return handler(ctx, arg1, arg2, arg3, arg4);
+        }
+        fn f5(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, _: u64) Error!i64 {
+            return handler(ctx, arg1, arg2, arg3, arg4, arg5);
+        }
+        fn f6(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, arg6: u64) Error!i64 {
+            return handler(ctx, arg1, arg2, arg3, arg4, arg5, arg6);
+        }
+    };
+
+    const func = @typeInfo(@TypeOf(handler)).@"fn";
+    return switch (func.params.len) {
+        1 => return S.f0,
+        2 => return S.f1,
+        3 => return S.f2,
+        4 => return S.f3,
+        5 => return S.f4,
+        6 => return S.f5,
+        7 => return S.f6,
+        else => @compileError("Wrapper: Invalid number of parameters"),
+    };
+}
+
+// =============================================================
+// Handlers.
+// =============================================================
 
 /// Handler for unhandled system calls.
 fn unhandledSyscallHandler(
@@ -93,7 +161,7 @@ fn unhandledSyscallHandler(
 }
 
 /// Handler for ignored syscalls.
-fn ignoredSyscallHandler(ctx: *Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+fn ignoredSyscallHandler(ctx: *Context) Error!i64 {
     log.warn("Syscall nr={d} is ignored.", .{ctx.spec2.orig_rax});
     return error.Unimplemented;
 }
@@ -102,7 +170,7 @@ fn ignoredSyscallHandler(ctx: *Context, _: u64, _: u64, _: u64, _: u64, _: u64, 
 ///
 /// Currently, only supports writing to stdout (fd=1) and stderr (fd=2).
 /// These outputs are printed to the debug log.
-fn sysWrite(_: *Context, fd: u64, buf: u64, count: u64, _: u64, _: u64, _: u64) Error!i64 {
+fn sysWrite(_: *Context, fd: u64, buf: u64, count: u64) Error!i64 {
     if (fd != 1 and fd != 2) {
         norn.unimplemented("sysWrite(): fd other than 1 or 2.");
     }
@@ -120,11 +188,15 @@ fn sysWrite(_: *Context, fd: u64, buf: u64, count: u64, _: u64, _: u64, _: u64) 
 ///
 /// - `str`: Pointer to the null-terminated string.
 /// - `size`: Size of the string.
-fn sysDebugLog(_: *Context, str: u64, size: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+fn sysDebugLog(_: *Context, str: u64, size: u64) Error!i64 {
     const s: []const u8 = @as([*]const u8, @ptrFromInt(str))[0..size];
     log.debug("{s}", .{s});
     return 0;
 }
+
+// =============================================================
+// Imports.
+// =============================================================
 
 const std = @import("std");
 const log = std.log.scoped(.syscall);

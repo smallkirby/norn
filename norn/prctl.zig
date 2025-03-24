@@ -22,15 +22,7 @@ const x64 = struct {
     };
 
     /// Syscall handler for `arch_prctl`.
-    pub fn sysArchPrctl(
-        _: *syscall.Context,
-        arg1: u64,
-        arg2: u64,
-        _: u64,
-        _: u64,
-        _: u64,
-        _: u64,
-    ) syscall.Error!i64 {
+    pub fn sysArchPrctl(_: *syscall.Context, arg1: u64, arg2: u64) syscall.Error!i64 {
         const op: Operation = @enumFromInt(arg1);
 
         return switch (op) {
