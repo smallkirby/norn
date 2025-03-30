@@ -38,7 +38,7 @@ export fn main() noreturn {
     dlog("Hello, from userland!");
 
     while (true) {
-        _ = syscall(512, 0, 1, 2, 3);
+        _ = syscall(511, 0, 1, 2, 3);
     }
 
     unreachable;

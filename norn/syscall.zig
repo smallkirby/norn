@@ -25,7 +25,7 @@ pub const Syscall = enum(u64) {
 
     _,
 
-    /// Maximum number of system calls.
+    /// Maximum number of system calls + 1.
     const nr_max = 512;
 
     /// System call table.
