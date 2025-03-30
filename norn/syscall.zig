@@ -59,6 +59,9 @@ pub const Syscall = enum(u64) {
         arg5: u64,
         arg6: u64,
     ) Error!i64 {
+        if (@intFromEnum(self) >= nr_max) {
+            return Error.InvalidArgument;
+        }
         return syscall_table[@intFromEnum(self)](ctx, arg1, arg2, arg3, arg4, arg5, arg6);
     }
 
