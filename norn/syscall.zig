@@ -20,6 +20,10 @@ pub const Syscall = enum(u64) {
     /// Output to debug log.
     /// TODO: change the NR.
     dlog = 255,
+    /// Read value of a symbolic link.
+    readlinkat = 267,
+    /// Get and set resource limits.
+    prlimit = 302,
     /// Restartable sequences.
     rseq = 334,
 
@@ -45,6 +49,8 @@ pub const Syscall = enum(u64) {
                 .set_tid_address => sys(ignoredSyscallHandler),
                 .set_robust_list => sys(ignoredSyscallHandler),
                 .dlog => sys(sysDebugLog),
+                .readlinkat => sys(ignoredSyscallHandler),
+                .prlimit => sys(ignoredSyscallHandler),
                 .rseq => sys(ignoredSyscallHandler),
                 else => {},
             };
@@ -149,7 +155,28 @@ fn unhandledSyscallHandler(
     // Print task information.
     log.err("Task Information:", .{});
     log.err("  PID: {d}, comm={s}", .{ task.tid, task.comm });
-    log.err("  RIP: 0x{X:0>16}", .{ctx.rip});
+    log.err("  RIP    : 0x{X:0>16}", .{ctx.rip});
+    log.err("  RFLAGS : 0x{X:0>16}", .{ctx.rflags});
+    log.err("  RAX    : 0x{X:0>16}", .{ctx.rax});
+    log.err("  RBX    : 0x{X:0>16}", .{ctx.rbx});
+    log.err("  RCX    : 0x{X:0>16}", .{ctx.rcx});
+    log.err("  RDX    : 0x{X:0>16}", .{ctx.rdx});
+    log.err("  RSI    : 0x{X:0>16}", .{ctx.rsi});
+    log.err("  RDI    : 0x{X:0>16}", .{ctx.rdi});
+    log.err("  RBP    : 0x{X:0>16}", .{ctx.rbp});
+    log.err("  R8     : 0x{X:0>16}", .{ctx.r8});
+    log.err("  R9     : 0x{X:0>16}", .{ctx.r9});
+    log.err("  R10    : 0x{X:0>16}", .{ctx.r10});
+    log.err("  R11    : 0x{X:0>16}", .{ctx.r11});
+    log.err("  R12    : 0x{X:0>16}", .{ctx.r12});
+    log.err("  R13    : 0x{X:0>16}", .{ctx.r13});
+    log.err("  R14    : 0x{X:0>16}", .{ctx.r14});
+    log.err("  R15    : 0x{X:0>16}", .{ctx.r15});
+    log.err("  CS     : 0x{X:0>4}", .{ctx.cs});
+    if (ctx.isFromUserMode()) {
+        log.err("  SS     : 0x{X:0>4}", .{ctx.ss});
+        log.err("  RSP    : 0x{X:0>16}", .{ctx.rsp});
+    }
 
     // Stack trace.
     var it = std.debug.StackIterator.init(null, ctx.rbp);
@@ -171,6 +198,28 @@ fn unhandledSyscallHandler(
 /// Handler for ignored syscalls.
 fn ignoredSyscallHandler(ctx: *Context) Error!i64 {
     log.warn("Syscall nr={d} is ignored.", .{ctx.spec2.orig_rax});
+    log.warn("  RIP    : 0x{X:0>16}", .{ctx.rip});
+    log.warn("  RFLAGS : 0x{X:0>16}", .{ctx.rflags});
+    log.warn("  RAX    : 0x{X:0>16}", .{ctx.rax});
+    log.warn("  RBX    : 0x{X:0>16}", .{ctx.rbx});
+    log.warn("  RCX    : 0x{X:0>16}", .{ctx.rcx});
+    log.warn("  RDX    : 0x{X:0>16}", .{ctx.rdx});
+    log.warn("  RSI    : 0x{X:0>16}", .{ctx.rsi});
+    log.warn("  RDI    : 0x{X:0>16}", .{ctx.rdi});
+    log.warn("  RBP    : 0x{X:0>16}", .{ctx.rbp});
+    log.warn("  R8     : 0x{X:0>16}", .{ctx.r8});
+    log.warn("  R9     : 0x{X:0>16}", .{ctx.r9});
+    log.warn("  R10    : 0x{X:0>16}", .{ctx.r10});
+    log.warn("  R11    : 0x{X:0>16}", .{ctx.r11});
+    log.warn("  R12    : 0x{X:0>16}", .{ctx.r12});
+    log.warn("  R13    : 0x{X:0>16}", .{ctx.r13});
+    log.warn("  R14    : 0x{X:0>16}", .{ctx.r14});
+    log.warn("  R15    : 0x{X:0>16}", .{ctx.r15});
+    log.warn("  CS     : 0x{X:0>4}", .{ctx.cs});
+    if (ctx.isFromUserMode()) {
+        log.warn("  SS     : 0x{X:0>4}", .{ctx.ss});
+        log.warn("  RSP    : 0x{X:0>16}", .{ctx.rsp});
+    }
     return error.Unimplemented;
 }
 
