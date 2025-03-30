@@ -16,6 +16,7 @@ jobs:
   runtime_test:
     runs-on: ubuntu-24.04
     strategy:
+      fail-fast: true
       matrix:
         BUILD_TYPE: [ReleaseFast, Debug]
 
