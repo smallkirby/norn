@@ -185,16 +185,17 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
     arch.task.initKernelStack(thread, @intFromPtr(&norn.init.initialTask));
 
     // Initialize user stack.
-    const stack: []u8 = @constCast(stack_vma.slice());
-    var sc = StackCreator.new(stack) catch @panic("StackCreator.new");
-    sc.push(@as(u64, 0)); // padding for alignment
-    sc.push(@as(u64, 0)); // end marker
-    sc.push(@as(u128, 0x0123_4567_89AB_CDEF_1122_3344_5566_7788)); // Random value for AT_RANDOM
-    sc.push(AuxVector.new(.terminator, 0)); // AT_NULL (auxvec)
-    sc.push(AuxVector.new(.random, stack_base + stack_size - 0x20)); // AT_RANDOM (auxvec)
-    sc.push(@as(u64, 0)); // NULL (envp)
-    sc.push(@as(u64, 0)); // NULL (argv)
-    sc.push(@as(u64, 0)); // argc
+    var sc = StackCreator.new(stack_vma) catch @panic("StackCreator.new");
+    const argv0 = sc.pushData(filename); // argv[0] data
+    _ = sc.push(@as(u64, 0)); // padding for alignment
+    _ = sc.push(@as(u64, 0)); // end marker
+    _ = sc.push(@as(u128, 0x0123_4567_89AB_CDEF_1122_3344_5566_7788)); // Random value for AT_RANDOM
+    _ = sc.push(AuxVector.new(.terminator, 0)); // AT_NULL (auxvec)
+    _ = sc.push(AuxVector.new(.random, stack_base + stack_size - 0x20)); // AT_RANDOM (auxvec)
+    _ = sc.push(@as(u64, 0)); // NULL (envp)
+    _ = sc.push(@as(u64, 0)); // NULL (argv)
+    _ = sc.push(@as(u64, @intFromPtr(argv0))); // NULL (argv[0])
+    _ = sc.push(@as(u64, 1)); // argc
 
     // Set up user stack.
     arch.task.setupUserContext(
@@ -216,24 +217,34 @@ const StackCreator = struct {
     _stack_bottom: [*]u8,
     /// Stack pointer.
     _sp: [*]u8,
+    /// User stack VMA.
+    _user_vma: *const Vma,
 
     /// Instantiate a new stack creator.
     ///
     /// Cursor is set to the bottom of the stack.
-    pub fn new(stack: []u8) !StackCreator {
-        if (@intFromPtr(stack.ptr) % 8 != 0) return error.InvalidStack;
+    pub fn new(stack_vma: *const Vma) !StackCreator {
+        const start = stack_vma.start;
+        const stack_size = stack_vma.end - stack_vma.start;
+        if (start % 0x10 != 0) return error.InvalidStack;
+        if (stack_size % 0x10 != 0) return error.InvalidStack;
+
+        const slice = stack_vma.slice();
 
         return .{
-            ._stack_top = @ptrCast(stack.ptr),
-            ._stack_bottom = @ptrFromInt(@intFromPtr(stack.ptr) + stack.len),
-            ._sp = @ptrFromInt(@intFromPtr(stack.ptr) + stack.len),
+            ._stack_top = @constCast(@ptrCast(slice.ptr)),
+            ._stack_bottom = @ptrFromInt(@intFromPtr(slice.ptr) + slice.len),
+            ._sp = @ptrFromInt(@intFromPtr(slice.ptr) + slice.len),
+            ._user_vma = stack_vma,
         };
     }
 
     /// Push a value to the stack.
     ///
     /// The size of value must be 8-byte aligned.
-    pub fn push(self: *Self, comptime value: anytype) void {
+    /// Returns the address of the pushed value.
+    /// Note that the address belongs to user, and you MUST NOT touch it.
+    pub fn push(self: *Self, value: anytype) [*]const u8 {
         const T = @TypeOf(value);
 
         const value_size = @sizeOf(T);
@@ -246,13 +257,33 @@ const StackCreator = struct {
             "StackCreator only supports 64-bit aligned types",
         );
 
-        if (util.ptrLte(self._sp + value_size, self._stack_top)) {
+        if (util.ptrLte(self._sp - value_size, self._stack_top)) {
             @panic("StackCreator overflow");
         }
         self._sp -= value_size;
 
         const ptr: *T = @alignCast(@ptrCast(self._sp));
         ptr.* = value;
+
+        const diff = @intFromPtr(self._sp) - @intFromPtr(self._stack_top);
+        return @ptrFromInt(self._user_vma.start + diff);
+    }
+
+    /// Push an u8 array to the stack.
+    ///
+    /// The address of the data is aligned to 8 bytes.
+    /// Returns the address of the pushed value.
+    /// Note that the address belongs to user, and you MUST NOT touch it.
+    pub fn pushData(self: *Self, comptime value: []const u8) [*]const u8 {
+        const aligned_size = util.roundup(value.len, 8);
+        if (util.ptrLte(self._sp - aligned_size, self._stack_top)) {
+            @panic("StackCreator overflow");
+        }
+        self._sp -= aligned_size;
+        @memcpy(self._sp[0..value.len], value);
+
+        const diff = @intFromPtr(self._sp) - @intFromPtr(self._stack_top);
+        return @ptrFromInt(self._user_vma.start + diff);
     }
 
     /// Get the total size of the pushed values on the stack.
@@ -321,6 +352,7 @@ const mem = norn.mem;
 const util = norn.util;
 const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
 const MemoryMap = norn.mm.MemoryMap;
+const Vma = norn.mm.VmArea;
 const SpinLock = norn.SpinLock;
 
 const page_allocator = mem.page_allocator;
