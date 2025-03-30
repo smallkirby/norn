@@ -52,7 +52,7 @@ pub const Syscall = enum(u64) {
                 .readlinkat => sys(ignoredSyscallHandler),
                 .prlimit => sys(ignoredSyscallHandler),
                 .rseq => sys(ignoredSyscallHandler),
-                else => {},
+                else => sys(ignoredSyscallHandler),
             };
         }
 
@@ -82,35 +82,50 @@ pub const Syscall = enum(u64) {
     }
 };
 
+/// Convert a syscall argument to the expected type.
+fn convert(comptime T: type, arg: u64) T {
+    return switch (@typeInfo(T)) {
+        .pointer => @ptrFromInt(arg),
+        .int => @intCast(arg),
+        .@"enum" => @enumFromInt(arg),
+        else => @compileError(std.fmt.comptimePrint("convert(): Invalid type: {s}", .{@typeName(T)})),
+    };
+}
+
 /// Syscall wrapper.
 ///
 /// This function converts an syscall handler function to have the fixed signature `Handler`.
 fn sys(comptime handler: anytype) Handler {
+    const func = @typeInfo(@TypeOf(handler)).@"fn";
+
     const S = struct {
+        inline fn ArgType(comptime i: usize) type {
+            return func.params[i].type orelse @compileError("sys(): Invalid parameter type");
+        }
+
         fn f0(ctx: *Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
             return handler(ctx);
         }
         fn f1(ctx: *Context, arg1: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
-            return handler(ctx, arg1);
+            return handler(ctx, convert(ArgType(1), arg1));
         }
         fn f2(ctx: *Context, arg1: u64, arg2: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
-            return handler(ctx, arg1, arg2);
+            return handler(ctx, convert(ArgType(1), arg1), convert(ArgType(2), arg2));
         }
         fn f3(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, _: u64, _: u64, _: u64) Error!i64 {
-            return handler(ctx, arg1, arg2, arg3);
+            return handler(ctx, convert(ArgType(1), arg1), convert(ArgType(2), arg2), convert(ArgType(3), arg3));
         }
         fn f4(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, _: u64, _: u64) Error!i64 {
-            return handler(ctx, arg1, arg2, arg3, arg4);
+            return handler(ctx, convert(ArgType(1), arg1), convert(ArgType(2), arg2), convert(ArgType(3), arg3), convert(ArgType(4), arg4));
         }
         fn f5(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, _: u64) Error!i64 {
-            return handler(ctx, arg1, arg2, arg3, arg4, arg5);
+            return handler(ctx, convert(ArgType(1), arg1), convert(ArgType(2), arg2), convert(ArgType(3), arg3), convert(ArgType(4), arg4), convert(ArgType(5), arg5));
         }
         fn f6(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, arg6: u64) Error!i64 {
-            return handler(ctx, arg1, arg2, arg3, arg4, arg5, arg6);
+            return handler(ctx, convert(ArgType(1), arg1), convert(ArgType(2), arg2), convert(ArgType(3), arg3), convert(ArgType(4), arg4), convert(ArgType(5), arg5), convert(ArgType(6), arg6));
         }
     };
 
-    const func = @typeInfo(@TypeOf(handler)).@"fn";
     return switch (func.params.len) {
         1 => return S.f0,
         2 => return S.f1,
@@ -227,14 +242,13 @@ fn ignoredSyscallHandler(ctx: *Context) Error!i64 {
 ///
 /// Currently, only supports writing to stdout (fd=1) and stderr (fd=2).
 /// These outputs are printed to the debug log.
-fn sysWrite(_: *Context, fd: u64, buf: u64, count: u64) Error!i64 {
+fn sysWrite(_: *Context, fd: u64, buf: [*]const u8, count: usize) Error!i64 {
     if (fd != 1 and fd != 2) {
         norn.unimplemented("sysWrite(): fd other than 1 or 2.");
     }
 
     // Print to the serial log.
-    const msg: [*]const u8 = @ptrFromInt(buf);
-    norn.getSerial().writeString(msg[0..count]);
+    norn.getSerial().writeString(buf[0..count]);
 
     return @bitCast(count);
 }
@@ -245,9 +259,8 @@ fn sysWrite(_: *Context, fd: u64, buf: u64, count: u64) Error!i64 {
 ///
 /// - `str`: Pointer to the null-terminated string.
 /// - `size`: Size of the string.
-fn sysDebugLog(_: *Context, str: u64, size: u64) Error!i64 {
-    const s: []const u8 = @as([*]const u8, @ptrFromInt(str))[0..size];
-    log.debug("{s}", .{s});
+fn sysDebugLog(_: *Context, str: [*]const u8, size: usize) Error!i64 {
+    log.debug("{s}", .{str[0..size]});
     return 0;
 }
 

@@ -22,20 +22,18 @@ const x64 = struct {
     };
 
     /// Syscall handler for `arch_prctl`.
-    pub fn sysArchPrctl(_: *syscall.Context, arg1: u64, arg2: u64) syscall.Error!i64 {
-        const op: Operation = @enumFromInt(arg1);
-
+    pub fn sysArchPrctl(_: *syscall.Context, op: Operation, value: u64) syscall.Error!i64 {
         return switch (op) {
             .get_fs => @bitCast(arch.getFs()),
             .set_fs => blk: {
-                arch.setFs(arg2);
+                arch.setFs(value);
                 break :blk 0;
             },
             // TODO: implement
             .set_cpuid => 0,
             // unsupported operation
             else => blk: {
-                log.warn("Unsupported operation: 0x{X}", .{arg1});
+                log.warn("Unsupported operation: 0x{X}", .{@intFromEnum(op)});
                 break :blk error.Inval;
             },
         };
