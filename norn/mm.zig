@@ -51,7 +51,7 @@ pub const VmArea = struct {
     _kernel_page: []const u8,
 
     /// Get the slice of the VM area.
-    pub fn slice(self: *Self) []const u8 {
+    pub fn slice(self: *const Self) []const u8 {
         return self._kernel_page[0..(self.end - self.start)];
     }
 };
@@ -122,7 +122,7 @@ pub const MemoryMap = struct {
     }
 
     /// Find the VM area that contains the given address.
-    pub fn findVma(self: *Self, addr: Virt) ?*VmArea {
+    fn findVma(self: *Self, addr: Virt) ?*VmArea {
         var iter = self.vm_areas.first;
         while (iter) |vma| : (iter = vma.list_head.next) {
             if (vma.start <= addr and addr < vma.end) {
@@ -130,6 +130,26 @@ pub const MemoryMap = struct {
             }
         }
         return null;
+    }
+
+    /// Find the VM area that maps the highest address in the given range [begin, end).
+    fn findLastVma(self: *Self, begin: Virt, end: Virt) ?*VmArea {
+        var highest: ?*VmArea = null;
+
+        var iter = self.vm_areas.first;
+        while (iter) |vma| : (iter = vma.list_head.next) {
+            if (vma.start < end and begin < vma.end) {
+                if (highest) |h| {
+                    if (vma.start > h.start) {
+                        highest = vma;
+                    }
+                } else {
+                    highest = vma;
+                }
+            }
+        }
+
+        return highest;
     }
 };
 
@@ -140,6 +160,7 @@ pub fn sysBrk(_: *syscall.Context, requested_brk: u64) syscall.Error!i64 {
     const task = norn.sched.getCurrentTask();
     const mm = task.mm;
     const current_brk_start = mm.brk.start;
+    const current_brk_end = mm.brk.end;
 
     if (requested_brk <= current_brk_start) {
         return @bitCast(mm.brk.end);
@@ -151,8 +172,18 @@ pub fn sysBrk(_: *syscall.Context, requested_brk: u64) syscall.Error!i64 {
 
     const rounded_requested_brk = util.roundup(requested_brk, mem.size_4kib);
 
-    if (mm.findVma(current_brk_start)) |_| {
-        norn.unimplemented("syscallBrk(): grow.");
+    if (mm.findLastVma(current_brk_start, current_brk_end)) |last| {
+        const grow_size = rounded_requested_brk - last.end;
+        const new_last = mm.map(
+            last.end,
+            grow_size,
+            .rw,
+        ) catch |err| {
+            log.err("Failed to map growing brk: {?}", .{err});
+            return error.Nomem;
+        };
+        mm.vm_areas.append(new_last);
+        mm.brk.end = new_last.end;
     } else {
         const vma = mm.map(
             current_brk_start,
@@ -167,9 +198,9 @@ pub fn sysBrk(_: *syscall.Context, requested_brk: u64) syscall.Error!i64 {
             .start = current_brk_start,
             .end = rounded_requested_brk,
         };
-
-        return @bitCast(mm.brk.end);
     }
+
+    return @bitCast(mm.brk.end);
 }
 
 const VmAreaList = InlineDoublyLinkedList(VmArea, "list_head");
