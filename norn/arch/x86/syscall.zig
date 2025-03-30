@@ -120,8 +120,32 @@ export fn syscallEntry() callconv(.naked) void {
         \\pushq (%%rsp)
         \\andq $-0x10, %%rsp
 
+        // Save XMM registers
+        // TODO: Don't use SSE registers in Norn.
+        \\subq $(16*8), %%rsp
+        \\movdqu %%xmm0, (%%rsp)
+        \\movdqu %%xmm1, 16(%%rsp)
+        \\movdqu %%xmm2, 32(%%rsp)
+        \\movdqu %%xmm3, 48(%%rsp)
+        \\movdqu %%xmm4, 64(%%rsp)
+        \\movdqu %%xmm5, 80(%%rsp)
+        \\movdqu %%xmm6, 96(%%rsp)
+        \\movdqu %%xmm7, 112(%%rsp)
+
         // Dispatch syscall
         \\callq dispatchSyscall
+
+        // Resoter XMM registers
+        // TODO: Don't use SSE registers in Norn.
+        \\movdqu (%%rsp), %%xmm0
+        \\movdqu 16(%%rsp), %%xmm1
+        \\movdqu 32(%%rsp), %%xmm2
+        \\movdqu 48(%%rsp), %%xmm3
+        \\movdqu 64(%%rsp), %%xmm4
+        \\movdqu 80(%%rsp), %%xmm5
+        \\movdqu 96(%%rsp), %%xmm6
+        \\movdqu 112(%%rsp), %%xmm7
+        \\addq $(16*8), %%rsp
 
         // Restore the stack.
         \\movq 8(%%rsp), %%rsp
