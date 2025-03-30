@@ -32,6 +32,11 @@ pub const Syscall = enum(u64) {
     const syscall_table: [nr_max]Handler = blk: {
         var table: [nr_max]Handler = undefined;
 
+        const sys_unhandled = sys(unhandledSyscallHandler);
+        for (0..nr_max) |i| {
+            table[i] = sys_unhandled;
+        }
+
         for (std.enums.values(Syscall)) |e| {
             table[@intFromEnum(e)] = switch (e) {
                 .write => sys(sysWrite),
@@ -41,7 +46,7 @@ pub const Syscall = enum(u64) {
                 .set_robust_list => sys(ignoredSyscallHandler),
                 .dlog => sys(sysDebugLog),
                 .rseq => sys(ignoredSyscallHandler),
-                else => sys(unhandledSyscallHandler),
+                else => {},
             };
         }
 
