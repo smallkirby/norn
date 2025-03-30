@@ -9,21 +9,29 @@ pub const Context = arch.SyscallContext;
 pub const Syscall = enum(u64) {
     /// Write to a file descriptor.
     write = 1,
+    /// Set protection on a region of memory.
+    mprotect = 10,
     /// Change data segment size.
     brk = 12,
+    /// Write data into multiple buffers.
+    writev = 20,
     /// Not supported.
     arch_prctl = 158,
     /// Set pointer to thread ID.
     set_tid_address = 218,
-    /// Get or set list of robust futexes.
-    set_robust_list = 273,
+    /// Retrieve the time of of the specified clock.
+    clock_gettime = 222,
     /// Output to debug log.
     /// TODO: change the NR.
     dlog = 255,
     /// Read value of a symbolic link.
     readlinkat = 267,
+    /// Get or set list of robust futexes.
+    set_robust_list = 273,
     /// Get and set resource limits.
     prlimit = 302,
+    /// Obtain a series of random bytes.
+    getrandom = 318,
     /// Restartable sequences.
     rseq = 334,
 
@@ -44,7 +52,9 @@ pub const Syscall = enum(u64) {
         for (std.enums.values(Syscall)) |e| {
             table[@intFromEnum(e)] = switch (e) {
                 .write => sys(sysWrite),
+                .mprotect => sys(sysMemoryProtect),
                 .brk => sys(norn.mm.sysBrk),
+                .writev => sys(sysWriteVec),
                 .arch_prctl => sys(norn.prctl.sysArchPrctl),
                 .set_tid_address => sys(ignoredSyscallHandler),
                 .set_robust_list => sys(ignoredSyscallHandler),
@@ -251,6 +261,35 @@ fn sysWrite(_: *Context, fd: u64, buf: [*]const u8, count: usize) Error!i64 {
     norn.getSerial().writeString(buf[0..count]);
 
     return @bitCast(count);
+}
+
+const IoVec = packed struct {
+    /// Pointer to the buffer.
+    buf: [*]const u8,
+    /// Size of the buffer.
+    len: usize,
+};
+
+fn sysWriteVec(_: *Context, fd: u64, iov: [*]const IoVec, count: usize) Error!i64 {
+    if (fd != 1 and fd != 2) {
+        norn.unimplemented("sysWriteVec(): fd other than 1 or 2.");
+    }
+
+    var sum: usize = 0;
+    for (iov[0..count]) |vec| {
+        if (vec.len == 0) continue;
+        norn.getSerial().writeString(vec.buf[0..vec.len]);
+        sum += vec.len;
+    }
+
+    return @bitCast(sum);
+}
+
+// TODO: implement
+fn sysMemoryProtect(_: *Context, addr: u64, len: u64, prot: u64) Error!i64 {
+    log.warn("mprotect(): addr={X:0>16} len={X:0>16} prot={X:0>16}", .{ addr, len, prot });
+    log.warn("ignoring mprotect syscall", .{});
+    return 0;
 }
 
 /// Syscall handler for `dlog`.
