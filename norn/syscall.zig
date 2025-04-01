@@ -21,6 +21,8 @@ pub const Syscall = enum(u64) {
     set_tid_address = 218,
     /// Retrieve the time of of the specified clock.
     clock_gettime = 222,
+    /// Exit all threads in a process.
+    exit_group = 231,
     /// Output to debug log.
     /// TODO: change the NR.
     dlog = 255,
@@ -58,11 +60,12 @@ pub const Syscall = enum(u64) {
                 .arch_prctl => sys(norn.prctl.sysArchPrctl),
                 .set_tid_address => sys(ignoredSyscallHandler),
                 .set_robust_list => sys(ignoredSyscallHandler),
+                .exit_group => sys(sysExitGroup),
                 .dlog => sys(sysDebugLog),
                 .readlinkat => sys(ignoredSyscallHandler),
                 .prlimit => sys(ignoredSyscallHandler),
                 .rseq => sys(ignoredSyscallHandler),
-                else => sys(ignoredSyscallHandler),
+                else => sys(unhandledSyscallHandler),
             };
         }
 
@@ -282,6 +285,13 @@ fn sysMemoryProtect(_: *Context, addr: u64, len: u64, prot: u64) Error!i64 {
     log.warn("mprotect(): addr={X:0>16} len={X:0>16} prot={X:0>16}", .{ addr, len, prot });
     log.warn("ignoring mprotect syscall", .{});
     return 0;
+}
+
+/// Syscall handler for `exit_group`.
+/// TODO: implement
+fn sysExitGroup(_: *Context, status: i32) Error!i64 {
+    log.debug("exit_group(): status={d}", .{status});
+    norn.unimplemented("sysExitGroup()");
 }
 
 /// Syscall handler for `dlog`.
