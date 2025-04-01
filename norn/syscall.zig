@@ -6,6 +6,9 @@ pub const Handler = *const fn (*Context, u64, u64, u64, u64, u64, u64) Error!i64
 pub const Context = arch.SyscallContext;
 
 /// List of system calls.
+///
+/// Syscalls less than `norn_syscall_start` comply with x86-64 Linux kernel.
+/// Syscalls greater than or equal to `norn_syscall_start` are specific to Norn.
 pub const Syscall = enum(u64) {
     /// Write to a file descriptor.
     write = 1,
@@ -23,9 +26,6 @@ pub const Syscall = enum(u64) {
     clock_gettime = 222,
     /// Exit all threads in a process.
     exit_group = 231,
-    /// Output to debug log.
-    /// TODO: change the NR.
-    dlog = 255,
     /// Read value of a symbolic link.
     readlinkat = 267,
     /// Get or set list of robust futexes.
@@ -37,17 +37,33 @@ pub const Syscall = enum(u64) {
     /// Restartable sequences.
     rseq = 334,
 
+    /// Output to debug log.
+    dlog = norn_syscall_start,
+
     _,
 
-    /// Maximum number of system calls + 1.
-    const nr_max = 512;
+    // Check if the syscall number is valid.
+    comptime {
+        for (std.enums.values(Syscall)) |e| {
+            if (@intFromEnum(e) >= num_syscall) {
+                @compileError(std.fmt.comptimePrint("Invalid syscall number: {d}", .{@intFromEnum(e)}));
+            }
+        }
+    }
+
+    /// Number of system calls.
+    const num_syscall = 512;
+    /// Number of system calls.
+    const norn_syscall_start = 500;
+    /// Maximum syscall number.
+    const max_syscall = num_syscall - 1;
 
     /// System call table.
-    const syscall_table: [nr_max]Handler = blk: {
-        var table: [nr_max]Handler = undefined;
+    const syscall_table: [num_syscall]Handler = blk: {
+        var table: [num_syscall]Handler = undefined;
 
         const sys_unhandled = sys(unhandledSyscallHandler);
-        for (0..nr_max) |i| {
+        for (0..num_syscall) |i| {
             table[i] = sys_unhandled;
         }
 
@@ -83,7 +99,7 @@ pub const Syscall = enum(u64) {
         arg5: u64,
         arg6: u64,
     ) Error!i64 {
-        if (@intFromEnum(self) >= nr_max) {
+        if (@intFromEnum(self) >= num_syscall) {
             return Error.Inval;
         }
         return syscall_table[@intFromEnum(self)](ctx, arg1, arg2, arg3, arg4, arg5, arg6);

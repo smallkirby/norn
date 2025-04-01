@@ -18,7 +18,7 @@ fn syscall(nr: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64) i64 {
 }
 
 fn dlog(comptime str: []const u8) void {
-    const nr_dlog = 0xFF;
+    const nr_dlog = 500;
     _ = syscall(
         nr_dlog,
         @intFromPtr(str.ptr),
