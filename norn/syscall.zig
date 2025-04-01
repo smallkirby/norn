@@ -149,7 +149,7 @@ fn sys(comptime handler: anytype) Handler {
 }
 
 // =============================================================
-// Handlers.
+// Misc Handlers
 // =============================================================
 
 /// Handler for unhandled system calls.
@@ -166,6 +166,29 @@ fn unhandledSyscallHandler(
     log.err("  [1]={X:0>16} [2]={X:0>16} [3]={X:0>16}", .{ arg1, arg2, arg3 });
     log.err("  [4]={X:0>16} [5]={X:0>16} [6]={X:0>16}", .{ arg4, arg5, arg6 });
 
+    if (option.debug_syscall) {
+        debugPrintContext(ctx);
+    }
+
+    if (norn.is_runtime_test) {
+        log.info("", .{});
+        log.info("Reached unreachable unhandled syscall handler.", .{});
+        norn.terminateQemu(0);
+    }
+
+    return Error.Unimplemented;
+}
+
+/// Handler for ignored syscalls.
+fn ignoredSyscallHandler(ctx: *Context) Error!i64 {
+    if (option.debug_syscall) {
+        debugPrintContext(ctx);
+    }
+
+    return error.Unimplemented;
+}
+
+fn debugPrintContext(ctx: *Context) void {
     // Print memory map of the current task.
     log.err("Memory map of the current task:", .{});
     const task = norn.sched.getCurrentTask();
@@ -211,42 +234,11 @@ fn unhandledSyscallHandler(
         log.err("#{d:0>2}: 0x{X:0>16}", .{ ix, frame });
     }
     log.err("=====================================", .{});
-
-    if (norn.is_runtime_test) {
-        log.info("Reached unreachable unhandled syscall handler.", .{});
-        norn.terminateQemu(0);
-    }
-
-    return Error.Unimplemented;
 }
 
-/// Handler for ignored syscalls.
-fn ignoredSyscallHandler(ctx: *Context) Error!i64 {
-    log.warn("Syscall nr={d} is ignored.", .{ctx.spec2.orig_rax});
-    log.warn("  RIP    : 0x{X:0>16}", .{ctx.rip});
-    log.warn("  RFLAGS : 0x{X:0>16}", .{ctx.rflags});
-    log.warn("  RAX    : 0x{X:0>16}", .{ctx.rax});
-    log.warn("  RBX    : 0x{X:0>16}", .{ctx.rbx});
-    log.warn("  RCX    : 0x{X:0>16}", .{ctx.rcx});
-    log.warn("  RDX    : 0x{X:0>16}", .{ctx.rdx});
-    log.warn("  RSI    : 0x{X:0>16}", .{ctx.rsi});
-    log.warn("  RDI    : 0x{X:0>16}", .{ctx.rdi});
-    log.warn("  RBP    : 0x{X:0>16}", .{ctx.rbp});
-    log.warn("  R8     : 0x{X:0>16}", .{ctx.r8});
-    log.warn("  R9     : 0x{X:0>16}", .{ctx.r9});
-    log.warn("  R10    : 0x{X:0>16}", .{ctx.r10});
-    log.warn("  R11    : 0x{X:0>16}", .{ctx.r11});
-    log.warn("  R12    : 0x{X:0>16}", .{ctx.r12});
-    log.warn("  R13    : 0x{X:0>16}", .{ctx.r13});
-    log.warn("  R14    : 0x{X:0>16}", .{ctx.r14});
-    log.warn("  R15    : 0x{X:0>16}", .{ctx.r15});
-    log.warn("  CS     : 0x{X:0>4}", .{ctx.cs});
-    if (ctx.isFromUserMode()) {
-        log.warn("  SS     : 0x{X:0>4}", .{ctx.ss});
-        log.warn("  RSP    : 0x{X:0>16}", .{ctx.rsp});
-    }
-    return error.Unimplemented;
-}
+// =============================================================
+// Temporary syscall handlers.
+// =============================================================
 
 /// Syscall handler for `write`.
 ///
@@ -307,6 +299,7 @@ fn sysDebugLog(_: *Context, str: [*]const u8, size: usize) Error!i64 {
 // Imports.
 // =============================================================
 
+const option = @import("option");
 const std = @import("std");
 const log = std.log.scoped(.syscall);
 

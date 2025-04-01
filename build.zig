@@ -81,12 +81,18 @@ pub fn build(b: *std.Build) !void {
         "debug_exit",
         "Add isa-debug-exit device.",
     ) orelse false;
+    const debug_syscall = b.option(
+        bool,
+        "debug_syscall",
+        "Print debug log for unhandled and ignored syscalls.",
+    ) orelse false;
 
     const options = b.addOptions();
     options.addOption(std.log.Level, "log_level", log_level);
     options.addOption(bool, "is_runtime_test", is_runtime_test);
     options.addOption([]const u8, "sha", try getGitSha(b));
     options.addOption([]const u8, "version", norn_version);
+    options.addOption(bool, "debug_syscall", debug_syscall);
 
     // Modules
     const surtr_module = b.createModule(.{

@@ -25,6 +25,7 @@ zig build test --summary all -Druntime_test=true
 | `wait_qemu` | Flag | Make QEMU wait for being attached by GDB. |
 | `debug_intr` | Flag | Print all interrupts and exceptions for debugging. |
 | `debug_exit` | Flag | Add `isa-debug-exit` device. When enabled, Norn can terminate QEMU with arbitrary exit code. |
+| `debug_syscall` | Flag | Print context for the unhandled or ignored syscalls. |
 
 ## LICENSE
 
