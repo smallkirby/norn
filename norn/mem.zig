@@ -1,3 +1,7 @@
+// =============================================================
+// Types Definitions
+// =============================================================
+
 /// Allocator interface to manage pages.
 pub const PageAllocator = @import("mem/PageAllocator.zig");
 
@@ -42,6 +46,10 @@ pub const Phys = u64;
 /// Virtual address.
 pub const Virt = u64;
 
+// =============================================================
+// Constants
+// =============================================================
+
 /// KiB in bytes.
 pub const kib = 1024;
 /// MiB in bytes.
@@ -84,6 +92,10 @@ pub const direct_map_size = 512 * gib;
 /// The virtual address starting from the address is directly mapped to the physical address at 0x0.
 pub const kernel_base = 0xFFFF_FFFF_8000_0000;
 
+// =============================================================
+// Variables
+// =============================================================
+
 /// General memory allocator.
 pub const general_allocator = bin_allocator_instance.getAllocator();
 /// General page allocator that can be used to allocate physically contiguous pages.
@@ -98,6 +110,10 @@ var bin_allocator_instance = BinAllocator.newUninit();
 
 /// Whether the page table is initialized.
 var pgtbl_initialized = atomic.Value(bool).init(false);
+
+// =============================================================
+// Functions
+// =============================================================
 
 /// Initialize the bootstrap allocator.
 ///
@@ -172,6 +188,10 @@ pub fn phys2virt(addr: anytype) Virt {
     };
     return value + direct_map_base;
 }
+
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
 const atomic = std.atomic;

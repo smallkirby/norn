@@ -12,5 +12,9 @@ pub const Context = arch.InterruptContext;
 /// Interrupt handler function signature.
 pub const Handler = *const fn (*Context) void;
 
+// =============================================================
+// Imports
+// =============================================================
+
 const norn = @import("norn");
 const arch = norn.arch;

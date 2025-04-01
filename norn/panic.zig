@@ -30,6 +30,10 @@ fn panic(msg: []const u8, _: ?*builtin.StackTrace, _: ?usize) noreturn {
     norn.endlessHalt();
 }
 
+// =============================================================
+// Imports
+// =============================================================
+
 const std = @import("std");
 const atomic = std.atomic;
 const builtin = std.builtin;

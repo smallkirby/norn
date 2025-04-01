@@ -20,12 +20,6 @@
 //! OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 //! THE SOFTWARE.
 
-const std = @import("std");
-const log = std.log.scoped(.rtt);
-
-const norn = @import("norn");
-const Serial = norn.Serial;
-
 const WriterError = error{};
 const Writer = std.io.Writer(
     void,
@@ -35,13 +29,6 @@ const Writer = std.io.Writer(
 
 var serial: *Serial = undefined;
 const writer = Writer{ .context = {} };
-
-fn write(_: void, bytes: []const u8) WriterError!usize {
-    serial.writeString(bytes);
-    return bytes.len;
-}
-
-// ====================================================
 
 /// Init runtime testing framework.
 pub fn init() void {
@@ -71,11 +58,14 @@ pub fn expectEqual(expected: anytype, actual: anytype) void {
     };
 }
 
-// ====================================================
-//
+fn write(_: void, bytes: []const u8) WriterError!usize {
+    serial.writeString(bytes);
+    return bytes.len;
+}
+
+// =============================================================
 // Below code is copied from https://github.com/ziglang/zig
-//
-// ====================================================
+// =============================================================
 
 const inner = struct {
     inline fn expectEqual(expected: anytype, actual: anytype) !void {
@@ -381,8 +371,13 @@ const inner = struct {
         }
     };
 };
+// =============================================================
+// (END of copied code)
+// =============================================================
 
-// ====================================================
+// =============================================================
+// Internal functions
+// =============================================================
 
 /// Get the address of the caller.
 inline fn callerInfo() usize {
@@ -405,3 +400,13 @@ fn failure() noreturn {
     // Otherwise, halt the CPU.
     norn.endlessHalt();
 }
+
+// =============================================================
+// Imports
+// =============================================================
+
+const std = @import("std");
+const log = std.log.scoped(.rtt);
+
+const norn = @import("norn");
+const Serial = norn.Serial;

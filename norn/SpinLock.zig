@@ -51,6 +51,10 @@ pub fn isLocked(self: *Self) bool {
     return self._state.load(.acquire);
 }
 
+// =============================================================
+// Imports
+// =============================================================
+
 const atomic = @import("std").atomic;
 const is_test = @import("builtin").is_test;
 

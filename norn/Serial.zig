@@ -58,6 +58,10 @@ pub fn isInited(self: Self) bool {
     return self.inited.load(.acquire);
 }
 
+// =============================================================
+// Imports
+// =============================================================
+
 const std = @import("std");
 const atomic = std.atomic;
 

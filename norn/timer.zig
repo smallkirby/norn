@@ -81,6 +81,10 @@ fn timer(_: *norn.interrupt.Context) void {
     sched.schedule();
 }
 
+// =============================================================
+// Imports
+// =============================================================
+
 const std = @import("std");
 const log = std.log.scoped(.timer);
 

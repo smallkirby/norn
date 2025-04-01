@@ -89,7 +89,9 @@ inline fn rawGetCpuHead(cpu: usize) [*]u8 {
     return @ptrFromInt(@intFromPtr(percpu_instance) + cpu_offsets[cpu]);
 }
 
-// =======================================
+// =============================================================
+// Mock
+// =============================================================
 
 /// Mock of `percpu` module for testing.
 ///
@@ -117,6 +119,10 @@ pub const mock_for_testing = struct {
         pointer.* = value;
     }
 };
+
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
 

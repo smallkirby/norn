@@ -168,6 +168,10 @@ fn spriousInterruptHandler(_: *norn.interrupt.Context) void {
     arch.getLocalApic().eoi();
 }
 
+// =============================================================
+// Imports
+// =============================================================
+
 const std = @import("std");
 const log = std.log.scoped(.main);
 

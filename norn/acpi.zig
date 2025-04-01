@@ -664,6 +664,10 @@ fn checksum(data: []u8) u8 {
     return sum;
 }
 
+// =============================================================
+// Imports
+// =============================================================
+
 const std = @import("std");
 const atomic = std.atomic;
 const Allocator = std.mem.Allocator;
