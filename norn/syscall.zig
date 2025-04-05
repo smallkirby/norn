@@ -87,6 +87,7 @@ pub const Syscall = enum(u64) {
                 .readlinkat => sys(ignoredSyscallHandler),
                 .prlimit => sys(ignoredSyscallHandler),
                 .rseq => sys(ignoredSyscallHandler),
+                .getrandom => sys(sysGetRandom),
                 else => sys(unhandledSyscallHandler),
             };
         }
@@ -123,6 +124,7 @@ fn convert(comptime T: type, arg: u64) T {
         .pointer => @ptrFromInt(arg),
         .int => @intCast(arg),
         .@"enum" => @enumFromInt(arg),
+        .@"struct" => @bitCast(arg),
         else => @compileError(std.fmt.comptimePrint("convert(): Invalid type: {s}", .{@typeName(T)})),
     };
 }
@@ -264,6 +266,33 @@ fn debugPrintContext(ctx: *Context) void {
 // =============================================================
 // Temporary syscall handlers.
 // =============================================================
+
+/// Flags for `getrandom` syscall.
+const GetRandomFlags = packed struct(u64) {
+    /// Don't block if no data is available.
+    non_block: bool,
+    /// No effect.
+    random: bool,
+
+    /// Reserved.
+    _reserved: u62,
+};
+
+/// Syscall handler for `getrandom`.
+///
+/// Fill the buffer with random bytes.
+/// Note that this function does not provide cryptographically secure random bytes.
+fn sysGetRandom(_: *Context, buf: [*]u8, size: usize, flags: GetRandomFlags) Error!i64 {
+    if (flags._reserved != 0) return Error.Inval;
+
+    const time = norn.timer.getTimestamp();
+    var prng = std.Random.DefaultPrng.init(time);
+    const rand = prng.random();
+
+    rand.bytes(buf[0..size]);
+
+    return @bitCast(size);
+}
 
 /// Syscall handler for `read`.
 ///
