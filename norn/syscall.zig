@@ -10,6 +10,8 @@ pub const Context = arch.SyscallContext;
 /// Syscalls less than `norn_syscall_start` comply with x86-64 Linux kernel.
 /// Syscalls greater than or equal to `norn_syscall_start` are specific to Norn.
 pub const Syscall = enum(u64) {
+    /// Read from a file descriptor.
+    read = 0,
     /// Write to a file descriptor.
     write = 1,
     /// Set protection on a region of memory.
@@ -20,6 +22,8 @@ pub const Syscall = enum(u64) {
     writev = 20,
     /// Not supported.
     arch_prctl = 158,
+    /// Get user identity.
+    getuid = 105,
     /// Set pointer to thread ID.
     set_tid_address = 218,
     /// Retrieve the time of of the specified clock.
@@ -69,11 +73,13 @@ pub const Syscall = enum(u64) {
 
         for (std.enums.values(Syscall)) |e| {
             table[@intFromEnum(e)] = switch (e) {
+                .read => sys(sysRead),
                 .write => sys(sysWrite),
                 .mprotect => sys(sysMemoryProtect),
                 .brk => sys(norn.mm.sysBrk),
                 .writev => sys(sysWriteVec),
                 .arch_prctl => sys(norn.prctl.sysArchPrctl),
+                .getuid => sys(sysGetUid),
                 .set_tid_address => sys(ignoredSyscallHandler),
                 .set_robust_list => sys(ignoredSyscallHandler),
                 .exit_group => sys(sysExitGroup),
@@ -259,6 +265,21 @@ fn debugPrintContext(ctx: *Context) void {
 // Temporary syscall handlers.
 // =============================================================
 
+/// Syscall handler for `read`.
+///
+/// Currently, only supports reading from stdin (fd=0).
+fn sysRead(_: *Context, fd: u64, buf: [*]u8, size: usize) Error!i64 {
+    if (fd != 0) {
+        norn.unimplemented("sysRead(): fd other than 0.");
+    }
+
+    log.debug(
+        "sysRead(): fd={d} buf={X:0>16} size={X:0>16}",
+        .{ fd, @intFromPtr(buf), size },
+    );
+    norn.unimplemented("sysRead()");
+}
+
 /// Syscall handler for `write`.
 ///
 /// Currently, only supports writing to stdout (fd=1) and stderr (fd=2).
@@ -308,6 +329,13 @@ fn sysMemoryProtect(_: *Context, addr: u64, len: u64, prot: u64) Error!i64 {
 fn sysExitGroup(_: *Context, status: i32) Error!i64 {
     log.debug("exit_group(): status={d}", .{status});
     norn.unimplemented("sysExitGroup()");
+}
+
+/// Syscall handler for `getuid`.
+///
+/// TODO: implement
+fn sysGetUid(_: *Context) Error!i64 {
+    return 0;
 }
 
 /// Syscall handler for `dlog`.
