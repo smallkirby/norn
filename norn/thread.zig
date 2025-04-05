@@ -177,7 +177,7 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
     @memset(stack_page, 0);
 
     // Map stack.
-    const stack_base = 0x200000;
+    const stack_base = 0x7FFFFF000000;
     const stack_size = 0x1000 * 20;
     const stack_vma = try thread.mm.map(stack_base, stack_size, .rw);
     thread.mm.vm_areas.append(stack_vma);
