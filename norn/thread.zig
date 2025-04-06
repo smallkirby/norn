@@ -189,6 +189,11 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
     const thread = try Thread.create("init");
     thread.comm = try general_allocator.dupe(u8, filename);
 
+    // Setup FS.
+    const current = sched.getCurrentTask();
+    thread.fs.root = current.fs.root;
+    thread.fs.cwd = current.fs.cwd;
+
     // Copy initial user function for debug.
     var elf_loader = try loader.ElfLoader.new(filename);
     try elf_loader.load(thread.mm);
@@ -575,6 +580,7 @@ const arch = norn.arch;
 const fs = norn.fs;
 const loader = norn.loader;
 const mem = norn.mem;
+const sched = norn.sched;
 const util = norn.util;
 const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
 const MemoryMap = norn.mm.MemoryMap;
