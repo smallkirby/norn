@@ -63,6 +63,22 @@ var tid_next: Tid = 0;
 /// Spin lock for thread module.
 var thread_lock = SpinLock{};
 
+/// User ID type.
+pub const Uid = u32;
+/// Group ID type.
+pub const Gid = u32;
+
+/// Credential for the thread.
+pub const Credential = struct {
+    /// User ID.
+    uid: Uid,
+    /// Group ID.
+    gid: Gid,
+
+    /// Root user.
+    const root = Credential{ .uid = 0, .gid = 0 };
+};
+
 /// Execution context and resources.
 pub const Thread = struct {
     /// Maximum length of the thread name.
@@ -86,6 +102,10 @@ pub const Thread = struct {
     mm: *MemoryMap,
     /// CPU time consumed for the thread.
     cpu_time: CpuTime = .{},
+    /// Thread credential.
+    cred: Credential = .root,
+    /// FS.
+    fs: fs.ThreadFs,
     /// Arch-specific context.
     arch_ctx: *anyopaque = undefined,
 
@@ -101,6 +121,7 @@ pub const Thread = struct {
         self.* = Thread{
             .tid = assignNewTid(),
             .mm = try MemoryMap.new(),
+            .fs = fs.ThreadFs.new(undefined, undefined), // TODO
         };
 
         // Initialize arch-specific context.
@@ -186,7 +207,7 @@ pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
 
     // Initialize user stack.
     var sc = StackCreator.new(stack_vma) catch @panic("StackCreator.new");
-    try sc.appendArgvs(&.{ filename, "sh" });
+    try sc.appendArgvs(&.{ filename, "ls" });
     const at_random_handle = try sc.appendOpaqueData(u128, 0x0123_4567_89AB_CDEF_1122_3344_5566_7788);
     try sc.appendAuxvWithHandle(AuxVector.new(.random, at_random_handle));
     const stack_top = try sc.finalize();
@@ -551,6 +572,7 @@ const ArrayList = std.ArrayList;
 
 const norn = @import("norn");
 const arch = norn.arch;
+const fs = norn.fs;
 const loader = norn.loader;
 const mem = norn.mem;
 const util = norn.util;

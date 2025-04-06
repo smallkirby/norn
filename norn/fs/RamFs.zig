@@ -270,11 +270,44 @@ fn lookup(dir: *Inode, name: []const u8) Error!?*Dentry {
     return null;
 }
 
+/// Get a file stat information.
 pub fn stat(inode: *Inode) Error!vfs.Stat {
     return switch (getNode(inode).*) {
-        .directory => norn.unimplemented("stat for directory"),
+        .directory => |_| .{
+            .dev = .zero, // TODO
+            .inode = inode.number,
+            .num_links = 1,
+            .mode = 0o777, // TODO
+            .uid = inode.uid,
+            .gid = inode.gid,
+            .rdev = .zero,
+            .size = 0, // TODO
+            .block_size = 0, // TODO
+            .num_blocks = 0, // TODO
+            .access_time = 0, // TODO
+            .access_time_nsec = 0, // TODO
+            .modify_time = 0, // TODO
+            .modify_time_nsec = 0, // TODO
+            .change_time = 0, // TODO
+            .change_time_nsec = 0, // TODO
+        },
         .file => |f| .{
+            .dev = .zero, // TODO
+            .inode = inode.number,
+            .num_links = 1,
+            .mode = 0o777, // TODO
+            .uid = inode.uid,
+            .gid = inode.gid,
+            .rdev = .zero,
             .size = f.size,
+            .block_size = 0, // TODO
+            .num_blocks = 0, // TODO
+            .access_time = 0, // TODO
+            .access_time_nsec = 0, // TODO
+            .modify_time = 0, // TODO
+            .modify_time_nsec = 0, // TODO
+            .change_time = 0, // TODO
+            .change_time_nsec = 0, // TODO
         },
     };
 }

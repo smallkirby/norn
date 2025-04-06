@@ -30,6 +30,20 @@ pub fn ptrLt(lhs: anytype, rhs: @TypeOf(lhs)) bool {
     return @intFromPtr(lhs) < @intFromPtr(rhs);
 }
 
+/// Get the length of a sentineled string.
+///
+/// Returned size does not include the sentinel.
+pub fn lenSentineled(data: [*:0]const u8) usize {
+    var size: usize = 0;
+    while (data[size] != 0) : (size += 1) {}
+    return size;
+}
+
+/// Convert a sentineled string to a slice.
+pub fn sentineledToSlice(data: [*:0]const u8) []const u8 {
+    return data[0..lenSentineled(data)];
+}
+
 // =======================================
 
 const testing = std.testing;

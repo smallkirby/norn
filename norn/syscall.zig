@@ -18,18 +18,24 @@ pub const Syscall = enum(u64) {
     mprotect = 10,
     /// Change data segment size.
     brk = 12,
+    /// Control device.
+    ioctl = 16,
     /// Write data into multiple buffers.
     writev = 20,
     /// Not supported.
     arch_prctl = 158,
     /// Get user identity.
-    getuid = 105,
+    getuid = 102,
+    /// Set user identity.
+    setuid = 105,
     /// Set pointer to thread ID.
     set_tid_address = 218,
     /// Retrieve the time of of the specified clock.
     clock_gettime = 222,
     /// Exit all threads in a process.
     exit_group = 231,
+    /// Get file status.
+    newfstatat = 262,
     /// Read value of a symbolic link.
     readlinkat = 267,
     /// Get or set list of robust futexes.
@@ -77,12 +83,14 @@ pub const Syscall = enum(u64) {
                 .write => sys(sysWrite),
                 .mprotect => sys(sysMemoryProtect),
                 .brk => sys(norn.mm.sysBrk),
+                .ioctl => sys(sysIoctl),
                 .writev => sys(sysWriteVec),
                 .arch_prctl => sys(norn.prctl.sysArchPrctl),
                 .getuid => sys(sysGetUid),
                 .set_tid_address => sys(ignoredSyscallHandler),
                 .set_robust_list => sys(ignoredSyscallHandler),
                 .exit_group => sys(sysExitGroup),
+                .newfstatat => sys(sysNewFstatAt),
                 .dlog => sys(sysDebugLog),
                 .readlinkat => sys(ignoredSyscallHandler),
                 .prlimit => sys(ignoredSyscallHandler),
@@ -122,7 +130,13 @@ pub const Syscall = enum(u64) {
 fn convert(comptime T: type, arg: u64) T {
     return switch (@typeInfo(T)) {
         .pointer => @ptrFromInt(arg),
-        .int => @intCast(arg),
+        .int => switch (@bitSizeOf(T)) {
+            8 => @bitCast(@as(u8, @truncate(arg))),
+            16 => @bitCast(@as(u16, @truncate(arg))),
+            32 => @bitCast(@as(u32, @truncate(arg))),
+            64 => @bitCast(@as(u64, @truncate(arg))),
+            else => @compileError("convert(): Invalid integer size"),
+        },
         .@"enum" => @enumFromInt(arg),
         .@"struct" => @bitCast(arg),
         else => @compileError(std.fmt.comptimePrint("convert(): Invalid type: {s}", .{@typeName(T)})),
@@ -324,6 +338,37 @@ fn sysWrite(_: *Context, fd: u64, buf: [*]const u8, count: usize) Error!i64 {
     return @bitCast(count);
 }
 
+/// Command for `ioctl`.
+const IoctlCommand = enum(u64) {
+    _,
+};
+
+/// Special file descriptor for CWD.
+const fd_cwd: i32 = -100;
+
+/// Syscall handler for `newfstatat`.
+fn sysNewFstatAt(_: *Context, fd: i32, _: [*:0]const u8, _: *fs.Stat, _: u64) Error!i64 {
+    if (fd != 0 and fd != 1 and fd != 2 and fd != fd_cwd) {
+        norn.unimplemented("sysNewFstatAt(): fd other than 1 or 2.");
+    }
+
+    norn.unimplemented("sysNewFstatAt()");
+}
+
+/// Syscall handler for `ioctl`.
+fn sysIoctl(_: *Context, fd: u64, cmd: IoctlCommand) Error!i64 {
+    if (fd != 0 and fd != 1 and fd != 2) {
+        norn.unimplemented("sysIoctl(): fd other than 1 or 2.");
+    }
+
+    switch (cmd) {
+        _ => {
+            log.warn("Unsupported ioctl command: {X:0>16}", .{cmd});
+            return Error.Unimplemented;
+        },
+    }
+}
+
 const IoVec = packed struct {
     /// Pointer to the buffer.
     buf: [*]const u8,
@@ -361,10 +406,9 @@ fn sysExitGroup(_: *Context, status: i32) Error!i64 {
 }
 
 /// Syscall handler for `getuid`.
-///
-/// TODO: implement
 fn sysGetUid(_: *Context) Error!i64 {
-    return 0;
+    const current = norn.sched.getCurrentTask();
+    return @intCast(current.cred.uid);
 }
 
 /// Syscall handler for `dlog`.
@@ -389,6 +433,8 @@ const log = std.log.scoped(.syscall);
 const norn = @import("norn");
 const arch = norn.arch;
 const errno = norn.errno;
+const fs = norn.fs;
+const util = norn.util;
 
 const VmArea = norn.mm.VmArea;
 const VmFlags = norn.mm.VmFlags;

@@ -8,10 +8,55 @@ pub const Error = error{
     IsDirectory,
 };
 
+/// Device type.
+pub const DevType = packed struct(u64) {
+    minor: u32,
+    major: u32,
+
+    pub const zero: DevType = .{ .minor = 0, .major = 0 };
+};
+
 /// Stat information.
-pub const Stat = struct {
+pub const Stat = extern struct {
+    /// Device ID of device containing the file.
+    dev: DevType,
+    /// File serial number.
+    inode: u64,
+    /// Number of hard links.
+    num_links: u64,
+
+    /// File mode.
+    mode: u32,
+    /// User ID of the file.
+    uid: u32,
+    /// Group ID of the file.
+    gid: u32,
+    /// Reserved.
+    _reserved0: u32 = 0,
+
+    /// Device ID (if the file is a special file).
+    rdev: DevType,
     /// Size of the file.
     size: usize,
+    /// Preferred block size for file system I/O.
+    block_size: usize,
+    /// Number of blocks allocated for this object.
+    num_blocks: usize,
+
+    /// Time of last access.
+    access_time: u64,
+    access_time_nsec: u64,
+    /// Time of last modification.
+    modify_time: u64,
+    modify_time_nsec: u64,
+    /// Time of last status change.
+    change_time: u64,
+    change_time_nsec: u64,
+
+    /// Reserved.
+    _reserved1: u64 = 0,
+    _reserved2: u64 = 0,
+    _reserved3: u64 = 0,
 };
 
 /// Virtual filesystem.
@@ -185,6 +230,8 @@ pub const Inode = struct {
     }
 
     /// Lookup a file named `name` in this directory inode.
+    ///
+    /// This function searches only in the given directory, and does not search more than one level of depth.
     pub fn lookup(self: *Self, name: []const u8) Error!?*Dentry {
         if (self.inode_type != InodeType.directory) return Error.NotDirectory;
         return self.ops.lookup(self, name);

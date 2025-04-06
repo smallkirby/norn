@@ -8,6 +8,8 @@ pub const Error = error{
     InvalidArgument,
 } || vfs.Error;
 
+pub const Stat = vfs.Stat;
+
 /// Path separator.
 pub const separator = '/';
 
@@ -15,14 +17,59 @@ pub const separator = '/';
 pub const File = struct {
     /// Offset within the file.
     pos: usize = 0,
-    /// Dentry of the file.
-    dentry: *vfs.Dentry,
+    /// i-node of the file.
+    inode: *vfs.Inode,
 
     /// Create a new file instance.
-    pub fn new(dentry: *vfs.Dentry) File {
+    pub fn new(inode: *vfs.Inode) File {
         return .{
-            .dentry = dentry,
+            .inode = inode,
         };
+    }
+};
+
+/// TODO: doc
+const FileDescriptor = i32;
+
+/// Filesystem associated with a thread.
+pub const ThreadFs = struct {
+    const Self = @This();
+
+    /// Root directory.
+    root: *vfs.Dentry,
+    /// Current working directory.
+    cwd: *vfs.Dentry,
+    /// File descriptor table.
+    fdtable: FdTable,
+
+    /// Instantiate a new thread filesystem.
+    pub fn new(root: *vfs.Dentry, cwd: *vfs.Dentry) Self {
+        return .{
+            .cwd = root,
+            .root = cwd,
+            .fdtable = FdTable.new(),
+        };
+    }
+};
+
+/// File descriptor table.
+const FdTable = struct {
+    const Self = @This();
+    const FdMap = std.AutoHashMap(FileDescriptor, *File);
+
+    /// Mapping of file descriptors to file instances.
+    _map: FdMap,
+
+    /// Insntantiate a new file descriptor table.
+    pub fn new() Self {
+        return .{
+            ._map = FdMap.init(allocator),
+        };
+    }
+
+    /// Deinitialize and free the resources.
+    pub fn deinit(self: *Self) void {
+        self._map.deinit();
     }
 };
 
@@ -36,18 +83,11 @@ pub const SeekMode = enum {
     End,
 };
 
-/// Root directory.
-/// TODO: Make this per-thread.
-var root: *vfs.Dentry = undefined;
-/// Current working directory.
-/// TODO: Make this per-thread.
-var cwd: *vfs.Dentry = undefined;
+var ramfs: *RamFs = undefined;
 
 /// Initialize filesystem.
 pub fn init() Error!void {
-    const rfs = try RamFs.init(allocator);
-    root = rfs.root;
-    cwd = rfs.root;
+    ramfs = try RamFs.init(allocator);
 }
 
 /// Load initramfs cpio image and create entries.
@@ -69,12 +109,12 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
         }
 
         // Check if the target file already exists.
-        if (try lookup(path) != null) {
+        if (lookup(.{ .dir = ramfs.root }, path) != null) {
             log.warn("File already exists: {s}", .{path});
             continue;
         }
         // Check if the parent directory exists.
-        const parent = try lookupParent(path) orelse {
+        const parent = kerneLookupParent(.{ .dir = ramfs.root }, path) orelse {
             log.warn("Parent directory not found: {s}", .{path});
             continue;
         };
@@ -88,9 +128,14 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
         }
     }
 
+    // Set root and cwd.
+    const current = sched.getCurrentTask();
+    current.fs.root = ramfs.root;
+    current.fs.cwd = ramfs.root;
+
     // Debug print the loaded file tree.
     log.debug("=== Initial FS ======================", .{});
-    printDirectoryTree() catch |err| {
+    printDirectoryTree(ramfs.root) catch |err| {
         log.err("Failed to print directory tree: {s}", .{@errorName(err)});
     };
     log.debug("=====================================", .{});
@@ -122,11 +167,11 @@ pub const OpenFlags = struct {
 pub fn open(path: []const u8, flags: OpenFlags, mode: ?Mode) Error!*File {
     // TODO: use mode
 
-    const dentry = if (try lookup(path)) |dent| dent else blk: {
+    const dentry = if (lookup(.origin_cwd, path)) |dent| dent else blk: {
         if (!flags.create) return Error.NotFound;
         if (mode) |m| {
             // Try to create the file.
-            const parent = try lookupParent(path) orelse return Error.NotFound;
+            const parent = kerneLookupParent(.origin_cwd, path) orelse return Error.NotFound;
             const basename = std.fs.path.basenamePosix(path);
             break :blk try parent.createFile(basename, m);
         } else {
@@ -137,13 +182,13 @@ pub fn open(path: []const u8, flags: OpenFlags, mode: ?Mode) Error!*File {
 
     const file = try allocator.create(File);
     file.* = .{
-        .dentry = dentry,
+        .inode = dentry.inode,
     };
     return file;
 }
 
 pub fn read(file: *File, buf: []u8) Error!usize {
-    const bytesRead = try file.dentry.inode.read(buf, file.pos);
+    const bytesRead = try file.inode.read(buf, file.pos);
     file.pos += bytesRead;
     return bytesRead;
 }
@@ -162,7 +207,7 @@ pub fn seek(file: *File, offset: usize, whence: SeekMode) Error!usize {
 }
 
 pub fn stat(file: *File) Error!Stat {
-    return try file.dentry.inode.stat();
+    return try file.inode.stat();
 }
 
 pub fn mkdir(path: []const u8) Error!void {
@@ -174,47 +219,101 @@ pub fn close(file: *File) void {
     allocator.destroy(file);
 }
 
-/// Lookup a dentry by path lexically.
-fn lookup(path: []const u8) Error!?*vfs.Dentry {
-    const parent = try lookupParent(path) orelse return null;
-    const basename = std.fs.path.basenamePosix(path);
-    return parent.inode.lookup(basename);
-}
+/// The origin of the lookup path.
+const LookupOrigin = union(Tag) {
+    /// Lookup path from CWD.
+    cwd: void,
+    /// Lookup path from the given directory.
+    dir: *vfs.Dentry,
 
-/// Lookup the parent dentry of the given path.
+    const Tag = enum {
+        /// Lookup path from CWD.
+        cwd,
+        /// Lookup path from the given directory.
+        dir,
+    };
+
+    pub const origin_cwd = LookupOrigin{ .cwd = {} };
+};
+
+/// Lookup a dentry by path.
 ///
-/// If the parent dentry is not found, return null.
-/// This function looks up lexically, so "/a/b/c/." returns "/a/b/c".
-fn lookupParent(path: []const u8) Error!?*vfs.Dentry {
-    var iter = try ComponentIterator(.posix, u8).init(path);
-
-    // Decide the starting dentry.
+/// This function searches for a file in the given directory.
+/// This function can take a path string with more than one level of depth.
+///
+/// If it encounters a component that does not exist, the search stops and returns null.
+/// For example, `dne/..` will fail if `dne` does not exist.
+pub fn lookup(origin: LookupOrigin, path: []const u8) ?*vfs.Dentry {
+    // Calculate the origin dentry to start the lookup.
+    var iter = ComponentIterator(.posix, u8).init(path) catch {
+        return null;
+    };
     const is_absolute = std.fs.path.isAbsolutePosix(path);
-    var cur_dentry = if (is_absolute) root else cwd;
+    var dent = blk: {
+        if (is_absolute) {
+            break :blk sched.getCurrentTask().fs.root;
+        } else break :blk switch (origin) {
+            .cwd => sched.getCurrentTask().fs.cwd,
+            .dir => |d| d,
+        };
+    };
 
-    // Iterate over the components lexically.
+    // Iterate over the components of the path.
     var next = iter.next();
     while (next) |component| : (next = iter.next()) {
-        // If the next component is null, we've reached the last component (child of the parent).
-        if (iter.peekNext() == null) break;
-
         if (std.mem.eql(u8, component.name, ".")) {
-            // ".": Just skip.
             continue;
         } else if (std.mem.eql(u8, component.name, "..")) {
-            // "..": Move to parent directory.
-            cur_dentry = cur_dentry.parent;
+            dent = dent.parent;
         } else {
-            // Lookup the component.
-            if (try cur_dentry.inode.lookup(component.name)) |next_dentry| {
-                cur_dentry = next_dentry;
+            const result = dent.inode.lookup(component.name) catch return null;
+            if (result) |next_dentry| {
+                dent = next_dentry;
             } else {
                 return null;
             }
         }
     }
 
-    return cur_dentry;
+    return dent;
+}
+
+/// Lookup a parent of the given path lexically.
+fn kerneLookupParent(origin: LookupOrigin, path: []const u8) ?*vfs.Dentry {
+    // Calculate the origin dentry to start the lookup.
+    var iter = ComponentIterator(.posix, u8).init(path) catch {
+        return null;
+    };
+    const is_absolute = std.fs.path.isAbsolutePosix(path);
+    var dent = blk: {
+        if (is_absolute) {
+            break :blk sched.getCurrentTask().fs.root;
+        } else break :blk switch (origin) {
+            .cwd => sched.getCurrentTask().fs.cwd,
+            .dir => |d| d,
+        };
+    };
+
+    // Iterate over the components of the path.
+    var next = iter.next();
+    while (next) |component| : (next = iter.next()) {
+        if (std.mem.eql(u8, component.name, ".")) {
+            continue;
+        } else if (std.mem.eql(u8, component.name, "..")) {
+            dent = dent.parent;
+        } else {
+            const result = dent.inode.lookup(component.name) catch return null;
+            if (result) |next_dentry| {
+                dent = next_dentry;
+            } else if (iter.peekNext() == null) {
+                return dent;
+            } else {
+                return null;
+            }
+        }
+    } else {
+        return dent.parent;
+    }
 }
 
 // =============================================================
@@ -222,7 +321,7 @@ fn lookupParent(path: []const u8) Error!?*vfs.Dentry {
 // =============================================================
 
 /// Print the directory tree.
-fn printDirectoryTree() Error!void {
+fn printDirectoryTree(root: *vfs.Dentry) Error!void {
     var current_path = std.mem.zeroes([4096]u8);
     try printDirectoryTreeSub(root, current_path[0..current_path.len]);
 }
@@ -278,16 +377,17 @@ test {
 const std = @import("std");
 const log = std.log.scoped(.fs);
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 const ComponentIterator = std.fs.path.ComponentIterator;
 
 const norn = @import("norn");
 const bits = norn.bits;
+const sched = norn.sched;
 
 const cpio = @import("fs/cpio.zig");
 const RamFs = @import("fs/RamFs.zig");
 const vfs = @import("fs/vfs.zig");
 const Dentry = vfs.Dentry;
-const Stat = vfs.Stat;
 const Mode = vfs.Mode;
 
 const allocator = norn.mem.general_allocator;

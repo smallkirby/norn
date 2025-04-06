@@ -1,3 +1,7 @@
+// =============================================================
+// Main entry point of the Norn kernel.
+// =============================================================
+
 /// Override the standard options.
 pub const std_options = std.Options{
     // Logging
@@ -104,13 +108,59 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     // Do per-CPU initialization.
     try arch.initGdtThisCpu(norn.mem.page_allocator);
 
+    // Boot APs.
+    log.info("Booting APs...", .{});
+    try arch.mp.bootAllAps();
+
+    // Initialize scheduler.
+    norn.arch.disableIrq();
+    try norn.sched.initThisCpu();
+
+    // Enter the Norn kernel thread.
+    const norn_thread = try norn.thread.createKernelThread(
+        "[norn]",
+        nornThread,
+    );
+    norn.sched.enqueueTask(norn_thread);
+    log.info("Entering Norn kernel thread...", .{});
+    initramfs = boot_info.initramfs;
+    norn.sched.runInitialKernelThread();
+
+    unreachable;
+}
+
+/// initramfs information passed to the initial kernel thread.
+/// TODO: Pass this variable as an argument.
+var initramfs: surtr.InitramfsInfo = undefined;
+
+/// Initial kernel thread with PID 0.
+///
+/// This is a wrapper function that allows the implementation to return an error.
+fn nornThread() noreturn {
+    nornThreadImpl() catch |err| {
+        log.err("Norn thread aborted with error: {}", .{err});
+        @panic("Exiting...");
+    };
+
+    unreachable;
+}
+
+/// Implementation of the initial kernel thread.
+///
+/// This function continues initialization of the kernel that requires the execution to have context.
+/// This thread becomes an idle task once the initialization is completed,
+/// and the initial task is launched.
+fn nornThreadImpl() !void {
+    norn.rtt.expectEqual(false, norn.arch.isIrqEnabled());
+
     // Initialize filesystem.
     try norn.fs.init();
     log.info("Initialized filesystem.", .{});
 
-    // Read initramfs
+    // Read initramfs.
+    // Set the root directory and CWD to the root of initramfs.
     {
-        const initimg = boot_info.initramfs;
+        const initimg = initramfs;
         const imgptr: [*]const u8 = @ptrFromInt(norn.mem.phys2virt(initimg.addr));
         try norn.fs.loadInitImage(imgptr[0..initimg.size]);
         log.debug("Loaded initramfs.", .{});
@@ -120,10 +170,6 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         try norn.mem.page_allocator.freePagesRaw(@intFromPtr(imgptr), num_pages);
         log.info("Freed {d} pages of initramfs.", .{num_pages});
     }
-
-    // Boot APs.
-    log.info("Booting APs...", .{});
-    try arch.mp.bootAllAps();
 
     // Initialize syscall.
     try arch.enableSyscall();
@@ -137,8 +183,6 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 
     // Initialize scheduler.
     log.info("Initializing scheduler...", .{});
-    arch.disableIrq();
-    try norn.sched.initThisCpu();
     try norn.sched.setupInitialTask();
     norn.sched.debugPrintRunQueue(log.debug);
 
@@ -148,7 +192,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 
     // Start the scheduler.
     // This function never returns.
-    norn.sched.runThisCpu();
+    norn.sched.schedule();
 
     // Unreachable.
     norn.unimplemented("Reached unreachable Norn EOL.");

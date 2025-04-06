@@ -20,23 +20,26 @@ var runq: *ThreadList linksection(pcpu.section) = undefined;
 var current_task: *Thread linksection(pcpu.section) = undefined;
 
 /// Initialize the scheduler for this CPU.
+///
+/// Note that the timer that triggers the scheduler does not start yet.
 pub fn initThisCpu() Error!void {
     // Initialize the run queue
     const rq = try general_allocator.create(ThreadList);
     rq.* = .{};
     pcpu.thisCpuSet(&runq, rq);
-
-    // Initialize the idle task
-    try setupIdleTask();
 }
 
-/// Run the task scheduler on this CPU.
+/// Switch to the initial kernel thread queued in the run queue.
 ///
-/// This function context-switches to the task set in `current_task`.
 /// You must call this function for each CPU.
 /// This function never returns.
-pub fn runThisCpu() noreturn {
-    norn.arch.task.initialSwitchTo(pcpu.thisCpuGet(&current_task));
+pub fn runInitialKernelThread() noreturn {
+    norn.rtt.expectEqual(1, getRunQueue().len);
+
+    const init = getRunQueue().pop() orelse unreachable;
+    pcpu.thisCpuSet(&current_task, init);
+
+    norn.arch.task.initialSwitchTo(init);
 }
 
 /// Schedule the next task.
@@ -95,14 +98,15 @@ inline fn getRunQueue() *ThreadList {
 }
 
 /// Append a new task to the tail of the run queue.
-inline fn enqueueTask(task: *Thread) void {
+pub inline fn enqueueTask(task: *Thread) void {
     getRunQueue().append(task);
+    log.debug("Num of tasks: {d}", .{getRunQueue().len});
 }
 
 /// Create an initial task (PID 1) and set the current task to it.
 pub fn setupInitialTask() Error!void {
     const init_task = try thread.createInitialThread("/sbin/init");
-    pcpu.thisCpuSet(&current_task, init_task);
+    enqueueTask(init_task);
 }
 
 /// Create an idle task and append it to the run queue.
