@@ -43,6 +43,8 @@ const NewAsciiCpio = extern struct {
     const crc_signature = "070702";
     /// Trailing empty file name.
     const trailer_name: [:0]const u8 = "TRAILER!!!";
+    /// Alignment for the path and data entry.
+    const alignment = 4;
 
     /// Signature. Must be "070701" (newc) or "070702" (crc).
     signature: [6]u8,
@@ -84,6 +86,9 @@ const NewAsciiCpio = extern struct {
 
     /// Create an instance of CPIO from a pointer to the backing data.
     fn from(data: [*]const u8) *const NewAsciiCpio {
+        if (@intFromPtr(data) % alignment != 0) {
+            @panic("NewAsciiCpio: Data address must be aligned to 4 bytes");
+        }
         return @ptrCast(data);
     }
 
@@ -154,14 +159,14 @@ const NewAsciiCpio = extern struct {
 
     pub fn getData(self: *const Self) Error![]const u8 {
         const path_end: u64 = @intFromPtr(&self.__path) + try self.getPathSize();
-        const data_start: [*]u8 = @ptrFromInt((path_end + 3) & ~@as(u64, 0b11)); // 32bit alignment
+        const data_start: [*]u8 = @ptrFromInt(util.roundup(path_end, alignment));
         return data_start[0..try self.getFilesize()];
     }
 
     fn getNext(self: *const Self) Error!*const Self {
         const data = try self.getData();
         const data_end = @intFromPtr(data.ptr) + data.len;
-        const next_start = (data_end + 3) & ~@as(u64, 0b11); // 32bit alignment
+        const next_start = util.roundup(data_end, alignment);
         return @ptrFromInt(next_start);
     }
 };
@@ -171,15 +176,28 @@ const NewAsciiCpio = extern struct {
 // =============================================================
 
 const testing = std.testing;
-const test_cpio = @embedFile("../tests/assets/test.cpio");
+
+fn getTestCpio() ![]align(4) const u8 {
+    const test_cpio = @embedFile("../tests/assets/test.cpio");
+    const duped = try testing.allocator.alignedAlloc(u8, 4, test_cpio.len);
+    @memcpy(duped, test_cpio);
+    return duped;
+}
 
 test "isValid" {
-    const cpio = NewAsciiCpio.from(test_cpio.ptr);
+    const cpio_data = try getTestCpio();
+    const cpio = NewAsciiCpio.from(cpio_data.ptr);
+    defer testing.allocator.free(cpio_data);
+
     try testing.expect(try cpio.isValid());
 }
 
 test "Read first entry" {
-    const cpio = NewAsciiCpio.from(test_cpio.ptr);
+    const cpio_data = try getTestCpio();
+    const cpio = NewAsciiCpio.from(cpio_data.ptr);
+    defer testing.allocator.free(cpio_data);
+
+    try testing.expect(try cpio.isValid());
 
     try testing.expectEqual(46638358, try cpio.getInode());
     try testing.expectEqual(0o40775, try cpio.getMode());
@@ -199,16 +217,36 @@ test "Read first entry" {
 }
 
 test "Iterator: read all entries" {
+    const cpio_data = try getTestCpio();
+    defer testing.allocator.free(cpio_data);
+
     var count: usize = 0;
-    var iter = CpioIterator.new(test_cpio);
+    var iter = CpioIterator.new(cpio_data);
     var cur = try iter.next();
     while (cur) |cpio| : (cur = try iter.next()) {
         switch (count) {
             0 => {
                 // Already tested in the previous test.
+                {
+                    try testing.expectEqual(46638358, try cpio.getInode());
+                    try testing.expectEqual(0o40775, try cpio.getMode());
+                    try testing.expectEqual(0, try cpio.getUid());
+                    try testing.expectEqual(1000, try cpio.getGid());
+                    try testing.expectEqual(3, try cpio.getNlink());
+                    try testing.expectEqual(1737199656, try cpio.getMtime());
+                    try testing.expectEqual(0, try cpio.getFilesize());
+                    try testing.expectEqual(259, try cpio.getDevMajor());
+                    try testing.expectEqual(2, try cpio.getDevMinor());
+                    try testing.expectEqual(0, try cpio.getSdevMajor());
+                    try testing.expectEqual(0, try cpio.getSdevMinor());
+                    try testing.expectEqual(2, try cpio.getPathSize());
+                    try testing.expectEqual(0, try cpio.getChecksum());
+                    try testing.expectEqualStrings(".", try cpio.getPath());
+                    try testing.expectEqual(0, (try cpio.getData()).len);
+                }
             },
             1 => {
-                const diff = @intFromPtr(cpio) - @intFromPtr(test_cpio.ptr);
+                const diff = @intFromPtr(cpio) - @intFromPtr(cpio_data.ptr);
                 try testing.expectEqual(0x70, diff);
 
                 try testing.expectEqual(46638360, try cpio.getInode());
@@ -228,7 +266,7 @@ test "Iterator: read all entries" {
                 try testing.expectEqual(0, (try cpio.getData()).len);
             },
             2 => {
-                const diff = @intFromPtr(cpio) - @intFromPtr(test_cpio.ptr);
+                const diff = @intFromPtr(cpio) - @intFromPtr(cpio_data.ptr);
                 try testing.expectEqual(0xE4, diff);
 
                 try testing.expectEqual(46631722, try cpio.getInode());
@@ -248,8 +286,8 @@ test "Iterator: read all entries" {
                 try testing.expectEqualStrings("hello\n", try cpio.getData());
             },
             else => {
-                const diff = @intFromPtr(cpio) - @intFromPtr(test_cpio.ptr);
-                try testing.expectEqual(test_cpio.len, diff);
+                const diff = @intFromPtr(cpio) - @intFromPtr(cpio_data.ptr);
+                try testing.expectEqual(cpio_data.len, diff);
                 return error.Unreachable;
             },
         }
@@ -282,6 +320,9 @@ test "Iterator: read all entries" {
 // =============================================================
 
 const std = @import("std");
+
+const norn = @import("norn");
+const util = norn.util;
 
 const vfs = @import("vfs.zig");
 const Mode = vfs.Mode;
