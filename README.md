@@ -22,6 +22,7 @@ zig build test --summary all -Druntime_test=true
 | `optimize` | String: `Debug`, `ReleaseFast`, `ReleaseSmall` | Optimization level. |
 | `log_level` | String: `debug`, `info`, `warn`, `error` | Logging level. Output under the logging level is suppressed. |
 | `runtime_test` | Flag | Run runtime tests. |
+| `no_kvm` | Flag | Disable KVM. |
 | `wait_qemu` | Flag | Make QEMU wait for being attached by GDB. |
 | `debug_intr` | Flag | Print all interrupts and exceptions for debugging. |
 | `debug_exit` | Flag | Add `isa-debug-exit` device. When enabled, Norn can terminate QEMU with arbitrary exit code. |

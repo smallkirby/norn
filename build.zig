@@ -86,6 +86,11 @@ pub fn build(b: *std.Build) !void {
         "debug_syscall",
         "Print debug log for unhandled and ignored syscalls.",
     ) orelse false;
+    const no_kvm = b.option(
+        bool,
+        "no_kvm",
+        "Disable KVM.",
+    ) orelse false;
 
     const options = b.addOptions();
     options.addOption(std.log.Level, "log_level", log_level);
@@ -204,6 +209,11 @@ pub fn build(b: *std.Build) !void {
             "qemu64,+fsgsbase,+invtsc",
             "-d",
             "int",
+        });
+    } else if (no_kvm) {
+        try qemu_args.appendSlice(&.{
+            "-cpu",
+            "qemu64,+fsgsbase,+invtsc",
         });
     } else {
         try qemu_args.appendSlice(&.{
