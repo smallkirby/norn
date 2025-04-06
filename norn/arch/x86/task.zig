@@ -4,7 +4,7 @@ pub const Error = mem.Error || arch.Error;
 pub var current_tss: TaskStateSegment linksection(pcpu.section) = undefined;
 
 /// Size in bytes of kernel stack.
-const kernel_stack_size = 2 * mem.size_4kib;
+const kernel_stack_size = 10 * mem.size_4kib;
 /// Number of pages for kernel stack.
 const kernel_stack_num_pages = kernel_stack_size / mem.size_4kib;
 
@@ -34,6 +34,7 @@ pub fn setupNewTask(task: *Thread) Error!void {
     task.mm.pgtbl = try arch.mem.createPageTables();
 
     // Init kernel stack.
+    // TODO: Set guard page to detect stack overflow.
     const stack = try mem.page_allocator.allocPages(kernel_stack_num_pages, .normal);
     errdefer mem.page_allocator.freePages(stack);
     const stack_ptr = stack.ptr + stack.len;
