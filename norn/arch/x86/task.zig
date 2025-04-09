@@ -63,11 +63,9 @@ fn getCpuFromStack(task: *Thread) *CpuContext {
 /// Set up the initial stack frame for an orphaned task.
 /// This function sets the kernel stack pointer.
 pub fn initKernelStack(task: *Thread, ip: u64) void {
-    const stack_top: u64 = @intFromPtr(task.kernel_stack.ptr);
-    norn.rtt.expectEqual(0, stack_top % mem.page_size);
-    const stack_bottom = stack_top + norn.thread.kernel_stack_size;
+    const orig_sp = @intFromPtr(task.kernel_stack_ptr);
 
-    const cpu_context: *CpuContext = @ptrFromInt(stack_bottom - @sizeOf(CpuContext));
+    const cpu_context: *CpuContext = @ptrFromInt(orig_sp - @sizeOf(CpuContext));
     norn.rtt.expectEqual(0, @intFromPtr(cpu_context) % 16);
     cpu_context.* = std.mem.zeroInit(CpuContext, .{});
 
@@ -83,7 +81,7 @@ pub fn initKernelStack(task: *Thread, ip: u64) void {
         .rip = ip,
     };
 
-    task.kernel_stack_ptr = @ptrFromInt(stack_bottom - (@sizeOf(CpuContext) + @sizeOf(ContextStackFrame)));
+    task.kernel_stack_ptr = @ptrFromInt(orig_sp - (@sizeOf(CpuContext) + @sizeOf(ContextStackFrame)));
 }
 
 /// TODO: doc
