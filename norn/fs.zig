@@ -21,9 +21,9 @@ pub const File = struct {
     dentry: *vfs.Dentry,
 
     /// Create a new file instance.
-    pub fn new(inode: *vfs.Inode) File {
+    pub fn new(dentry: *vfs.Dentry) File {
         return .{
-            .inode = inode,
+            .dentry = dentry,
         };
     }
 };
