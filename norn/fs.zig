@@ -345,7 +345,7 @@ fn kerneLookupParent(origin: LookupOrigin, path: []const u8) ?*vfs.Dentry {
 
 /// Print the directory tree.
 fn printDirectoryTree(root: *vfs.Dentry) Error!void {
-    var current_path = std.mem.zeroes([4096]u8);
+    var current_path = std.mem.zeroes([512]u8);
     try printDirectoryTreeSub(root, current_path[0..current_path.len]);
 }
 
