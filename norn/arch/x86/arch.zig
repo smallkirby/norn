@@ -205,6 +205,11 @@ pub const mem = struct {
         try pg.boot.reconstruct(allocator);
     }
 
+    /// Change the page attribute.
+    pub fn changeAttribute(cr3: Virt, vaddr: Virt, size: usize, attr: Attribute) Error!void {
+        return pg.changeAttribute(cr3, vaddr, size, attr);
+    }
+
     /// Convert VM flags to page attribute.
     pub fn convertVmFlagToAttribute(flags: norn.mm.VmFlags) Attribute {
         return pg.Attribute.fromVmFlags(flags);

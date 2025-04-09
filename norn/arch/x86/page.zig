@@ -151,6 +151,48 @@ pub fn createPageTables() Error!Virt {
     return @intFromPtr(new_lv4tbl);
 }
 
+/// Change the page attribute of the given virtual address.
+///
+/// The pages must be mapped as 4KiB pages.
+pub fn changeAttribute(cr3: Virt, vaddr: Virt, size: usize, attr: Attribute) Error!void {
+    if ((vaddr & page_mask_4k) != 0) return Error.InvalidAddress;
+    if ((size & page_mask_4k) != 0) return Error.InvalidAddress;
+
+    const cr3_phys = virt2phys(cr3);
+    var current = vaddr;
+    const end = vaddr + size;
+
+    while (current < end) : (current += size_4k) {
+        const lv4ent = getLv4Entry(current, cr3_phys);
+        if (!lv4ent.present) return Error.NotMapped;
+        if (lv4ent.ps) return Error.NotMapped;
+
+        const lv3ent = getLv3Entry(current, lv4ent.address());
+        if (!lv3ent.present) return Error.NotMapped;
+        if (lv3ent.ps) return Error.NotMapped;
+
+        const lv2ent = getLv2Entry(current, lv3ent.address());
+        if (!lv2ent.present) return Error.NotMapped;
+        if (lv2ent.ps) return Error.NotMapped;
+
+        const lv1ent = getLv1Entry(current, lv2ent.address());
+        if (!lv1ent.present) return Error.NotMapped;
+
+        lv1ent.rw = switch (attr) {
+            .read_write, .read_write_executable => true,
+            .read_only, .executable => false,
+        };
+        lv1ent.xd = switch (attr) {
+            .read_write, .read_only => false,
+            .read_write_executable, .executable => true,
+        };
+    }
+
+    // Flush TLBs.
+    const new_cr3 = cr3_phys | kernel_pcid;
+    am.loadCr3(new_cr3);
+}
+
 /// Map the virtual address [vaddr, vaddr + size) to the physical address [paddr, paddr + size).
 ///
 /// This function uses only 4KiB pages.
@@ -211,6 +253,11 @@ pub fn translateWalk(cr3: Virt, addr: Virt) ?Phys {
     const lv1ent = getLv1Entry(addr, lv2ent.address());
     if (!lv1ent.present) return null;
     return lv1ent.phys + (addr & page_mask_4k); // 4KiB page
+}
+
+/// Check if PCID is enabled.
+fn isPcidEnabled() bool {
+    return am.readCr4().pcide;
 }
 
 /// These functions must be used only before page tables are reconstructed.

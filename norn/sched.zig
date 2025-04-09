@@ -18,6 +18,8 @@ var runq: *ThreadList linksection(pcpu.section) = undefined;
 ///
 /// Per-CPU variable.
 var current_task: *Thread linksection(pcpu.section) = undefined;
+/// Whether the scheduler is initialized for this CPU.
+var is_initialized: bool linksection(pcpu.section) = false;
 
 /// Initialize the scheduler for this CPU.
 ///
@@ -27,6 +29,12 @@ pub fn initThisCpu() Error!void {
     const rq = try general_allocator.create(ThreadList);
     rq.* = .{};
     pcpu.thisCpuSet(&runq, rq);
+    pcpu.thisCpuSet(&is_initialized, true);
+}
+
+/// Check if the scheduler is initialized for this CPU.
+pub fn isInitialized() bool {
+    return pcpu.thisCpuGet(&is_initialized);
 }
 
 /// Switch to the initial kernel thread queued in the run queue.

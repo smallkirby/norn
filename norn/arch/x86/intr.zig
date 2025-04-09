@@ -134,6 +134,17 @@ fn unhandledHandler(context: *Context) void {
     log.err("CR3    : 0x{X:0>16}", .{cr3});
     log.err("CR4    : 0x{X:0>16}", .{cr4});
 
+    // Check if it's a kernel stack overflow.
+    if (norn.sched.isInitialized()) {
+        const current = norn.sched.getCurrentTask();
+        const kstack = current.kernel_stack;
+        const kstack_guard_start = @intFromPtr(kstack.ptr);
+        if (kstack_guard_start <= context.rsp and context.rsp < (kstack_guard_start + norn.mem.size_4kib)) {
+            log.err("", .{});
+            log.err("!!! This might be a kernel stack overflow !!!", .{});
+        }
+    }
+
     // Print the stack trace.
     log.err("", .{});
     var it = std.debug.StackIterator.init(null, context.rbp);
