@@ -17,8 +17,8 @@ pub const separator = '/';
 pub const File = struct {
     /// Offset within the file.
     pos: usize = 0,
-    /// i-node of the file.
-    inode: *vfs.Inode,
+    /// Dentry of the file.
+    dentry: *vfs.Dentry,
 
     /// Create a new file instance.
     pub fn new(inode: *vfs.Inode) File {
@@ -57,6 +57,9 @@ const FdTable = struct {
     const Self = @This();
     const FdMap = std.AutoHashMap(FileDescriptor, *File);
 
+    /// Special file descriptor for CWD.
+    const fd_cwd = -100;
+
     /// Mapping of file descriptors to file instances.
     _map: FdMap,
 
@@ -70,6 +73,16 @@ const FdTable = struct {
     /// Deinitialize and free the resources.
     pub fn deinit(self: *Self) void {
         self._map.deinit();
+    }
+
+    /// Get the i-node corresponding to the file descriptor.
+    pub fn getDentry(self: *Self, fd: FileDescriptor) ?*Dentry {
+        if (fd == fd_cwd) {
+            return sched.getCurrentTask().fs.cwd;
+        } else {
+            const result = self._map.get(fd);
+            return if (result) |r| r.dentry else null;
+        }
     }
 };
 
@@ -141,6 +154,11 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
     log.debug("=====================================", .{});
 }
 
+/// Get the dentry from the file descriptor.
+pub fn getDentryFromFd(fd: FileDescriptor) ?*vfs.Dentry {
+    return sched.getCurrentTask().fs.fdtable.getDentry(fd);
+}
+
 pub const OpenMode = enum {
     /// Open the file in read-only mode.
     read_only,
@@ -182,13 +200,13 @@ pub fn open(path: []const u8, flags: OpenFlags, mode: ?Mode) Error!*File {
 
     const file = try allocator.create(File);
     file.* = .{
-        .inode = dentry.inode,
+        .dentry = dentry,
     };
     return file;
 }
 
 pub fn read(file: *File, buf: []u8) Error!usize {
-    const bytesRead = try file.inode.read(buf, file.pos);
+    const bytesRead = try file.dentry.inode.read(buf, file.pos);
     file.pos += bytesRead;
     return bytesRead;
 }
@@ -207,7 +225,12 @@ pub fn seek(file: *File, offset: usize, whence: SeekMode) Error!usize {
 }
 
 pub fn stat(file: *File) Error!Stat {
-    return try file.inode.stat();
+    return try file.dentry.inode.stat();
+}
+
+pub fn statAt(dir: *vfs.Dentry, path: []const u8) Error!Stat {
+    const dent = lookup(.{ .dir = dir }, path) orelse return Error.NotFound;
+    return try dent.inode.stat();
 }
 
 pub fn mkdir(path: []const u8) Error!void {

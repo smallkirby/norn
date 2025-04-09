@@ -347,12 +347,20 @@ const IoctlCommand = enum(u64) {
 const fd_cwd: i32 = -100;
 
 /// Syscall handler for `newfstatat`.
-fn sysNewFstatAt(_: *Context, fd: i32, _: [*:0]const u8, _: *fs.Stat, _: u64) Error!i64 {
+fn sysNewFstatAt(_: *Context, fd: i32, pathname: [*:0]const u8, buf: *fs.Stat, _: u64) Error!i64 {
     if (fd != 0 and fd != 1 and fd != 2 and fd != fd_cwd) {
         norn.unimplemented("sysNewFstatAt(): fd other than 1 or 2.");
     }
 
-    norn.unimplemented("sysNewFstatAt()");
+    if (fs.getDentryFromFd(fd)) |dent| {
+        const stat = fs.statAt(
+            dent,
+            util.sentineledToSlice(pathname),
+        ) catch return Error.Noent;
+        buf.* = stat;
+    } else return Error.Noent;
+
+    return 0;
 }
 
 /// Syscall handler for `ioctl`.
@@ -434,6 +442,7 @@ const norn = @import("norn");
 const arch = norn.arch;
 const errno = norn.errno;
 const fs = norn.fs;
+const sched = norn.sched;
 const util = norn.util;
 
 const VmArea = norn.mm.VmArea;
