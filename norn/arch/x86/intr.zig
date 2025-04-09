@@ -47,8 +47,9 @@ pub fn init() void {
         setGate(i, gate);
     }
 
-    // Set IST for #DF.
+    // Set IST for #DF and #PF.
     idt[@intFromEnum(Exception.double_fault)].ist = df_ist_index;
+    idt[@intFromEnum(Exception.page_fault)].ist = df_ist_index;
 
     // Load TSS.
     tss.ist1 = @intFromPtr(&ists[df_ist_index - 1]) + @sizeOf(Ist) - 0x10;
