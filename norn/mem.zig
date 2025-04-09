@@ -88,9 +88,25 @@ pub const page_mask_1gib: u64 = size_1gib - 1;
 pub const direct_map_base = 0xFFFF_8880_0000_0000;
 /// Size in bytes of the direct mapping region.
 pub const direct_map_size = 512 * gib;
+/// Base virtual address of vmemory area.
+/// Incontiguous physical pages are mapped to this region.
+pub const vmem_base = 0xFFFF_9000_0000_0000;
+/// Size in bytes of the vmemory area.
+pub const vmem_size = 512 * gib;
 /// The base virtual address of the kernel.
 /// The virtual address starting from the address is directly mapped to the physical address at 0x0.
 pub const kernel_base = 0xFFFF_FFFF_8000_0000;
+
+comptime {
+    norn.comptimeAssert(
+        direct_map_base + direct_map_size <= vmem_base,
+        "Invalid memory layout",
+    );
+    norn.comptimeAssert(
+        vmem_base + vmem_size <= kernel_base,
+        "Invalid memory layout",
+    );
+}
 
 // =============================================================
 // Variables
@@ -100,6 +116,8 @@ pub const kernel_base = 0xFFFF_FFFF_8000_0000;
 pub const general_allocator = bin_allocator_instance.getAllocator();
 /// General page allocator that can be used to allocate physically contiguous pages.
 pub const page_allocator = buddy_allocator_instance.getAllocator();
+/// Incontiguous virtual memory allocator.
+pub var vm_allocator = VmAllocator.new();
 
 /// One and only instance of the bootstrap allocator.
 var bootstrap_allocator_instance = BootstrapAllocator.new();
@@ -164,12 +182,21 @@ pub fn reconstructMapping() !void {
 pub fn virt2phys(addr: anytype) Phys {
     const value = switch (@typeInfo(@TypeOf(addr))) {
         .int, .comptime_int => @as(u64, addr),
-        .pointer => @as(u64, @intFromPtr(addr)),
+        .pointer => |p| switch (p.size) {
+            .one, .many => @as(u64, @intFromPtr(addr)),
+            .slice => @as(u64, @intFromPtr(addr.ptr)),
+            else => @panic("virt2phys: invalid type"),
+        },
         else => @compileError("virt2phys: invalid type"),
     };
     return if (value < kernel_base) b: {
         // Direct mapping region.
+        @branchHint(.likely);
         break :b value - direct_map_base;
+    } else if (vmem_base <= value and value < vmem_base + vmem_size) b: {
+        // Vmemory region.
+        @branchHint(.unlikely);
+        break :b value - vmem_base;
     } else b: {
         // Kernel image mapping region.
         break :b value - kernel_base;
@@ -207,3 +234,4 @@ const arch = norn.arch;
 const BootstrapAllocator = @import("mem/BootstrapAllocator.zig");
 const BuddyAllocator = @import("mem/BuddyAllocator.zig");
 const BinAllocator = @import("mem/BinAllocator.zig");
+const VmAllocator = @import("mem/VmAllocator.zig");

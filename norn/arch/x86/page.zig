@@ -269,6 +269,23 @@ pub const boot = struct {
             }
         }
 
+        // Create level-3 page tables for vmemory regions,
+        // so that all threads share the same page tables.
+        const vmem_start_ix = (mem.vmem_base >> lv4_shift) & index_mask;
+        const vmem_end_ix = ((mem.vmem_base + mem.vmem_size) >> lv4_shift) & index_mask;
+        for (vmem_start_ix..vmem_end_ix) |lv4idx| {
+            const lv3tbl: [*]Lv3Entry = @ptrCast(try boot.allocatePage(allocator));
+            @memset(lv3tbl[0..num_table_entries], std.mem.zeroes(Lv3Entry));
+
+            lv4tbl[lv4idx] = Lv4Entry{
+                .present = true,
+                .rw = true,
+                .us = false,
+                .ps = false,
+                .phys = @truncate(@intFromPtr(lv3tbl) >> page_shift_4k),
+            };
+        }
+
         var cr3 = @intFromPtr(lv4tbl) & ~@as(u64, 0xFFF);
 
         // Enable PCID.

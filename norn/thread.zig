@@ -49,15 +49,6 @@ pub const CpuTime = struct {
     }
 };
 
-/// Default stack size of a kernel thread.
-pub const kernel_stack_size: usize = 2 * mem.size_4kib;
-/// Default number of pages for kernel stack.
-const kernel_stack_pgnum: usize = @divFloor(kernel_stack_size - 1, mem.size_4kib) + 1;
-
-comptime {
-    norn.comptimeAssert(kernel_stack_pgnum == 2, "kernel_stack_pgnum must be 2");
-}
-
 /// Next thread ID.
 var tid_next: Tid = 0;
 /// Spin lock for thread module.

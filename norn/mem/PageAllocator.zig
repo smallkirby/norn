@@ -35,6 +35,16 @@ pub fn freePagesRaw(self: Self, addr: norn.mem.Virt, num_pages: usize) Error!voi
     return self.vtable.freePagesRaw(self.ptr, addr, num_pages);
 }
 
+/// Get the page frame number of the physical pages of the given virtual address.
+pub fn getPfn(_: Self, addr: []const u8) u64 {
+    const phys = mem.virt2phys(addr);
+    return phys >> mem.page_shift;
+}
+
+// =============================================================
+// Imports
+// =============================================================
+
 const std = @import("std");
 const meta = std.meta;
 
