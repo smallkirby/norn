@@ -94,6 +94,7 @@ pub const MemoryMap = struct {
         // Allocate physical pages.
         const num_pages = (vaddr_end - vaddr_aligned) / mem.size_4kib;
         const page = try page_allocator.allocPages(num_pages, .normal);
+        @memset(page, 0);
         const page_phys = mem.virt2phys(page.ptr);
 
         // Map the pages.
