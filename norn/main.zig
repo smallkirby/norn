@@ -136,7 +136,7 @@ var initramfs: surtr.InitramfsInfo = undefined;
 /// Initial kernel thread with PID 0.
 ///
 /// This is a wrapper function that allows the implementation to return an error.
-fn nornThread() noreturn {
+fn nornThread() callconv(.c) noreturn {
     nornThreadImpl() catch |err| {
         log.err("Norn thread aborted with error: {}", .{err});
         @panic("Exiting...");

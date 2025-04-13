@@ -12,7 +12,7 @@ pub const Error =
 /// Type of thread ID.
 pub const Tid = usize;
 /// Entry point of kernel thread.
-pub const KernelThreadEntry = *const fn () noreturn;
+pub const KernelThreadEntry = *const fn () callconv(.c) noreturn;
 
 /// Type representing a linked list of threads.
 pub const ThreadList = InlineDoublyLinkedList(Thread, "list_head");

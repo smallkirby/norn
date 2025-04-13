@@ -25,7 +25,7 @@ fn writeNoLock(self: *Self, c: u8) void {
 }
 
 /// Write a string to the serial console.
-pub fn writeString(self: *Self, s: []const u8) void {
+pub noinline fn writeString(self: *Self, s: []const u8) void {
     const ie = self.lock.lockDisableIrq();
     defer self.lock.unlockRestoreIrq(ie);
 
