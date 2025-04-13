@@ -70,18 +70,18 @@ pub fn initThisCpu(cpu: usize) void {
 
 /// Get the address of per-CPU data relative to the per-CPU address space for the current CPU.
 /// TODO disable preemption
-pub inline fn thisCpuVar(comptime pointer: anytype) *allowzero addrspace(percpu_addrspace) @typeInfo(@TypeOf(pointer)).pointer.child {
+pub inline fn ptr(comptime pointer: anytype) *allowzero addrspace(percpu_addrspace) @typeInfo(@TypeOf(pointer)).pointer.child {
     return @addrSpaceCast(@ptrCast(pointer));
 }
 
 /// Get the value of the per-CPU variable.
-pub inline fn thisCpuGet(comptime pointer: anytype) @typeInfo(@TypeOf(pointer)).pointer.child {
-    return thisCpuVar(pointer).*;
+pub inline fn get(comptime pointer: anytype) @typeInfo(@TypeOf(pointer)).pointer.child {
+    return ptr(pointer).*;
 }
 
 /// Set the given value to the per-CPU variable.
-pub inline fn thisCpuSet(comptime pointer: anytype, value: @typeInfo(@TypeOf(pointer)).pointer.child) void {
-    thisCpuVar(pointer).* = value;
+pub inline fn set(comptime pointer: anytype, value: @typeInfo(@TypeOf(pointer)).pointer.child) void {
+    ptr(pointer).* = value;
 }
 
 /// Get the virtual address of per-CPU data area for the given CPU.
@@ -107,15 +107,15 @@ pub const mock_for_testing = struct {
 
     pub fn initThisCpu(_: usize) void {}
 
-    pub fn thisCpuVar(comptime pointer: anytype) *@typeInfo(@TypeOf(pointer)).pointer.child {
+    pub fn ptr(comptime pointer: anytype) *@typeInfo(@TypeOf(pointer)).pointer.child {
         return pointer;
     }
 
-    pub fn thisCpuGet(comptime pointer: anytype) @typeInfo(@TypeOf(pointer)).pointer.child {
+    pub fn get(comptime pointer: anytype) @typeInfo(@TypeOf(pointer)).pointer.child {
         return pointer.*;
     }
 
-    pub fn thisCpuSet(comptime pointer: anytype, value: @typeInfo(@TypeOf(pointer)).pointer.child) void {
+    pub fn set(comptime pointer: anytype, value: @typeInfo(@TypeOf(pointer)).pointer.child) void {
         pointer.* = value;
     }
 };

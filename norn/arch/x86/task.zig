@@ -174,7 +174,7 @@ export fn switchToInternal(_: *Thread, next: *Thread) callconv(.c) void {
     // Restore TSS.RSP0.
     const rsp0 = @intFromPtr(next.kernel_stack_ptr);
     x64ctx(next).tss.rsp0 = rsp0;
-    pcpu.thisCpuVar(&current_tss).rsp0 = rsp0;
+    pcpu.ptr(&current_tss).rsp0 = rsp0;
 
     // Switch CR3.
     norn.arch.mem.setPagetable(next.mm.pgtbl);

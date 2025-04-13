@@ -28,13 +28,13 @@ pub fn initThisCpu() Error!void {
     // Initialize the run queue
     const rq = try general_allocator.create(ThreadList);
     rq.* = .{};
-    pcpu.thisCpuSet(&runq, rq);
-    pcpu.thisCpuSet(&is_initialized, true);
+    pcpu.set(&runq, rq);
+    pcpu.set(&is_initialized, true);
 }
 
 /// Check if the scheduler is initialized for this CPU.
 pub fn isInitialized() bool {
-    return pcpu.thisCpuGet(&is_initialized);
+    return pcpu.get(&is_initialized);
 }
 
 /// Switch to the initial kernel thread queued in the run queue.
@@ -45,7 +45,7 @@ pub fn runInitialKernelThread() noreturn {
     norn.rtt.expectEqual(1, getRunQueue().len);
 
     const init = getRunQueue().pop() orelse unreachable;
-    pcpu.thisCpuSet(&current_task, init);
+    pcpu.set(&current_task, init);
 
     norn.arch.task.initialSwitchTo(init);
 }
@@ -83,7 +83,7 @@ pub fn schedule() void {
             // TODO: Destroy the task.
         },
     }
-    pcpu.thisCpuSet(&current_task, next);
+    pcpu.set(&current_task, next);
 
     // Update the CPU time.
     // TODO: properly record user/kernel -CPU time.
@@ -97,12 +97,12 @@ pub fn schedule() void {
 
 /// Get the pointer to the current task running on this CPU.
 pub inline fn getCurrentTask() *Thread {
-    return pcpu.thisCpuGet(&current_task);
+    return pcpu.get(&current_task);
 }
 
 /// Get the pointer to the run queue of this CPU.
 inline fn getRunQueue() *ThreadList {
-    return pcpu.thisCpuGet(&runq);
+    return pcpu.get(&runq);
 }
 
 /// Append a new task to the tail of the run queue.
