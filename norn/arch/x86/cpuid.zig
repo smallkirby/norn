@@ -60,7 +60,7 @@ fn cpuid(leaf: u32, subleaf: u32) CpuidRegisters {
           [edx] "=r" (edx),
         : [leaf] "r" (leaf),
           [subleaf] "r" (subleaf),
-        : "rax", "rbx", "rcx", "rdx"
+        : "eax", "ebx", "ecx", "edx"
     );
 
     return .{

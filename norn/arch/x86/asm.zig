@@ -1,32 +1,35 @@
 pub inline fn cli() void {
-    asm volatile ("cli");
+    asm volatile ("cli" ::: "cc");
 }
 
 pub inline fn hlt() void {
     asm volatile ("hlt");
 }
 
-pub inline fn inb(port: u16) u8 {
+pub fn inb(port: u16) u8 {
     return asm volatile (
         \\inb %[port], %[ret]
         : [ret] "={al}" (-> u8),
         : [port] "{dx}" (port),
+        : "memory"
     );
 }
 
-pub inline fn inw(port: u16) u16 {
+pub fn inw(port: u16) u16 {
     return asm volatile (
         \\inw %[port], %[ret]
         : [ret] "={ax}" (-> u16),
         : [port] "{dx}" (port),
+        : "memory"
     );
 }
 
-pub inline fn inl(port: u16) u32 {
+pub fn inl(port: u16) u32 {
     return asm volatile (
         \\inl %[port], %[ret]
         : [ret] "={eax}" (-> u32),
         : [port] "{dx}" (port),
+        : "memory"
     );
 }
 
@@ -62,30 +65,33 @@ pub inline fn loadCr4(cr4: anytype) void {
     );
 }
 
-pub inline fn outb(value: u8, port: u16) void {
+pub fn outb(value: u8, port: u16) void {
     asm volatile (
         \\outb %[value], %[port]
         :
         : [value] "{al}" (value),
           [port] "{dx}" (port),
+        : "memory"
     );
 }
 
-pub inline fn outw(value: u16, port: u16) void {
+pub fn outw(value: u16, port: u16) void {
     asm volatile (
         \\outw %[value], %[port]
         :
         : [value] "{ax}" (value),
           [port] "{dx}" (port),
+        : "memory"
     );
 }
 
-pub inline fn outl(value: u32, port: u16) void {
+pub fn outl(value: u32, port: u16) void {
     asm volatile (
         \\outl %[value], %[port]
         :
         : [value] "{eax}" (value),
           [port] "{dx}" (port),
+        : "memory"
     );
 }
 
@@ -123,11 +129,13 @@ pub inline fn readCr4() regs.Cr4 {
     return @bitCast(cr4);
 }
 
-pub inline fn readRflags() regs.Rflags {
+pub export fn readRflags() regs.Rflags {
     return @bitCast(asm volatile (
         \\pushfq
         \\pop %[rflags]
         : [rflags] "=r" (-> u64),
+        :
+        : "memory", "cc", "rflags"
     ));
 }
 
@@ -144,7 +152,7 @@ pub fn rdmsr(T: type, comptime msr: Msr) T {
         : [eax] "={eax}" (eax),
           [edx] "={edx}" (edx),
         : [msr] "{ecx}" (@intFromEnum(msr)),
-        : "eax", "edx", "ecx"
+        : "memory"
     );
 
     const value = bits.concat(u64, edx, eax);
@@ -162,14 +170,12 @@ pub fn rdtsc() u64 {
         \\rdtsc
         : [eax] "={eax}" (eax),
           [edx] "={edx}" (edx),
-        :
-        : "eax", "edx"
     );
     return bits.concat(u64, edx, eax);
 }
 
 pub inline fn sti() void {
-    asm volatile ("sti");
+    asm volatile ("sti" ::: "cc");
 }
 
 pub fn writeCr3(cr3: u64) void {
@@ -202,7 +208,7 @@ pub fn wrmsr(comptime msr: Msr, value: anytype) void {
         : [msr] "{ecx}" (comptime @intFromEnum(msr)),
           [eax] "{eax}" (eax),
           [edx] "{edx}" (edx),
-        : "eax", "edx", "ecx"
+        : "memory"
     );
 }
 
