@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        BUILD_TYPE: [ReleaseFast, Debug]
+        BUILD_TYPE: [Debug, ReleaseSafe, ReleaseFast]
 
     steps:
       - uses: actions/checkout@v3
