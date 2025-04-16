@@ -1,4 +1,4 @@
-name: Runtime Tests (no kvm)
+name: Runtime Tests (no kvm / test init)
 
 on:
   push:
@@ -10,7 +10,6 @@ on:
 
 env:
   ZIG_VERSION: 0.14.0
-  LLVM_VERSION: 19
 
 jobs:
   runtime_test:
@@ -25,8 +24,6 @@ jobs:
 
       - name: Install dependency
         run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository 'deb http://apt.llvm.org/noble/ llvm-toolchain-noble-${{env.LLVM_VERSION}} main'
           sudo apt update
           sudo apt install -y \
             git sudo binutils curl wget tar xz-utils qemu-system-x86 qemu-utils ovmf
@@ -37,10 +34,11 @@ jobs:
           tar -xf zig.tar.xz
           echo "$(pwd)/zig-linux-x86_64-${{env.ZIG_VERSION}}" >> $GITHUB_PATH
 
-      - name: Runtime Tests
+      - name: Runtime Tests (test init)
         run: |
           zig build install \
             -Dlog_level=debug \
             -Doptimize=${{ matrix.BUILD_TYPE }} \
-            -Druntime_test=true
-          bash ./runtime_test.bash
+            -Druntime_test=true \
+            -Dinit_binary=/sbin/init
+          bash ./runtime_test.bash /sbin/init

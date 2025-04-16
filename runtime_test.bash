@@ -9,11 +9,44 @@ CPU_FEATURES=fsgsbase
 TIMEOUT=60
 TMPFILE=$(mktemp)
 
-SUCCESS_HEYSTACKS=(
+# Success indicator for the default init binary.
+DEFAULT_INIT_HEYSTACK=(
   "Unhandled syscall (nr=511)"
   "[1]=0000000000000000 [2]=0000000000000001 [3]=0000000000000002"
   "[4]=0000000000000003"
 )
+# Success indicator for "/bin/busybox ls -la".
+BUSYBOX_LS_HEYSTACK=(
+  "?rwxrwxrwx    1 0        0                0 Jan  1 00:00 ."
+  "[DEBUG] syscall | exit_group(): status=0"
+  "UNIMPLEMENTED: sysExitGroup()"
+)
+
+# Check the num of arguments
+if [ $# -gt 2 ]; then
+  echo "Usage: $0 <init binary name>"
+  exit 1
+fi
+if [ $# -eq 1 ]; then
+  INIT_BINARY=$1
+else
+  INIT_BINARY="/sbin/init"
+fi
+echo "[+] Using init binary: $INIT_BINARY"
+
+# Check if the init binary is available.
+case $INIT_BINARY in
+  "/sbin/init")
+    SUCCESS_HEYSTACKS=("${DEFAULT_INIT_HEYSTACK[@]}")
+    ;;
+  "/bin/busybox")
+    SUCCESS_HEYSTACKS=("${BUSYBOX_LS_HEYSTACK[@]}")
+    ;;
+  *)
+    echo "[ERROR] Unknown init binary: $INIT_BINARY"
+    exit 1
+    ;;
+esac
 
 function check_success()
 {
@@ -21,7 +54,7 @@ function check_success()
 
   for needle in "${SUCCESS_HEYSTACKS[@]}"; do
     if ! grep -qF "$needle" "$TMPFILE"; then
-      echo "[-] Missing: $needle"
+      echo "[ERROR] Missing: $needle"
       ret=1
     fi
   done
@@ -70,7 +103,7 @@ echo "[+] QEMU exited with code 0."
 
 echo "[+] Checking output..."
 if ! check_success; then
-  echo "[-] Output does not contain expected strings."
+  echo "[ERROR] Output does not contain expected strings."
   cleanup
   exit 1
 fi
