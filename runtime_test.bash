@@ -19,7 +19,6 @@ DEFAULT_INIT_HEYSTACK=(
 BUSYBOX_LS_HEYSTACK=(
   "?rwxrwxrwx    1 0        0                0 Jan  1 00:00 ."
   "[DEBUG] syscall | exit_group(): status=0"
-  "UNIMPLEMENTED: sysExitGroup()"
 )
 
 # Check the num of arguments
