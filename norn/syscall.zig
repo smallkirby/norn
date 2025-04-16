@@ -14,6 +14,8 @@ pub const Syscall = enum(u64) {
     read = 0,
     /// Write to a file descriptor.
     write = 1,
+    /// Get file status.
+    fstat = 5,
     /// Set protection on a region of memory.
     mprotect = 10,
     /// Change data segment size.
@@ -28,12 +30,16 @@ pub const Syscall = enum(u64) {
     getuid = 102,
     /// Set user identity.
     setuid = 105,
+    /// Get time in seconds.
+    time = 201,
     /// Set pointer to thread ID.
     set_tid_address = 218,
     /// Retrieve the time of of the specified clock.
     clock_gettime = 222,
     /// Exit all threads in a process.
     exit_group = 231,
+    /// Open and possibly create a file.
+    open_at = 257,
     /// Get file status.
     newfstatat = 262,
     /// Read value of a symbolic link.
@@ -81,15 +87,18 @@ pub const Syscall = enum(u64) {
             table[@intFromEnum(e)] = switch (e) {
                 .read => sys(sysRead),
                 .write => sys(sysWrite),
+                .fstat => sys(ignoredSyscallHandler),
                 .mprotect => sys(sysMemoryProtect),
                 .brk => sys(norn.mm.sysBrk),
                 .ioctl => sys(sysIoctl),
                 .writev => sys(sysWriteVec),
                 .arch_prctl => sys(norn.prctl.sysArchPrctl),
                 .getuid => sys(sysGetUid),
+                .time => sys(ignoredSyscallHandler),
                 .set_tid_address => sys(ignoredSyscallHandler),
                 .set_robust_list => sys(ignoredSyscallHandler),
                 .exit_group => sys(sysExitGroup),
+                .open_at => sys(ignoredSyscallHandler),
                 .newfstatat => sys(sysNewFstatAt),
                 .dlog => sys(sysDebugLog),
                 .readlinkat => sys(ignoredSyscallHandler),
