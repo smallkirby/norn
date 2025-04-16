@@ -419,6 +419,10 @@ fn sysMemoryProtect(_: *Context, addr: u64, len: u64, prot: u64) Error!i64 {
 /// TODO: implement
 fn sysExitGroup(_: *Context, status: i32) Error!i64 {
     log.debug("exit_group(): status={d}", .{status});
+
+    if (norn.is_runtime_test) {
+        norn.terminateQemu(0);
+    }
     norn.unimplemented("sysExitGroup()");
 }
 
