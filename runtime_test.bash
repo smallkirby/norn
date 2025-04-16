@@ -95,7 +95,7 @@ if [ $ret -eq 124 ]; then
   exit 1
 fi
 if [ $((ret >> 1 << 1)) -ne 0 ]; then
-  echo "[-] QEMU exited with error code $((ret >> 1))."
+  echo "[ERROR] QEMU exited with error code $((ret >> 1))."
   cleanup
   exit 1
 fi
