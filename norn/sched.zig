@@ -113,7 +113,7 @@ pub inline fn enqueueTask(task: *Thread) void {
 
 /// Create an initial task (PID 1) and set the current task to it.
 pub fn setupInitialTask() Error!void {
-    const init_task = try thread.createInitialThread("/sbin/init");
+    const init_task = try thread.createInitialThread(options.init_binary);
     enqueueTask(init_task);
 }
 
@@ -149,6 +149,7 @@ pub fn debugPrintRunQueue(logger: anytype) void {
 
 const std = @import("std");
 const log = std.log.scoped(.sched);
+const options = @import("option");
 
 const norn = @import("norn.zig");
 const arch = norn.arch;

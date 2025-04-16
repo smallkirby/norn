@@ -66,6 +66,12 @@ pub fn build(b: *std.Build) !void {
         "Specify if the build is for the runtime testing.",
     ) orelse false;
 
+    const init_binary = b.option(
+        []const u8,
+        "init_binary",
+        "ELF file to execute as init process.",
+    ) orelse "/sbin/init";
+
     const wait_qemu = b.option(
         bool,
         "wait_qemu",
@@ -95,6 +101,7 @@ pub fn build(b: *std.Build) !void {
     const options = b.addOptions();
     options.addOption(std.log.Level, "log_level", log_level);
     options.addOption(bool, "is_runtime_test", is_runtime_test);
+    options.addOption([]const u8, "init_binary", init_binary);
     options.addOption([]const u8, "sha", try getGitSha(b));
     options.addOption([]const u8, "version", norn_version);
     options.addOption(bool, "debug_syscall", debug_syscall);
