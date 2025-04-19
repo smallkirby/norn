@@ -2,232 +2,243 @@ pub const Error = errno.Error;
 
 /// List of system calls.
 ///
-/// Syscalls less than `norn_syscall_start` comply with x86-64 Linux kernel.
-/// Syscalls greater than or equal to `norn_syscall_start` are specific to Norn.
-pub const Syscall = enum(u64) {
-    /// Read from a file descriptor.
-    read = 0,
-    /// Write to a file descriptor.
-    write = 1,
-    /// Get file status.
-    fstat = 5,
-    /// Set protection on a region of memory.
-    mprotect = 10,
-    /// Change data segment size.
-    brk = 12,
-    /// Control device.
-    ioctl = 16,
-    /// Write data into multiple buffers.
-    writev = 20,
-    /// Not supported.
-    arch_prctl = 158,
-    /// Get user identity.
-    getuid = 102,
-    /// Set user identity.
-    setuid = 105,
-    /// Get time in seconds.
-    time = 201,
-    /// Set pointer to thread ID.
-    set_tid_address = 218,
-    /// Retrieve the time of of the specified clock.
-    clock_gettime = 222,
-    /// Exit all threads in a process.
-    exit_group = 231,
-    /// Open and possibly create a file.
-    open_at = 257,
-    /// Get file status.
-    newfstatat = 262,
-    /// Read value of a symbolic link.
-    readlinkat = 267,
-    /// Get or set list of robust futexes.
-    set_robust_list = 273,
-    /// Get and set resource limits.
-    prlimit = 302,
-    /// Obtain a series of random bytes.
-    getrandom = 318,
-    /// Restartable sequences.
-    rseq = 334,
+/// NOTE that the entries are used only at compile time
+/// to defined a system call enum type
+/// and to construct a syscall table that are referenced to invoke a syscall handler.
+const sys_entries = [_]SysEntry{
+    // =============================================================
+    // POSIX syscalls.
+    // =============================================================
+    // Read from a file descriptor.
+    .new("read", 0, .normal(sysRead)),
+    // Write to a file descriptor.
+    .new("write", 1, .normal(sysWrite)),
+    // Get file status.
+    .new("fstat", 5, .debug(ignoredSyscallHandler)),
+    // Set protection on a region of memory.
+    .new("mprotect", 10, .normal(sysMemoryProtect)),
+    // Change data segment size.
+    .new("brk", 12, .normal(norn.mm.sysBrk)),
+    // Control device.
+    .new("ioctl", 16, .normal(sysIoctl)),
+    // Write data into multiple buffers.
+    .new("writev", 20, .normal(sysWriteVec)),
+    // Get user identity.
+    .new("arch_prctl", 158, .normal(norn.prctl.sysArchPrctl)),
+    // Get user identity.
+    .new("getuid", 102, .normal(sysGetUid)),
+    // Set user identity.
+    .new("setuid", 105, .debug(ignoredSyscallHandler)),
+    // Get time in seconds.
+    .new("time", 201, .debug(ignoredSyscallHandler)),
+    // Set pointer to thread ID.
+    .new("set_tid_address", 218, .debug(ignoredSyscallHandler)),
+    // Retrieve the time of of the specified clock.
+    .new("clock_gettime", 222, .debug(ignoredSyscallHandler)),
+    // Exit all threads in a process.
+    .new("exit_group", 231, .normal(sysExitGroup)),
+    // Open and possibly create a file.
+    .new("open_at", 257, .debug(ignoredSyscallHandler)),
+    // Get file status.
+    .new("newfstatat", 262, .normal(sysNewFstatAt)),
+    // Read value of a symbolic link.
+    .new("readlinkat", 267, .debug(ignoredSyscallHandler)),
+    // Get or set list of robust futexes.
+    .new("set_robust_list", 273, .debug(ignoredSyscallHandler)),
+    // Get and set resource limits.
+    .new("prlimit", 302, .debug(ignoredSyscallHandler)),
+    // Obtain a series of random bytes.
+    .new("getrandom", 318, .normal(sysGetRandom)),
+    // Restartable sequences.
+    .new("rseq", 334, .debug(ignoredSyscallHandler)),
 
-    /// Output to debug log.
-    dlog = norn_syscall_start,
+    // =============================================================
+    // Norn-specific syscalls
+    // =============================================================
+    // Output to debug log.
+    .new("dlog", 500, .normal(sysDebugLog)),
+};
 
-    _,
+/// Number of system calls.
+const num_syscall = 512;
+/// Number of system calls.
+const norn_syscall_start = 500;
+/// Maximum syscall number.
+const max_syscall = num_syscall - 1;
 
-    // Check if the syscall number is valid.
-    comptime {
-        for (std.enums.values(Syscall)) |e| {
-            if (@intFromEnum(e) >= num_syscall) {
-                @compileError(std.fmt.comptimePrint("Invalid syscall number: {d}", .{@intFromEnum(e)}));
-            }
-        }
-    }
+/// System call descriptor.
+const SysEntry = struct {
+    /// Syscall name.
+    name: [:0]const u8,
+    /// System call number.
+    nr: u64,
+    /// System call handler.
+    handler: SyscallHandler,
 
-    /// Number of system calls.
-    const num_syscall = 512;
-    /// Number of system calls.
-    const norn_syscall_start = 500;
-    /// Maximum syscall number.
-    const max_syscall = num_syscall - 1;
-
-    /// System call table.
-    const syscall_table: [num_syscall]SyscallHandler = blk: {
-        var table: [num_syscall]SyscallHandler = undefined;
-
-        const sysIgnoredSyscallHandler = SyscallHandler.createDebug(ignoredSyscallHandler);
-        const sysUnhandledSyscallHandler = SyscallHandler.createDebug(unhandledSyscallHandler);
-        for (0..num_syscall) |i| {
-            table[i] = sysUnhandledSyscallHandler;
-        }
-
-        for (std.enums.values(Syscall)) |e| {
-            table[@intFromEnum(e)] = switch (e) {
-                .read => sys(sysRead),
-                .write => sys(sysWrite),
-                .fstat => sysIgnoredSyscallHandler,
-                .mprotect => sys(sysMemoryProtect),
-                .brk => sys(norn.mm.sysBrk),
-                .ioctl => sys(sysIoctl),
-                .writev => sys(sysWriteVec),
-                .arch_prctl => sys(norn.prctl.sysArchPrctl),
-                .getuid => sys(sysGetUid),
-                .time => sysIgnoredSyscallHandler,
-                .set_tid_address => sysIgnoredSyscallHandler,
-                .set_robust_list => sysIgnoredSyscallHandler,
-                .exit_group => sys(sysExitGroup),
-                .open_at => sysIgnoredSyscallHandler,
-                .newfstatat => sys(sysNewFstatAt),
-                .dlog => sys(sysDebugLog),
-                .readlinkat => sysIgnoredSyscallHandler,
-                .prlimit => sysIgnoredSyscallHandler,
-                .rseq => sysIgnoredSyscallHandler,
-                .getrandom => sys(sysGetRandom),
-                else => sysUnhandledSyscallHandler,
-            };
-        }
-
-        break :blk table;
-    };
-
-    /// Invoke a corresponding system call handler.
-    pub fn invoke(
-        self: Syscall,
-        ctx: *Context,
-        arg1: u64,
-        arg2: u64,
-        arg3: u64,
-        arg4: u64,
-        arg5: u64,
-        arg6: u64,
-    ) Error!i64 {
-        if (@intFromEnum(self) >= num_syscall) {
-            return Error.Inval;
-        }
-        return switch (syscall_table[@intFromEnum(self)]) {
-            .normal => |f| f(arg1, arg2, arg3, arg4, arg5, arg6),
-            .debug => |f| f(ctx, arg1, arg2, arg3, arg4, arg5, arg6),
+    fn new(comptime name: [:0]const u8, comptime nr: u64, comptime handler: SyscallHandler) SysEntry {
+        return SysEntry{
+            .name = name,
+            .nr = nr,
+            .handler = handler,
         };
-    }
-
-    /// Create a system call enum from a syscall number.
-    pub inline fn from(nr: u64) Syscall {
-        return @enumFromInt(nr);
     }
 };
 
-/// System call handler function signature.
-const Handler = *const fn (u64, u64, u64, u64, u64, u64) Error!i64;
-/// Debug-purpose system call handler function signature.
-const DebugHandler = *const fn (*const Context, u64, u64, u64, u64, u64, u64) Error!i64;
+/// Table of system calls.
+///
+/// This table is references at runtime to invoke a system call handler.
+/// The key value corresponds to a syscall number.
+const syscall_table: [num_syscall]SyscallHandler = blk: {
+    var table: [num_syscall]SyscallHandler = undefined;
+
+    // Init all handlers as unhandled.
+    const sysUnhandledSyscallHandler = SyscallHandler.debug(unhandledSyscallHandler);
+    for (0..num_syscall) |i| {
+        table[i] = sysUnhandledSyscallHandler;
+    }
+
+    // Iterate over syscall enum and assign a corresponding handler.
+    for (std.enums.values(Syscall)) |s| {
+        const nr = @intFromEnum(s);
+        table[nr] = for (sys_entries) |entry| {
+            if (entry.nr == nr) break entry.handler;
+        } else @compileError(std.fmt.comptimePrint("Syscall {s} not found", .{@typeName(s)}));
+    }
+
+    break :blk table;
+};
+
+/// System call enum.
+///
+/// This enum is constructed at compile time referring to the syscall entries.
+const Syscall = blk: {
+    var fields: [sys_entries.len]std.builtin.Type.EnumField = undefined;
+    for (sys_entries, 0..) |entry, i| {
+        fields[i] = .{ .name = entry.name, .value = entry.nr };
+    }
+    break :blk @Type(.{
+        .@"enum" = .{
+            .tag_type = u64,
+            .fields = &fields,
+            .decls = &.{},
+            .is_exhaustive = false,
+        },
+    });
+};
+
+/// Call a system call handler corresponding to the given syscall number.
+pub fn invoke(self: Syscall, ctx: *const Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, arg6: u64) Error!i64 {
+    if (@intFromEnum(self) >= num_syscall) {
+        return Error.Inval;
+    }
+    return switch (syscall_table[@intFromEnum(self)]) {
+        ._normal => |f| f(arg1, arg2, arg3, arg4, arg5, arg6),
+        ._debug => |f| f(ctx, arg1, arg2, arg3, arg4, arg5, arg6),
+    };
+}
+
+/// Get a syscall enum from the given nr.
+pub fn from(nr: u64) Syscall {
+    return @enumFromInt(nr);
+}
 
 /// System call handler union.
 const SyscallHandler = union(HandlerKind) {
     /// Normal system call handler.
-    normal: Handler,
+    _normal: NormalHandler,
     /// Debug-purpose system call handler that can take a CPU context.
-    debug: DebugHandler,
+    _debug: DebugHandler,
 
+    /// Type of syscall handler.
     const HandlerKind = enum {
-        normal,
-        debug,
+        _normal,
+        _debug,
     };
 
-    inline fn createNormal(comptime handler: Handler) SyscallHandler {
-        return SyscallHandler{ .normal = handler };
+    /// System call handler function signature.
+    const NormalHandler = *const fn (u64, u64, u64, u64, u64, u64) Error!i64;
+    /// Debug-purpose system call handler function signature.
+    const DebugHandler = *const fn (*const Context, u64, u64, u64, u64, u64, u64) Error!i64;
+
+    /// Create a syscall handler.
+    fn normal(comptime handler: anytype) SyscallHandler {
+        return SyscallHandler{ ._normal = sys(handler) };
     }
 
-    inline fn createDebug(comptime handler: DebugHandler) SyscallHandler {
-        return SyscallHandler{ .debug = handler };
+    /// Create a debug-purpose syscall handler.
+    fn debug(comptime handler: DebugHandler) SyscallHandler {
+        return SyscallHandler{ ._debug = handler };
+    }
+
+    /// Generate a wrapper function for the syscall handler.
+    ///
+    /// This function converts an syscall handler function to have the fixed signature `NormalHandler`.
+    fn sys(comptime handler: anytype) NormalHandler {
+        const func = @typeInfo(@TypeOf(handler)).@"fn";
+
+        const S = struct {
+            inline fn ArgType(comptime i: usize) type {
+                return func.params[i].type orelse @compileError("sys(): Invalid parameter type");
+            }
+
+            fn f0(_: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+                return handler();
+            }
+            fn f1(arg1: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+                return handler(convert(ArgType(0), arg1));
+            }
+            fn f2(arg1: u64, arg2: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+                return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2));
+            }
+            fn f3(arg1: u64, arg2: u64, arg3: u64, _: u64, _: u64, _: u64) Error!i64 {
+                return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3));
+            }
+            fn f4(arg1: u64, arg2: u64, arg3: u64, arg4: u64, _: u64, _: u64) Error!i64 {
+                return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3), convert(ArgType(3), arg4));
+            }
+            fn f5(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, _: u64) Error!i64 {
+                return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3), convert(ArgType(3), arg4), convert(ArgType(4), arg5));
+            }
+            fn f6(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, arg6: u64) Error!i64 {
+                return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3), convert(ArgType(3), arg4), convert(ArgType(4), arg5), convert(ArgType(5), arg6));
+            }
+        };
+
+        return switch (func.params.len) {
+            0 => return S.f0,
+            1 => return S.f1,
+            2 => return S.f2,
+            3 => return S.f3,
+            4 => return S.f4,
+            5 => return S.f5,
+            6 => return S.f6,
+            else => @compileError("Wrapper: Invalid number of parameters"),
+        };
+    }
+
+    /// Convert a syscall argument to the expected type.
+    fn convert(comptime T: type, arg: u64) T {
+        return switch (@typeInfo(T)) {
+            .pointer => @ptrFromInt(arg),
+            .int => switch (@bitSizeOf(T)) {
+                8 => @bitCast(@as(u8, @truncate(arg))),
+                16 => @bitCast(@as(u16, @truncate(arg))),
+                32 => @bitCast(@as(u32, @truncate(arg))),
+                64 => @bitCast(@as(u64, @truncate(arg))),
+                else => @compileError("convert(): Invalid integer size"),
+            },
+            .@"enum" => |t| switch (@bitSizeOf(t.tag_type)) {
+                8 => @enumFromInt(@as(t.tag_type, @bitCast(@as(u8, @truncate(arg))))),
+                16 => @enumFromInt(@as(t.tag_type, @bitCast(@as(u16, @truncate(arg))))),
+                32 => @enumFromInt(@as(t.tag_type, @bitCast(@as(u32, @truncate(arg))))),
+                64 => @enumFromInt(@as(t.tag_type, @bitCast(@as(u64, @truncate(arg))))),
+                else => @compileError("convert(): Invalid enum size"),
+            },
+            .@"struct" => @bitCast(arg),
+            else => @compileError(std.fmt.comptimePrint("convert(): Invalid type: {s}", .{@typeName(T)})),
+        };
     }
 };
-
-/// Convert a syscall argument to the expected type.
-fn convert(comptime T: type, arg: u64) T {
-    return switch (@typeInfo(T)) {
-        .pointer => @ptrFromInt(arg),
-        .int => switch (@bitSizeOf(T)) {
-            8 => @bitCast(@as(u8, @truncate(arg))),
-            16 => @bitCast(@as(u16, @truncate(arg))),
-            32 => @bitCast(@as(u32, @truncate(arg))),
-            64 => @bitCast(@as(u64, @truncate(arg))),
-            else => @compileError("convert(): Invalid integer size"),
-        },
-        .@"enum" => |t| switch (@bitSizeOf(t.tag_type)) {
-            8 => @enumFromInt(@as(t.tag_type, @bitCast(@as(u8, @truncate(arg))))),
-            16 => @enumFromInt(@as(t.tag_type, @bitCast(@as(u16, @truncate(arg))))),
-            32 => @enumFromInt(@as(t.tag_type, @bitCast(@as(u32, @truncate(arg))))),
-            64 => @enumFromInt(@as(t.tag_type, @bitCast(@as(u64, @truncate(arg))))),
-            else => @compileError("convert(): Invalid enum size"),
-        },
-        .@"struct" => @bitCast(arg),
-        else => @compileError(std.fmt.comptimePrint("convert(): Invalid type: {s}", .{@typeName(T)})),
-    };
-}
-
-/// Syscall wrapper.
-///
-/// This function converts an syscall handler function to have the fixed signature `Handler`.
-fn sys(comptime handler: anytype) SyscallHandler {
-    const func = @typeInfo(@TypeOf(handler)).@"fn";
-
-    const S = struct {
-        inline fn ArgType(comptime i: usize) type {
-            return func.params[i].type orelse @compileError("sys(): Invalid parameter type");
-        }
-
-        fn f0(_: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
-            return handler();
-        }
-        fn f1(arg1: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
-            return handler(convert(ArgType(0), arg1));
-        }
-        fn f2(arg1: u64, arg2: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
-            return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2));
-        }
-        fn f3(arg1: u64, arg2: u64, arg3: u64, _: u64, _: u64, _: u64) Error!i64 {
-            return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3));
-        }
-        fn f4(arg1: u64, arg2: u64, arg3: u64, arg4: u64, _: u64, _: u64) Error!i64 {
-            return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3), convert(ArgType(3), arg4));
-        }
-        fn f5(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, _: u64) Error!i64 {
-            return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3), convert(ArgType(3), arg4), convert(ArgType(4), arg5));
-        }
-        fn f6(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, arg6: u64) Error!i64 {
-            return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3), convert(ArgType(3), arg4), convert(ArgType(4), arg5), convert(ArgType(5), arg6));
-        }
-    };
-
-    return switch (func.params.len) {
-        0 => return SyscallHandler.createNormal(S.f0),
-        1 => return SyscallHandler.createNormal(S.f1),
-        2 => return SyscallHandler.createNormal(S.f2),
-        3 => return SyscallHandler.createNormal(S.f3),
-        4 => return SyscallHandler.createNormal(S.f4),
-        5 => return SyscallHandler.createNormal(S.f5),
-        6 => return SyscallHandler.createNormal(S.f6),
-        else => @compileError("Wrapper: Invalid number of parameters"),
-    };
-}
 
 // =============================================================
 // Misc Handlers

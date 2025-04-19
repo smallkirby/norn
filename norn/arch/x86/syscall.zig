@@ -47,7 +47,8 @@ export fn dispatchSyscall(nr: u64, ctx: *CpuContext) callconv(.c) i64 {
           }))),
     );
 
-    const ret = Syscall.from(nr).invoke(
+    const ret = syscall.invoke(
+        syscall.from(nr),
         ctx,
         ctx.rdi,
         ctx.rsi,
@@ -188,7 +189,7 @@ const norn = @import("norn");
 const bits = norn.bits;
 const errno = norn.errno;
 const pcpu = norn.pcpu;
-const Syscall = norn.syscall.Syscall;
+const syscall = norn.syscall;
 
 const am = @import("asm.zig");
 const cpuid = @import("cpuid.zig");
