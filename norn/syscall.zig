@@ -3,8 +3,8 @@ pub const Error = errno.Error;
 /// List of system calls.
 ///
 /// NOTE that the entries are used only at compile time
-/// to defined a system call enum type
-/// and to construct a syscall table that are referenced to invoke a syscall handler.
+/// to define a system call enum type
+/// and to construct a syscall table that is referenced to invoke a syscall handler.
 const sys_entries = [_]SysEntry{
     // =============================================================
     // POSIX syscalls.
@@ -86,7 +86,7 @@ const SysEntry = struct {
 
 /// Table of system calls.
 ///
-/// This table is references at runtime to invoke a system call handler.
+/// This table is referenced at runtime to invoke a system call handler.
 /// The key value corresponds to a syscall number.
 const syscall_table: [num_syscall]SyscallHandler = blk: {
     var table: [num_syscall]SyscallHandler = undefined;
