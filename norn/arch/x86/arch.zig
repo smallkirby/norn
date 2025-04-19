@@ -2,7 +2,7 @@ pub const mp = @import("mp.zig");
 pub const task = @import("task.zig");
 
 pub const ApicTimer = apic.Timer;
-pub const InterruptContext = regs.CpuContext;
+pub const Context = regs.CpuContext;
 pub const LocalApic = apic.LocalApic;
 
 // Architecture-specific error type.

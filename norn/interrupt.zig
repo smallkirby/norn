@@ -7,7 +7,7 @@ pub const VectorTable = enum(u8) {
 };
 
 /// Context for interrupt handlers.
-pub const Context = arch.InterruptContext;
+pub const Context = arch.Context;
 
 /// Interrupt handler function signature.
 pub const Handler = *const fn (*Context) void;

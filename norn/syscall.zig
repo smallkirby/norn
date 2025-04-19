@@ -1,10 +1,5 @@
 pub const Error = errno.Error;
 
-/// System call handler function signature.
-pub const Handler = *const fn (*Context, u64, u64, u64, u64, u64, u64) Error!i64;
-/// System call context.
-pub const Context = arch.SyscallContext;
-
 /// List of system calls.
 ///
 /// Syscalls less than `norn_syscall_start` comply with x86-64 Linux kernel.
@@ -75,44 +70,45 @@ pub const Syscall = enum(u64) {
     const max_syscall = num_syscall - 1;
 
     /// System call table.
-    const syscall_table: [num_syscall]Handler = blk: {
-        var table: [num_syscall]Handler = undefined;
+    const syscall_table: [num_syscall]SyscallHandler = blk: {
+        var table: [num_syscall]SyscallHandler = undefined;
 
-        const sys_unhandled = sys(unhandledSyscallHandler);
+        const sysIgnoredSyscallHandler = SyscallHandler.createDebug(ignoredSyscallHandler);
+        const sysUnhandledSyscallHandler = SyscallHandler.createDebug(unhandledSyscallHandler);
         for (0..num_syscall) |i| {
-            table[i] = sys_unhandled;
+            table[i] = sysUnhandledSyscallHandler;
         }
 
         for (std.enums.values(Syscall)) |e| {
             table[@intFromEnum(e)] = switch (e) {
                 .read => sys(sysRead),
                 .write => sys(sysWrite),
-                .fstat => sys(ignoredSyscallHandler),
+                .fstat => sysIgnoredSyscallHandler,
                 .mprotect => sys(sysMemoryProtect),
                 .brk => sys(norn.mm.sysBrk),
                 .ioctl => sys(sysIoctl),
                 .writev => sys(sysWriteVec),
                 .arch_prctl => sys(norn.prctl.sysArchPrctl),
                 .getuid => sys(sysGetUid),
-                .time => sys(ignoredSyscallHandler),
-                .set_tid_address => sys(ignoredSyscallHandler),
-                .set_robust_list => sys(ignoredSyscallHandler),
+                .time => sysIgnoredSyscallHandler,
+                .set_tid_address => sysIgnoredSyscallHandler,
+                .set_robust_list => sysIgnoredSyscallHandler,
                 .exit_group => sys(sysExitGroup),
-                .open_at => sys(ignoredSyscallHandler),
+                .open_at => sysIgnoredSyscallHandler,
                 .newfstatat => sys(sysNewFstatAt),
                 .dlog => sys(sysDebugLog),
-                .readlinkat => sys(ignoredSyscallHandler),
-                .prlimit => sys(ignoredSyscallHandler),
-                .rseq => sys(ignoredSyscallHandler),
+                .readlinkat => sysIgnoredSyscallHandler,
+                .prlimit => sysIgnoredSyscallHandler,
+                .rseq => sysIgnoredSyscallHandler,
                 .getrandom => sys(sysGetRandom),
-                else => sys(unhandledSyscallHandler),
+                else => sysUnhandledSyscallHandler,
             };
         }
 
         break :blk table;
     };
 
-    /// Get a corresponding system call handler.
+    /// Invoke a corresponding system call handler.
     pub fn invoke(
         self: Syscall,
         ctx: *Context,
@@ -126,12 +122,41 @@ pub const Syscall = enum(u64) {
         if (@intFromEnum(self) >= num_syscall) {
             return Error.Inval;
         }
-        return syscall_table[@intFromEnum(self)](ctx, arg1, arg2, arg3, arg4, arg5, arg6);
+        return switch (syscall_table[@intFromEnum(self)]) {
+            .normal => |f| f(arg1, arg2, arg3, arg4, arg5, arg6),
+            .debug => |f| f(ctx, arg1, arg2, arg3, arg4, arg5, arg6),
+        };
     }
 
     /// Create a system call enum from a syscall number.
     pub inline fn from(nr: u64) Syscall {
         return @enumFromInt(nr);
+    }
+};
+
+/// System call handler function signature.
+const Handler = *const fn (u64, u64, u64, u64, u64, u64) Error!i64;
+/// Debug-purpose system call handler function signature.
+const DebugHandler = *const fn (*const Context, u64, u64, u64, u64, u64, u64) Error!i64;
+
+/// System call handler union.
+const SyscallHandler = union(HandlerKind) {
+    /// Normal system call handler.
+    normal: Handler,
+    /// Debug-purpose system call handler that can take a CPU context.
+    debug: DebugHandler,
+
+    const HandlerKind = enum {
+        normal,
+        debug,
+    };
+
+    inline fn createNormal(comptime handler: Handler) SyscallHandler {
+        return SyscallHandler{ .normal = handler };
+    }
+
+    inline fn createDebug(comptime handler: DebugHandler) SyscallHandler {
+        return SyscallHandler{ .debug = handler };
     }
 };
 
@@ -161,7 +186,7 @@ fn convert(comptime T: type, arg: u64) T {
 /// Syscall wrapper.
 ///
 /// This function converts an syscall handler function to have the fixed signature `Handler`.
-fn sys(comptime handler: anytype) Handler {
+fn sys(comptime handler: anytype) SyscallHandler {
     const func = @typeInfo(@TypeOf(handler)).@"fn";
 
     const S = struct {
@@ -169,37 +194,37 @@ fn sys(comptime handler: anytype) Handler {
             return func.params[i].type orelse @compileError("sys(): Invalid parameter type");
         }
 
-        fn f0(ctx: *Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
-            return handler(ctx);
+        fn f0(_: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+            return handler();
         }
-        fn f1(ctx: *Context, arg1: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
-            return handler(ctx, convert(ArgType(1), arg1));
+        fn f1(arg1: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+            return handler(convert(ArgType(0), arg1));
         }
-        fn f2(ctx: *Context, arg1: u64, arg2: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
-            return handler(ctx, convert(ArgType(1), arg1), convert(ArgType(2), arg2));
+        fn f2(arg1: u64, arg2: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+            return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2));
         }
-        fn f3(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, _: u64, _: u64, _: u64) Error!i64 {
-            return handler(ctx, convert(ArgType(1), arg1), convert(ArgType(2), arg2), convert(ArgType(3), arg3));
+        fn f3(arg1: u64, arg2: u64, arg3: u64, _: u64, _: u64, _: u64) Error!i64 {
+            return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3));
         }
-        fn f4(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, _: u64, _: u64) Error!i64 {
-            return handler(ctx, convert(ArgType(1), arg1), convert(ArgType(2), arg2), convert(ArgType(3), arg3), convert(ArgType(4), arg4));
+        fn f4(arg1: u64, arg2: u64, arg3: u64, arg4: u64, _: u64, _: u64) Error!i64 {
+            return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3), convert(ArgType(3), arg4));
         }
-        fn f5(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, _: u64) Error!i64 {
-            return handler(ctx, convert(ArgType(1), arg1), convert(ArgType(2), arg2), convert(ArgType(3), arg3), convert(ArgType(4), arg4), convert(ArgType(5), arg5));
+        fn f5(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, _: u64) Error!i64 {
+            return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3), convert(ArgType(3), arg4), convert(ArgType(4), arg5));
         }
-        fn f6(ctx: *Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, arg6: u64) Error!i64 {
-            return handler(ctx, convert(ArgType(1), arg1), convert(ArgType(2), arg2), convert(ArgType(3), arg3), convert(ArgType(4), arg4), convert(ArgType(5), arg5), convert(ArgType(6), arg6));
+        fn f6(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, arg6: u64) Error!i64 {
+            return handler(convert(ArgType(0), arg1), convert(ArgType(1), arg2), convert(ArgType(2), arg3), convert(ArgType(3), arg4), convert(ArgType(4), arg5), convert(ArgType(5), arg6));
         }
     };
 
     return switch (func.params.len) {
-        1 => return S.f0,
-        2 => return S.f1,
-        3 => return S.f2,
-        4 => return S.f3,
-        5 => return S.f4,
-        6 => return S.f5,
-        7 => return S.f6,
+        0 => return SyscallHandler.createNormal(S.f0),
+        1 => return SyscallHandler.createNormal(S.f1),
+        2 => return SyscallHandler.createNormal(S.f2),
+        3 => return SyscallHandler.createNormal(S.f3),
+        4 => return SyscallHandler.createNormal(S.f4),
+        5 => return SyscallHandler.createNormal(S.f5),
+        6 => return SyscallHandler.createNormal(S.f6),
         else => @compileError("Wrapper: Invalid number of parameters"),
     };
 }
@@ -210,7 +235,7 @@ fn sys(comptime handler: anytype) Handler {
 
 /// Handler for unhandled system calls.
 fn unhandledSyscallHandler(
-    ctx: *Context,
+    ctx: *const Context,
     arg1: u64,
     arg2: u64,
     arg3: u64,
@@ -236,7 +261,7 @@ fn unhandledSyscallHandler(
 }
 
 /// Handler for ignored syscalls.
-fn ignoredSyscallHandler(ctx: *Context) Error!i64 {
+fn ignoredSyscallHandler(ctx: *const Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
     if (option.debug_syscall) {
         debugPrintContext(ctx);
     }
@@ -311,7 +336,7 @@ const GetRandomFlags = packed struct(u64) {
 ///
 /// Fill the buffer with random bytes.
 /// Note that this function does not provide cryptographically secure random bytes.
-fn sysGetRandom(_: *Context, buf: [*]u8, size: usize, flags: GetRandomFlags) Error!i64 {
+fn sysGetRandom(buf: [*]u8, size: usize, flags: GetRandomFlags) Error!i64 {
     if (flags._reserved != 0) return Error.Inval;
 
     const time = norn.timer.getTimestamp();
@@ -326,7 +351,7 @@ fn sysGetRandom(_: *Context, buf: [*]u8, size: usize, flags: GetRandomFlags) Err
 /// Syscall handler for `read`.
 ///
 /// Currently, only supports reading from stdin (fd=0).
-fn sysRead(_: *Context, fd: u64, buf: [*]u8, size: usize) Error!i64 {
+fn sysRead(fd: u64, buf: [*]u8, size: usize) Error!i64 {
     if (fd != 0) {
         norn.unimplemented("sysRead(): fd other than 0.");
     }
@@ -342,7 +367,7 @@ fn sysRead(_: *Context, fd: u64, buf: [*]u8, size: usize) Error!i64 {
 ///
 /// Currently, only supports writing to stdout (fd=1) and stderr (fd=2).
 /// These outputs are printed to the debug log.
-fn sysWrite(_: *Context, fd: u64, buf: [*]const u8, count: usize) Error!i64 {
+fn sysWrite(fd: u64, buf: [*]const u8, count: usize) Error!i64 {
     if (fd != 1 and fd != 2) {
         norn.unimplemented("sysWrite(): fd other than 1 or 2.");
     }
@@ -358,11 +383,8 @@ const IoctlCommand = enum(u64) {
     _,
 };
 
-/// Special file descriptor for CWD.
-const fd_cwd: i32 = -100;
-
 /// Syscall handler for `newfstatat`.
-fn sysNewFstatAt(_: *Context, fd: fs.FileDescriptor, pathname: [*:0]const u8, buf: *fs.Stat, _: u64) Error!i64 {
+fn sysNewFstatAt(fd: fs.FileDescriptor, pathname: [*:0]const u8, buf: *fs.Stat, _: u64) Error!i64 {
     if (!fd.isSpecial()) {
         norn.unimplemented("sysNewFstatAt(): fd other than 1 or 2.");
     }
@@ -379,8 +401,8 @@ fn sysNewFstatAt(_: *Context, fd: fs.FileDescriptor, pathname: [*:0]const u8, bu
 }
 
 /// Syscall handler for `ioctl`.
-fn sysIoctl(_: *Context, fd: u64, cmd: IoctlCommand) Error!i64 {
-    if (fd != 0 and fd != 1 and fd != 2) {
+fn sysIoctl(fd: fs.FileDescriptor, cmd: IoctlCommand) Error!i64 {
+    if (!fd.isSpecial()) {
         norn.unimplemented("sysIoctl(): fd other than 1 or 2.");
     }
 
@@ -399,7 +421,7 @@ const IoVec = packed struct {
     len: usize,
 };
 
-fn sysWriteVec(_: *Context, fd: u64, iov: [*]const IoVec, count: usize) Error!i64 {
+fn sysWriteVec(fd: u64, iov: [*]const IoVec, count: usize) Error!i64 {
     if (fd != 1 and fd != 2) {
         norn.unimplemented("sysWriteVec(): fd other than 1 or 2.");
     }
@@ -415,7 +437,7 @@ fn sysWriteVec(_: *Context, fd: u64, iov: [*]const IoVec, count: usize) Error!i6
 }
 
 // TODO: implement
-fn sysMemoryProtect(_: *Context, addr: u64, len: u64, prot: u64) Error!i64 {
+fn sysMemoryProtect(addr: u64, len: u64, prot: u64) Error!i64 {
     log.warn("mprotect(): addr={X:0>16} len={X:0>16} prot={X:0>16}", .{ addr, len, prot });
     log.warn("ignoring mprotect syscall", .{});
     return 0;
@@ -423,7 +445,7 @@ fn sysMemoryProtect(_: *Context, addr: u64, len: u64, prot: u64) Error!i64 {
 
 /// Syscall handler for `exit_group`.
 /// TODO: implement
-fn sysExitGroup(_: *Context, status: i32) Error!i64 {
+fn sysExitGroup(status: i32) Error!i64 {
     log.debug("exit_group(): status={d}", .{status});
 
     if (norn.is_runtime_test) {
@@ -433,7 +455,7 @@ fn sysExitGroup(_: *Context, status: i32) Error!i64 {
 }
 
 /// Syscall handler for `getuid`.
-fn sysGetUid(_: *Context) Error!i64 {
+fn sysGetUid() Error!i64 {
     const current = norn.sched.getCurrentTask();
     return @intCast(current.cred.uid);
 }
@@ -444,7 +466,7 @@ fn sysGetUid(_: *Context) Error!i64 {
 ///
 /// - `str`: Pointer to the null-terminated string.
 /// - `size`: Size of the string.
-fn sysDebugLog(_: *Context, str: [*]const u8, size: usize) Error!i64 {
+fn sysDebugLog(str: [*]const u8, size: usize) Error!i64 {
     log.debug("{s}", .{str[0..size]});
     return 0;
 }
@@ -464,5 +486,6 @@ const fs = norn.fs;
 const sched = norn.sched;
 const util = norn.util;
 
+const Context = arch.Context;
 const VmArea = norn.mm.VmArea;
 const VmFlags = norn.mm.VmFlags;

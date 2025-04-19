@@ -157,7 +157,7 @@ pub const MemoryMap = struct {
 /// Syscall handler for `brk`.
 ///
 /// Change the position of the program break.
-pub fn sysBrk(_: *syscall.Context, requested_brk: u64) syscall.Error!i64 {
+pub fn sysBrk(requested_brk: u64) syscall.Error!i64 {
     const task = norn.sched.getCurrentTask();
     const mm = task.mm;
     const current_brk_start = mm.brk.start;

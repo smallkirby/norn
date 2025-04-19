@@ -22,7 +22,7 @@ const x64 = struct {
     };
 
     /// Syscall handler for `arch_prctl`.
-    pub fn sysArchPrctl(_: *syscall.Context, op: Operation, value: u64) syscall.Error!i64 {
+    pub fn sysArchPrctl(op: Operation, value: u64) syscall.Error!i64 {
         return switch (op) {
             .get_fs => @bitCast(arch.getFs()),
             .set_fs => blk: {
