@@ -14,7 +14,7 @@ const sys_entries = [_]SysEntry{
     // Write to a file descriptor.
     .new("write", 1, .normal(sysWrite)),
     // Get file status.
-    .new("fstat", 5, .debug(ignoredSyscallHandler)),
+    .new("fstat", 5, .debug(ignore)),
     // Set protection on a region of memory.
     .new("mprotect", 10, .normal(sysMemoryProtect)),
     // Change data segment size.
@@ -28,29 +28,29 @@ const sys_entries = [_]SysEntry{
     // Get user identity.
     .new("getuid", 102, .normal(sysGetUid)),
     // Set user identity.
-    .new("setuid", 105, .debug(ignoredSyscallHandler)),
+    .new("setuid", 105, .debug(ignore)),
     // Get time in seconds.
-    .new("time", 201, .debug(ignoredSyscallHandler)),
+    .new("time", 201, .debug(ignore)),
     // Set pointer to thread ID.
-    .new("set_tid_address", 218, .debug(ignoredSyscallHandler)),
+    .new("set_tid_address", 218, .debug(ignore)),
     // Retrieve the time of of the specified clock.
-    .new("clock_gettime", 222, .debug(ignoredSyscallHandler)),
+    .new("clock_gettime", 222, .debug(ignore)),
     // Exit all threads in a process.
     .new("exit_group", 231, .normal(sysExitGroup)),
     // Open and possibly create a file.
-    .new("open_at", 257, .debug(ignoredSyscallHandler)),
+    .new("open_at", 257, .debug(ignore)),
     // Get file status.
     .new("newfstatat", 262, .normal(sysNewFstatAt)),
     // Read value of a symbolic link.
-    .new("readlinkat", 267, .debug(ignoredSyscallHandler)),
+    .new("readlinkat", 267, .debug(ignore)),
     // Get or set list of robust futexes.
-    .new("set_robust_list", 273, .debug(ignoredSyscallHandler)),
+    .new("set_robust_list", 273, .debug(ignore)),
     // Get and set resource limits.
-    .new("prlimit", 302, .debug(ignoredSyscallHandler)),
+    .new("prlimit", 302, .debug(ignore)),
     // Obtain a series of random bytes.
     .new("getrandom", 318, .normal(sysGetRandom)),
     // Restartable sequences.
-    .new("rseq", 334, .debug(ignoredSyscallHandler)),
+    .new("rseq", 334, .debug(ignore)),
 
     // =============================================================
     // Norn-specific syscalls
@@ -92,7 +92,7 @@ const syscall_table: [num_syscall]SyscallHandler = blk: {
     var table: [num_syscall]SyscallHandler = undefined;
 
     // Init all handlers as unhandled.
-    const sysUnhandledSyscallHandler = SyscallHandler.debug(unhandledSyscallHandler);
+    const sysUnhandledSyscallHandler = SyscallHandler.debug(unhandle);
     for (0..num_syscall) |i| {
         table[i] = sysUnhandledSyscallHandler;
     }
@@ -245,15 +245,7 @@ const SyscallHandler = union(HandlerKind) {
 // =============================================================
 
 /// Handler for unhandled system calls.
-fn unhandledSyscallHandler(
-    ctx: *const Context,
-    arg1: u64,
-    arg2: u64,
-    arg3: u64,
-    arg4: u64,
-    arg5: u64,
-    arg6: u64,
-) Error!i64 {
+fn unhandle(ctx: *const Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64, arg6: u64) Error!i64 {
     log.err("Unhandled syscall (nr={d})", .{ctx.spec2.orig_rax});
     log.err("  [1]={X:0>16} [2]={X:0>16} [3]={X:0>16}", .{ arg1, arg2, arg3 });
     log.err("  [4]={X:0>16} [5]={X:0>16} [6]={X:0>16}", .{ arg4, arg5, arg6 });
@@ -272,7 +264,7 @@ fn unhandledSyscallHandler(
 }
 
 /// Handler for ignored syscalls.
-fn ignoredSyscallHandler(ctx: *const Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
+fn ignore(ctx: *const Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
     if (option.debug_syscall) {
         debugPrintContext(ctx);
     }
