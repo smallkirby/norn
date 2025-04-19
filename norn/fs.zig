@@ -28,8 +28,28 @@ pub const File = struct {
     }
 };
 
-/// TODO: doc
-const FileDescriptor = i32;
+/// Describes an open file.
+pub const FileDescriptor = enum(i32) {
+    /// Standard input.
+    stdin = 0,
+    /// Standard output.
+    stdout = 1,
+    /// Standard error.
+    stderr = 2,
+
+    /// Current working directory.
+    cwd = -100,
+
+    _,
+
+    /// Check if the file descriptor is a special descriptor.
+    pub fn isSpecial(self: FileDescriptor) bool {
+        return switch (self) {
+            .stdin, .stdout, .stderr, .cwd => true,
+            else => false,
+        };
+    }
+};
 
 /// Filesystem associated with a thread.
 pub const ThreadFs = struct {
@@ -57,9 +77,6 @@ const FdTable = struct {
     const Self = @This();
     const FdMap = std.AutoHashMap(FileDescriptor, *File);
 
-    /// Special file descriptor for CWD.
-    const fd_cwd = -100;
-
     /// Mapping of file descriptors to file instances.
     _map: FdMap,
 
@@ -77,7 +94,7 @@ const FdTable = struct {
 
     /// Get the i-node corresponding to the file descriptor.
     pub fn getDentry(self: *Self, fd: FileDescriptor) ?*Dentry {
-        if (fd == fd_cwd) {
+        if (fd == .cwd) {
             return sched.getCurrentTask().fs.cwd;
         } else {
             const result = self._map.get(fd);
@@ -94,6 +111,30 @@ pub const SeekMode = enum {
     Current,
     /// Seek from the end of the file.
     End,
+};
+
+/// Open mode.
+pub const OpenMode = enum {
+    /// Open the file in read-only mode.
+    read_only,
+    /// Open the file in write-only mode.
+    read_write,
+};
+
+/// Flags for opening a file.
+pub const OpenFlags = struct {
+    const Self = @This();
+
+    /// Mode to open the file.
+    mode: OpenMode = .read_only,
+    /// Create a new file if it does not exist.
+    create: bool = false,
+
+    /// Read write mode. Create a new file if it does not exist.
+    pub const create_rw = Self{
+        .mode = .read_write,
+        .create = true,
+    };
 };
 
 var ramfs: *RamFs = undefined;
@@ -158,28 +199,6 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
 pub fn getDentryFromFd(fd: FileDescriptor) ?*vfs.Dentry {
     return sched.getCurrentTask().fs.fdtable.getDentry(fd);
 }
-
-pub const OpenMode = enum {
-    /// Open the file in read-only mode.
-    read_only,
-    /// Open the file in write-only mode.
-    read_write,
-};
-
-/// TODO: doc
-pub const OpenFlags = struct {
-    const Self = @This();
-
-    /// Mode to open the file.
-    mode: OpenMode = .read_only,
-    /// Create a new file if it does not exist.
-    create: bool = false,
-
-    pub const create_rw = Self{
-        .mode = .read_write,
-        .create = true,
-    };
-};
 
 /// TODO: doc
 pub fn open(path: []const u8, flags: OpenFlags, mode: ?Mode) Error!*File {
