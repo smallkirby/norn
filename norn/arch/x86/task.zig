@@ -91,9 +91,27 @@ pub fn initKernelStack(task: *Thread, ip: u64) void {
     task.kernel_stack_ptr = @ptrFromInt(orig_sp - (@sizeOf(CpuContext) + @sizeOf(ContextStackFrame)));
 }
 
-/// TODO: doc
+/// Initialize the user CPU state.
 pub fn setupUserContext(task: *Thread, rip: u64, rsp: u64) void {
     const cpu_context = getCpuFromStack(task);
+    // Clear registers.
+    cpu_context.rdi = 0;
+    cpu_context.rsi = 0;
+    cpu_context.rdx = 0;
+    cpu_context.rcx = 0;
+    cpu_context.rax = 0;
+    cpu_context.r8 = 0;
+    cpu_context.r9 = 0;
+    cpu_context.r10 = 0;
+    cpu_context.r11 = 0;
+    cpu_context.r12 = 0;
+    cpu_context.r13 = 0;
+    cpu_context.r14 = 0;
+    cpu_context.r15 = 0;
+    cpu_context.rbp = 0;
+    cpu_context.rbx = 0;
+
+    // Set up RIP / RSP / RFLAGS.
     cpu_context.rip = rip;
     cpu_context.rsp = rsp;
     cpu_context.rflags = @bitCast(initial_rflags);
