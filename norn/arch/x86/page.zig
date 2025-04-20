@@ -230,9 +230,71 @@ pub fn map(cr3: Virt, vaddr: Virt, paddr: Virt, size: usize, attr: Attribute) Er
 }
 
 /// Translate the given virtual address to physical address by walking page tables.
+///
 /// CR3 of the current CPU is used as the root of the page table.
 /// If the translation fails, return null.
 pub fn translateWalk(cr3: Virt, addr: Virt) ?Phys {
+    const info = getAddressInfo(cr3, addr) orelse return null;
+    return info.phys;
+}
+
+/// Get the page attribute for the given virtual address.
+///
+/// This function walks the page tables to find the page attribute.
+/// If the address is not mapped, return null.
+pub fn getPageAttribute(cr3: Virt, addr: Virt) ?Attribute {
+    const info = getAddressInfo(cr3, addr) orelse return null;
+    return info.attr;
+}
+
+/// Address information.
+pub const AddressInfo = struct {
+    /// Virtual address.
+    virt: Virt,
+    /// Base address corresponding to the virtual address.
+    phys: Phys,
+    /// Page attribute.
+    attr: Attribute,
+
+    /// Page size.
+    const PageSize = enum {
+        size_4k,
+        size_2m,
+        size_1g,
+    };
+
+    /// Convert the page table entry to address information.
+    fn from(T: type, entry: *const T, virt: Virt) ?AddressInfo {
+        const mask: u64 = switch (T) {
+            Lv4Entry => page_mask_1gb,
+            Lv3Entry => page_mask_2mb,
+            Lv2Entry => page_mask_2mb,
+            Lv1Entry => page_mask_4k,
+            else => @compileError("PageInfo.from(): Unsupported type"),
+        };
+        const offset = virt & mask;
+        return .{
+            .virt = virt,
+            .phys = entry.phys + offset,
+            .attr = blk: {
+                if (entry.rw and !entry.xd) {
+                    break :blk .read_write_executable;
+                } else if (entry.rw and entry.xd) {
+                    break :blk .read_write;
+                } else if (!entry.rw and entry.xd) {
+                    break :blk .read_only;
+                } else {
+                    return null; // not accessible
+                }
+            },
+        };
+    }
+};
+
+/// Get the address information for the given virtual address.
+///
+/// This function walks the page tables to find the address information.
+pub fn getAddressInfo(cr3: Virt, addr: Virt) ?AddressInfo {
     if (!isCanonical(addr)) return null;
 
     const lv4ent = getLv4Entry(addr, virt2phys(cr3));
@@ -241,24 +303,28 @@ pub fn translateWalk(cr3: Virt, addr: Virt) ?Phys {
     const lv3ent = getLv3Entry(addr, lv4ent.address());
     if (!lv3ent.present) return null;
     if (lv3ent.ps) { // 1GiB page
-        return lv3ent.address() + (addr & page_mask_1gb);
+        return AddressInfo.from(Lv3Entry, lv3ent, addr);
     }
 
     const lv2ent = getLv2Entry(addr, lv3ent.address());
     if (!lv2ent.present) return null;
     if (lv2ent.ps) { // 2MiB page
-        return lv2ent.address() + (addr & page_mask_2mb);
+        return AddressInfo.from(Lv2Entry, lv2ent, addr);
     }
 
     const lv1ent = getLv1Entry(addr, lv2ent.address());
     if (!lv1ent.present) return null;
-    return lv1ent.phys + (addr & page_mask_4k); // 4KiB page
+    return AddressInfo.from(Lv1Entry, lv1ent, addr);
 }
 
 /// Check if PCID is enabled.
 fn isPcidEnabled() bool {
     return am.readCr4().pcide;
 }
+
+// =============================================================
+// Boot-time only functions
+// =============================================================
 
 /// These functions must be used only before page tables are reconstructed.
 pub const boot = struct {
@@ -514,6 +580,10 @@ pub fn showPageTable(vaddr: Virt, cr3: Phys) TranslationStructure {
     ret.lv1ent = lv1_entry.*;
     return ret;
 }
+
+// =============================================================
+// Basic page table entry structure
+// =============================================================
 
 /// Level of the page table.
 /// Lv4 is the top level table that is pointed by CR3.

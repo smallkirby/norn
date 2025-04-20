@@ -221,6 +221,11 @@ pub const mem = struct {
         return pg.createPageTables();
     }
 
+    /// Get the page attribute of a virtual address.
+    pub fn getPageAttribute(cr3: Virt, vaddr: Virt) ?Attribute {
+        return pg.getPageAttribute(cr3, vaddr);
+    }
+
     /// Get the virtual address of the root table (CR3).
     pub fn getRootTable() Virt {
         return norn.mem.phys2virt(am.readCr3());

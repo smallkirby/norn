@@ -131,7 +131,6 @@ pub fn invoke(self: Syscall, ctx: *const Context, arg1: u64, arg2: u64, arg3: u6
     if (@intFromEnum(self) >= num_syscall) {
         return Error.Inval;
     }
-    log.debug("syscall: {s}", .{@tagName(self)});
     return switch (syscall_table[@intFromEnum(self)]) {
         ._normal => |f| f(arg1, arg2, arg3, arg4, arg5, arg6),
         ._debug => |f| f(ctx, arg1, arg2, arg3, arg4, arg5, arg6),
@@ -318,11 +317,17 @@ fn debugPrintContext(ctx: *const Context) void {
     }
 
     // Stack trace.
-    var it = std.debug.StackIterator.init(null, ctx.rbp);
-    var ix: usize = 0;
     log.err("=== Stack Trace =====================", .{});
-    while (it.next()) |frame| : (ix += 1) {
-        log.err("#{d:0>2}: 0x{X:0>16}", .{ ix, frame });
+    var it = std.debug.StackIterator.init(null, ctx.rbp);
+    defer it.deinit();
+
+    var ix: usize = 0;
+    if (norn.mem.accessOk(ctx.rbp)) {
+        while (it.next()) |frame| : (ix += 1) {
+            log.err("#{d:0>2}: 0x{X:0>16}", .{ ix, frame });
+        }
+    } else {
+        log.err("Stack frame is not accessible.", .{});
     }
     log.err("=====================================", .{});
 }

@@ -175,6 +175,20 @@ pub fn reconstructMapping() !void {
     pgtbl_initialized.store(true, .release);
 }
 
+/// Check if the given virtual address is mapped and readable by the current task.
+pub fn accessOk(addr: anytype) bool {
+    const ptr: Virt = switch (@typeInfo(@TypeOf(addr))) {
+        .int, .comptime_int => @as(Virt, addr),
+        .pointer => @intFromPtr(addr),
+        else => @compileError("accessOk: invalid type"),
+    };
+
+    const current = norn.sched.getCurrentTask();
+    if (arch.mem.getPageAttribute(current.mm.pgtbl, ptr)) |attr| {
+        return attr == .read_only or attr == .read_write or attr == .read_write_executable;
+    } else return false;
+}
+
 /// Translate the given virtual address to physical address.
 ///
 /// This function just use simple calculation and does not walk page tables.
