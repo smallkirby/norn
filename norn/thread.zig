@@ -167,6 +167,8 @@ fn assignNewTid() Tid {
 /// - `entry`: Entry point of the kernel thread.
 pub fn createKernelThread(name: []const u8, entry: KernelThreadEntry) Error!*Thread {
     const thread = try Thread.create(name);
+    thread.comm = try general_allocator.dupe(u8, "");
+
     arch.task.initKernelStack(thread, @intFromPtr(entry));
 
     return thread;
