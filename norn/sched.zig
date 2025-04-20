@@ -66,12 +66,19 @@ pub fn schedule() void {
         if (norn.is_runtime_test) {
             log.info("No task to run. Terminating QEMU...", .{});
             norn.terminateQemu(0);
-            @panic("Reached unreachable Norn EOL.");
         }
 
         arch.enableIrq();
         return;
     };
+
+    // Skip if the next task is the idle task.
+    // TODO: should switch to the next of the idle task.
+    if (next.tid == 0) {
+        rq.append(next);
+        arch.enableIrq();
+        return;
+    }
 
     // Update the current task.
     switch (cur.state) {
@@ -81,6 +88,7 @@ pub fn schedule() void {
         },
         .dead => {
             // TODO: Destroy the task.
+            norn.unimplemented("Destroy the task.");
         },
     }
     pcpu.set(&current_task, next);
