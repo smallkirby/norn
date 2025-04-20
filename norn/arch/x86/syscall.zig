@@ -108,10 +108,27 @@ export fn syscallEntry() callconv(.naked) void {
         \\pushq %%r9                    # r9
         \\pushq %%r10                   # r10
         \\pushq %%r11                   # r11
+        \\pushq %%rbx                   # rbx
+        \\pushq %%rbp                   # rbp
+        \\pushq %%r12                   # r12
+        \\pushq %%r13                   # r13
+        \\pushq %%r14                   # r14
+        \\pushq %%r15                   # r15
 
-        // Skip caller-saved registers (rbp, rbx, and r12-r15)
-        \\sub $(6*8), %%rsp
-        \\
+        // Clear registers.
+        \\xorq %%rsi, %%rsi
+        \\xorq %%rdx, %%rdx
+        \\xorq %%rcx, %%rcx
+        \\xorq %%r8, %%r8
+        \\xorq %%r9, %%r9
+        \\xorq %%r10, %%r10
+        \\xorq %%r11, %%r11
+        \\xorq %%r12, %%r12
+        \\xorq %%r13, %%r13
+        \\xorq %%r14, %%r14
+        \\xorq %%r15, %%r15
+        \\xorq %%rbp, %%rbp
+
         // Prepare arguments
         \\movq %%rax, %%rdi
         \\movq %%rsp, %%rsi
@@ -152,7 +169,12 @@ export fn syscallEntry() callconv(.naked) void {
         \\movq 8(%%rsp), %%rsp
 
         // Restore context
-        \\add  $(6*8), %%rsp
+        \\popq %%r15                    # r15
+        \\popq %%r14                    # r14
+        \\popq %%r13                    # r13
+        \\popq %%r12                    # r12
+        \\popq %%rbp                    # rbp
+        \\popq %%rbx                    # rbx
         \\popq %%r11                    # r11
         \\popq %%r10                    # r10
         \\popq %%r9                     # r9
@@ -179,9 +201,13 @@ export fn syscallEntry() callconv(.naked) void {
         : [ss] "i" (gdt.SegmentSelector{ .index = gdt.user_ds_index, .rpl = 3 }),
           [cs] "i" (gdt.SegmentSelector{ .index = gdt.user_cs_index, .rpl = 3 }),
           [user_stack] "{r9}" (&task.current_tss.rsp1), // We can use caller-saved register here
-          [kernel_stack] "{r11}" (&task.current_tss.rsp0),
+          [kernel_stack] "{r10}" (&task.current_tss.rsp0),
     );
 }
+
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
 
