@@ -126,10 +126,25 @@ pub const Uid = u32;
 pub const Gid = u32;
 
 /// File mode.
-pub const Mode = packed struct {
-    user: Permission,
-    group: Permission,
+///
+/// This struct is compatible with POSIX file mode.
+pub const Mode = packed struct(i32) {
+    /// Other permission.
     other: Permission,
+    /// Group permission.
+    group: Permission,
+    /// User permission.
+    user: Permission,
+    /// Reserved.
+    _reserved1: i3 = 0,
+    /// Reserved.
+    _reserved2: i3 = 0,
+    /// Reserved.
+    _reserved3: i1 = 0,
+    /// Directory flag.
+    directory: bool = false,
+    /// Reserved.
+    _reserved4: i15 = 0,
 
     /// Access permission for each access type.
     const Permission = packed struct(u3) {
@@ -150,16 +165,15 @@ pub const Mode = packed struct {
         .other = .full,
     };
 
+    pub const anybody_rw = Mode{
+        .user = .{ .read = true, .write = true, .exec = false },
+        .group = .{ .read = true, .write = true, .exec = false },
+        .other = .{ .read = true, .write = true, .exec = false },
+    };
+
     /// Get a mode from POSIX mode integer.
     pub fn fromPosixMode(mode: u32) Mode {
-        const other: Permission = @bitCast(@as(u3, @truncate(mode >> 0)));
-        const group: Permission = @bitCast(@as(u3, @truncate(mode >> 3)));
-        const user: Permission = @bitCast(@as(u3, @truncate(mode >> 6)));
-        return Mode{
-            .user = user,
-            .group = group,
-            .other = other,
-        };
+        return @bitCast(mode);
     }
 
     pub fn toString(self: Mode) [9]u8 {

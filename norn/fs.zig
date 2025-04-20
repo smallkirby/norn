@@ -1,11 +1,15 @@
 /// FS Error.
 pub const Error = error{
-    /// File not found.
-    NotFound,
     /// File already exists.
     AlreadyExists,
+    /// The file descriptor is invalid.
+    BadFileDscriptor,
+    /// No available file descriptor.
+    DescriptorFull,
     /// Invalid argument.
     InvalidArgument,
+    /// File not found.
+    NotFound,
 } || vfs.Error;
 
 pub const Stat = vfs.Stat;
@@ -79,6 +83,8 @@ const FdTable = struct {
 
     /// Mapping of file descriptors to file instances.
     _map: FdMap,
+    /// Next fd to be used.
+    _next_fd: FileDescriptor = @enumFromInt(3),
 
     /// Insntantiate a new file descriptor table.
     pub fn new() Self {
@@ -92,6 +98,15 @@ const FdTable = struct {
         self._map.deinit();
     }
 
+    /// Add a file to the file descriptor table.
+    pub fn put(self: *Self, file: *File) Error!FileDescriptor {
+        // TODO: should lock?
+        const fd = self._next_fd;
+        self._next_fd = @enumFromInt(@intFromEnum(fd) + 1);
+        self._map.put(fd, file) catch return Error.DescriptorFull;
+        return fd;
+    }
+
     /// Get the i-node corresponding to the file descriptor.
     pub fn getDentry(self: *Self, fd: FileDescriptor) ?*Dentry {
         if (fd == .cwd) {
@@ -100,6 +115,12 @@ const FdTable = struct {
             const result = self._map.get(fd);
             return if (result) |r| r.dentry else null;
         }
+    }
+
+    /// Get a file instance corresponding to the file descriptor.
+    pub fn get(self: *Self, fd: FileDescriptor) ?*File {
+        const result = self._map.get(fd);
+        return if (result) |r| r else null;
     }
 };
 
@@ -118,6 +139,8 @@ pub const OpenMode = enum {
     /// Open the file in read-only mode.
     read_only,
     /// Open the file in write-only mode.
+    write_only,
+    /// Open the file in read/write mode.
     read_write,
 };
 
@@ -135,6 +158,25 @@ pub const OpenFlags = struct {
         .mode = .read_write,
         .create = true,
     };
+
+    /// Create flags from POSIX open flags.
+    pub fn fromPosix(pflags: posix.fs.OpenFlags) OpenFlags {
+        return .{
+            .mode = blk: {
+                if (pflags.read_only) {
+                    break :blk .read_only;
+                }
+                if (pflags.write_only) {
+                    break :blk .write_only;
+                }
+                if (pflags.read_write) {
+                    break :blk .read_write;
+                }
+                break :blk .read_only;
+            },
+            .create = pflags.create,
+        };
+    }
 };
 
 var ramfs: *RamFs = undefined;
@@ -200,23 +242,96 @@ pub fn getDentryFromFd(fd: FileDescriptor) ?*vfs.Dentry {
     return sched.getCurrentTask().fs.fdtable.getDentry(fd);
 }
 
-/// TODO: doc
-pub fn open(path: []const u8, flags: OpenFlags, mode: ?Mode) Error!*File {
-    // TODO: use mode
+// =============================================================
+// System call handlers.
+// =============================================================
 
-    const dentry = if (lookup(.origin_cwd, path)) |dent| dent else blk: {
-        if (!flags.create) return Error.NotFound;
-        if (mode) |m| {
-            // Try to create the file.
-            const parent = kerneLookupParent(.origin_cwd, path) orelse return Error.NotFound;
-            const basename = std.fs.path.basenamePosix(path);
-            break :blk try parent.createFile(basename, m);
-        } else {
-            // TODO: use default mode.
-            return Error.InvalidArgument;
-        }
+/// Get the file descriptor table of the current task.
+inline fn getCurrentFdTable() *FdTable {
+    return &sched.getCurrentTask().fs.fdtable;
+}
+
+/// Syscall handler for `fstat`.
+pub fn sysFstat(fd: FileDescriptor, buf: *Stat) syscall.Error!i64 {
+    if (getCurrentFdTable().get(fd)) |f| {
+        buf.* = stat(f) catch return error.Noent;
+    } else return error.Noent;
+
+    return 0;
+}
+
+/// Syscall handler for `newfstatat`.
+///
+/// TODO: Use flags argument.
+pub fn sysNewFstatAt(fd: FileDescriptor, pathname: [*:0]const u8, buf: *Stat, _: u64) syscall.Error!i64 {
+    if (getDentryFromFd(fd)) |dent| {
+        buf.* = statAt(
+            dent,
+            util.sentineledToSlice(pathname),
+        ) catch return error.Noent;
+    } else return error.Noent;
+
+    return 0;
+}
+
+/// Syscall handler for `openat`.
+pub fn sysOpenAt(fd: FileDescriptor, pathname: [*:0]const u8, flags: posix.fs.OpenFlags, mode: vfs.Mode) syscall.Error!i64 {
+    const file = openFileAt(
+        fd,
+        util.sentineledToSlice(pathname),
+        OpenFlags.fromPosix(flags),
+        mode,
+    ) catch |err| return switch (err) {
+        Error.BadFileDscriptor => error.Badf,
+        else => error.Noent,
     };
 
+    const result = getCurrentFdTable().put(file) catch |err| return switch (err) {
+        Error.DescriptorFull => error.Mfile,
+        else => error.Noent,
+    };
+    return @intFromEnum(result);
+}
+
+// =============================================================
+// File operations.
+// =============================================================
+
+/// Open a file by path.
+///
+/// This function tries to open a file by the given path.
+/// Returns a file instance if the file is found or created.
+///
+/// Note that this function does not add the file to the descriptor table.
+pub fn openFile(path: []const u8, flags: OpenFlags, mode: ?Mode) Error!*File {
+    return openFileAt(.cwd, path, flags, mode);
+}
+
+/// Open a file by path.
+///
+/// This function tries to open a file by the given path.
+/// Returns a file instance if the file is found or created.
+///
+/// Note that this function does not add the file to the descriptor table.
+pub fn openFileAt(fd: FileDescriptor, pathname: []const u8, flags: OpenFlags, mode: ?vfs.Mode) Error!*File {
+    const current = norn.sched.getCurrentTask();
+    const is_absolute = std.fs.path.isAbsolutePosix(pathname);
+    const origin = getDentryFromFd(fd) orelse blk: {
+        if (!is_absolute) return Error.BadFileDscriptor else break :blk current.fs.cwd;
+    };
+
+    // Get a dentry from the path.
+    const dentry = if (lookup(.{ .dir = origin }, pathname)) |dent| dent else blk: {
+        if (!flags.create) return Error.NotFound;
+
+        // Try to create the file.
+        const mode_using: Mode = mode orelse .anybody_rw;
+        const parent = kerneLookupParent(.origin_cwd, pathname) orelse return Error.NotFound;
+        const basename = std.fs.path.basenamePosix(pathname);
+        break :blk try parent.createFile(basename, mode_using);
+    };
+
+    // Create a file instance.
     const file = try allocator.create(File);
     file.* = .{
         .dentry = dentry,
@@ -243,12 +358,19 @@ pub fn seek(file: *File, offset: usize, whence: SeekMode) Error!usize {
     norn.unimplemented("fs.seek");
 }
 
+/// Get a file status information of the given file.
 pub fn stat(file: *File) Error!Stat {
     return try file.dentry.inode.stat();
 }
 
+/// Get a file status information of the given path.
+///
+/// The given `dir` is the directory to start the lookup if the path is not absolute.
 pub fn statAt(dir: *vfs.Dentry, path: []const u8) Error!Stat {
-    const dent = lookup(.{ .dir = dir }, path) orelse return Error.NotFound;
+    const dent = lookup(
+        .{ .dir = dir },
+        path,
+    ) orelse return Error.NotFound;
     return try dent.inode.stat();
 }
 
@@ -424,7 +546,10 @@ const ComponentIterator = std.fs.path.ComponentIterator;
 
 const norn = @import("norn");
 const bits = norn.bits;
+const posix = norn.posix;
 const sched = norn.sched;
+const syscall = norn.syscall;
+const util = norn.util;
 
 const cpio = @import("fs/cpio.zig");
 const RamFs = @import("fs/RamFs.zig");

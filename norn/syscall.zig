@@ -14,7 +14,7 @@ const sys_entries = [_]SysEntry{
     // Write to a file descriptor.
     .new("write", 1, .normal(sysWrite)),
     // Get file status.
-    .new("fstat", 5, .debug(ignore)),
+    .new("fstat", 5, .normal(fs.sysFstat)),
     // Set protection on a region of memory.
     .new("mprotect", 10, .normal(sysMemoryProtect)),
     // Change data segment size.
@@ -38,9 +38,9 @@ const sys_entries = [_]SysEntry{
     // Exit all threads in a process.
     .new("exit_group", 231, .normal(sysExitGroup)),
     // Open and possibly create a file.
-    .new("open_at", 257, .debug(ignore)),
+    .new("openat", 257, .normal(fs.sysOpenAt)),
     // Get file status.
-    .new("newfstatat", 262, .normal(sysNewFstatAt)),
+    .new("newfstatat", 262, .normal(fs.sysNewFstatAt)),
     // Read value of a symbolic link.
     .new("readlinkat", 267, .debug(ignore)),
     // Get or set list of robust futexes.
@@ -131,6 +131,7 @@ pub fn invoke(self: Syscall, ctx: *const Context, arg1: u64, arg2: u64, arg3: u6
     if (@intFromEnum(self) >= num_syscall) {
         return Error.Inval;
     }
+    log.debug("syscall: {s}", .{@tagName(self)});
     return switch (syscall_table[@intFromEnum(self)]) {
         ._normal => |f| f(arg1, arg2, arg3, arg4, arg5, arg6),
         ._debug => |f| f(ctx, arg1, arg2, arg3, arg4, arg5, arg6),
@@ -234,7 +235,13 @@ const SyscallHandler = union(HandlerKind) {
                 64 => @enumFromInt(@as(t.tag_type, @bitCast(@as(u64, @truncate(arg))))),
                 else => @compileError("convert(): Invalid enum size"),
             },
-            .@"struct" => @bitCast(arg),
+            .@"struct" => switch (@bitSizeOf(T)) {
+                8 => @bitCast(@as(u8, @truncate(arg))),
+                16 => @bitCast(@as(u16, @truncate(arg))),
+                32 => @bitCast(@as(u32, @truncate(arg))),
+                64 => @bitCast(@as(u64, @truncate(arg))),
+                else => @compileError("convert(): Invalid struct size"),
+            },
             else => @compileError(std.fmt.comptimePrint("convert(): Invalid type: {s}", .{@typeName(T)})),
         };
     }
@@ -272,7 +279,7 @@ fn ignore(ctx: *const Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) E
     return error.Unimplemented;
 }
 
-fn debugPrintContext(ctx: *Context) void {
+fn debugPrintContext(ctx: *const Context) void {
     // Print memory map of the current task.
     log.err("Memory map of the current task:", .{});
     const task = norn.sched.getCurrentTask();
@@ -385,23 +392,6 @@ fn sysWrite(fd: u64, buf: [*]const u8, count: usize) Error!i64 {
 const IoctlCommand = enum(u64) {
     _,
 };
-
-/// Syscall handler for `newfstatat`.
-fn sysNewFstatAt(fd: fs.FileDescriptor, pathname: [*:0]const u8, buf: *fs.Stat, _: u64) Error!i64 {
-    if (!fd.isSpecial()) {
-        norn.unimplemented("sysNewFstatAt(): fd other than 1 or 2.");
-    }
-
-    if (fs.getDentryFromFd(fd)) |dent| {
-        const stat = fs.statAt(
-            dent,
-            util.sentineledToSlice(pathname),
-        ) catch return Error.Noent;
-        buf.* = stat;
-    } else return Error.Noent;
-
-    return 0;
-}
 
 /// Syscall handler for `ioctl`.
 fn sysIoctl(fd: fs.FileDescriptor, cmd: IoctlCommand) Error!i64 {
