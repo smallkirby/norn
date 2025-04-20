@@ -408,41 +408,52 @@ const GdtRegister = packed struct {
 };
 
 /// Task State Segment.
+///
+/// This structure should be exported, so this should be extern struct.
+/// (e.g. Used by syscall entry point).
+///
 /// cf. SDM Vol.3A Figure 8-11.
-pub const TaskStateSegment = packed struct {
+pub const TaskStateSegment = extern struct {
     /// Reserved.
-    _reserved1: u32 = 0,
+    _reserved1: u32 align(1) = 0,
     /// RSP0.
     /// In Norn, this field is used to store kernel stack pointer for privilege level change from ring-3 to ring-0.
-    rsp0: u64 = 0,
+    rsp0: u64 align(1) = 0,
     /// RSP1.
     /// In Norn, this field is used to store user stack pointer.
-    rsp1: u64 = 0,
+    rsp1: u64 align(1) = 0,
     /// RSP2.
     /// In Norn, this field is not used.
-    rsp2: u64 = 0,
+    rsp2: u64 align(1) = 0,
     /// Reserved.
-    _reserved2: u64 = 0,
+    _reserved2: u64 align(1) = 0,
     /// IST1 (Interrupt Stack Table).
-    ist1: u64 = 0,
+    ist1: u64 align(1) = 0,
     /// IST2.
-    ist2: u64 = 0,
+    ist2: u64 align(1) = 0,
     /// IST3.
-    ist3: u64 = 0,
+    ist3: u64 align(1) = 0,
     /// IST4.
-    ist4: u64 = 0,
+    ist4: u64 align(1) = 0,
     /// IST5.
-    ist5: u64 = 0,
+    ist5: u64 align(1) = 0,
     /// IST6.
-    ist6: u64 = 0,
+    ist6: u64 align(1) = 0,
     /// IST7.
-    ist7: u64 = 0,
+    ist7: u64 align(1) = 0,
     /// Reserved.
-    _reserved3: u64 = 0,
+    _reserved3: u64 align(1) = 0,
     /// Reserved.
-    _reserved4: u16 = 0,
+    _reserved4: u16 align(1) = 0,
     /// I/O Map Base Address: Offset to the I/O permission bitmap from the TSS base.
-    iomap_base: u16 = 0,
+    iomap_base: u16 align(1) = 0,
+
+    comptime {
+        norn.comptimeAssert(
+            @sizeOf(TaskStateSegment) == 104,
+            std.fmt.comptimePrint("Invalid size of TaskStateSegment: {d}", .{@sizeOf(TaskStateSegment)}),
+        );
+    }
 };
 
 // =======================================

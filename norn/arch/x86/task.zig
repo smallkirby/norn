@@ -1,7 +1,9 @@
 pub const Error = mem.Error || arch.Error;
 
 /// Current TSS.
-pub var current_tss: TaskStateSegment linksection(pcpu.section) = undefined;
+///
+/// Should be exported so that syscall entrypoint can access it.
+pub export var current_tss: TaskStateSegment linksection(pcpu.section) = undefined;
 
 /// Size in bytes of kernel stack.
 const kernel_stack_size = 5 * mem.size_4kib;
