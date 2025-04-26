@@ -138,6 +138,28 @@ pub const Permission = packed struct(u3) {
     };
 };
 
+/// File type.
+pub const FileType = enum(u8) {
+    /// Unknown file type.
+    unknown = 0o00,
+    /// Named pipes or FIFOs.
+    fifo = 0o01,
+    /// Character special devices.
+    cdev = 0o02,
+    /// Directories.
+    directory = 0o04,
+    /// Block special files.
+    block = 0o06,
+    /// Regular files.
+    regular = 0o10,
+    /// Symbolic links.
+    symlink = 0o12,
+    /// Sockets.
+    socket = 0o14,
+
+    _,
+};
+
 /// File mode.
 ///
 /// This struct is compatible with POSIX file mode.
@@ -157,27 +179,7 @@ pub const Mode = packed struct(u32) {
     /// File type.
     type: FileType = .regular,
     /// Reserved.
-    _reserved: u16 = 0,
-
-    /// File type.
-    const FileType = enum(u4) {
-        /// Named pipes or FIFOs.
-        fifo = 0o01,
-        /// Character special devices.
-        cdev = 0o02,
-        /// Directories.
-        directory = 0o04,
-        /// Block special files.
-        block = 0o06,
-        /// Regular files.
-        regular = 0o10,
-        /// Symbolic links.
-        symlink = 0o12,
-        /// Sockets.
-        socket = 0o14,
-
-        _,
-    };
+    _reserved: u12 = 0,
 
     pub const anybody_full = Mode{
         .user = .full,
@@ -230,62 +232,102 @@ pub const Inode = struct {
     /// File size.
     size: usize,
     /// Operations for this inode.
-    ops: *const Vtable,
+    inode_ops: *const Vtable,
+    /// Operations for a file.
+    file_ops: *const File.Vtable,
     /// Context of this inode.
     ctx: *anyopaque,
 
     /// Inode operations.
     pub const Vtable = struct {
-        /// Iterate over all files in this directory inode.
-        ///
-        /// Caller must free the returned slice.
-        iterate: *const fn (self: *Inode, allocator: Allocator) Error![]*const Dentry,
         /// Find a file named `name` in this directory inode.
         ///
         /// If the file is found, return the dentry.
         /// If the file is not found, return null.
         lookup: *const fn (self: *Inode, name: []const u8) Error!?*Dentry,
-        /// Read data from this inode from position `pos` to `buf`.
-        ///
-        /// Return the number of bytes read.
-        read: *const fn (inode: *Inode, buf: []u8, pos: usize) Error!usize,
         /// Get stat information of this inode.
         stat: *const fn (inode: *Inode) Error!Stat,
-        /// Write data to this inode from position `pos` with `data`.
-        ///
-        /// Return the number of bytes written.
-        write: *const fn (inode: *Inode, data: []const u8, pos: usize) Error!usize,
     };
-
-    /// Iterate over all files in this directory inode.
-    pub fn iterate(self: *Self, allocator: Allocator) Error![]*const Dentry {
-        if (self.inode_type != InodeType.directory) return Error.NotDirectory;
-        return self.ops.iterate(self, allocator);
-    }
 
     /// Lookup a file named `name` in this directory inode.
     ///
     /// This function searches only in the given directory, and does not search more than one level of depth.
     pub fn lookup(self: *Self, name: []const u8) Error!?*Dentry {
         if (self.inode_type != InodeType.directory) return Error.NotDirectory;
-        return self.ops.lookup(self, name);
-    }
-
-    /// Read data from this inode.
-    pub fn read(self: *Self, buf: []u8, pos: usize) Error!usize {
-        if (self.inode_type == InodeType.directory) return Error.IsDirectory;
-        return self.ops.read(self, buf, pos);
+        return self.inode_ops.lookup(self, name);
     }
 
     /// Get stat information of this inode.
     pub fn stat(self: *Self) Error!Stat {
-        return self.ops.stat(self);
+        return self.inode_ops.stat(self);
+    }
+};
+
+/// File instance.
+pub const File = struct {
+    const Self = @This();
+
+    /// Offset within the file.
+    pos: usize = 0,
+    /// Dentry of the file.
+    dentry: *Dentry,
+    /// Operations.
+    vtable: *const Vtable,
+
+    /// File operations.
+    pub const Vtable = struct {
+        /// Iterate over all files in this directory inode.
+        ///
+        /// Caller must free the returned slice.
+        iterate: *const fn (self: *Inode, allocator: Allocator) Error![]*Dentry,
+        /// Read data from this inode from position `pos` to `buf`.
+        ///
+        /// Return the number of bytes read.
+        read: *const fn (inode: *Inode, buf: []u8, pos: usize) Error!usize,
+        /// Write data to this inode from position `pos` with `data`.
+        ///
+        /// Return the number of bytes written.
+        write: *const fn (inode: *Inode, data: []const u8, pos: usize) Error!usize,
+    };
+
+    /// Allocate a new file instance.
+    pub fn new(dentry: *Dentry) Error!*Self {
+        const file = try allocator.create(File);
+        file.* = .{
+            .dentry = dentry,
+            .vtable = dentry.inode.file_ops,
+        };
+
+        return file;
+    }
+
+    /// Deinitialize this file instance.
+    pub fn deinit(self: *Self) void {
+        allocator.destroy(self);
+    }
+
+    /// Iterate over all files in this directory inode.
+    pub fn iterate(self: *Self) Error![]*Dentry {
+        if (self.dentry.inode.inode_type != InodeType.directory) {
+            return Error.IsDirectory;
+        }
+        return self.vtable.iterate(self.dentry.inode, allocator);
+    }
+
+    /// Read data from this inode.
+    pub fn read(self: *Self, buf: []u8, pos: usize) Error!usize {
+        if (self.dentry.inode.inode_type == InodeType.directory) {
+            return Error.IsDirectory;
+        }
+        return self.vtable.read(self.dentry.inode, buf, pos);
     }
 
     /// Write data to this inode.
     pub fn write(self: *Self, data: []const u8, pos: usize) Error!usize {
-        if (self.inode_type == InodeType.directory) return Error.IsDirectory;
-        return self.ops.write(self, data, pos);
+        if (self.dentry.inode.inode_type == InodeType.directory) {
+            return Error.IsDirectory;
+        }
+        return self.vtable.write(self.dentry.inode, data, pos);
     }
 };
 
@@ -298,3 +340,5 @@ const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const mem = norn.mem;
+
+const allocator = norn.mem.general_allocator;

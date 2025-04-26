@@ -13,6 +13,8 @@ const sys_entries = [_]SysEntry{
     .new("read", 0, .normal(sysRead)),
     // Write to a file descriptor.
     .new("write", 1, .normal(sysWrite)),
+    // Close the file.
+    .new("close", 3, .normal(fs.sysClose)),
     // Get file status.
     .new("fstat", 5, .normal(fs.sysFstat)),
     // Set protection on a region of memory.
@@ -31,6 +33,8 @@ const sys_entries = [_]SysEntry{
     .new("setuid", 105, .debug(ignore)),
     // Get time in seconds.
     .new("time", 201, .debug(ignore)),
+    // Get directory entries
+    .new("getdents64", 217, .normal(fs.sysGetDents64)),
     // Set pointer to thread ID.
     .new("set_tid_address", 218, .debug(ignore)),
     // Retrieve the time of of the specified clock.
@@ -140,10 +144,20 @@ pub fn invoke(self: Syscall, ctx: *const Context, arg1: u64, arg2: u64, arg3: u6
         log.debug("  arg1=0x{X:0>16}, arg2=0x{X:0>16}, arg3=0x{X:0>16}", .{ arg1, arg2, arg3 });
         log.debug("  arg4=0x{X:0>16}, arg5=0x{X:0>16}, arg6=0x{X:0>16}", .{ arg4, arg5, arg6 });
     }
-    return switch (syscall_table[@intFromEnum(self)]) {
+
+    const ret = switch (syscall_table[@intFromEnum(self)]) {
         ._normal => |f| f(arg1, arg2, arg3, arg4, arg5, arg6),
         ._debug => |f| f(ctx, arg1, arg2, arg3, arg4, arg5, arg6),
     };
+
+    if (option.debug_syscall) {
+        if (ret) |value| {
+            log.debug("  -> 0x{X}", .{value});
+        } else |err| {
+            log.debug("  -> {s}", .{@errorName(err)});
+        }
+    }
+    return ret;
 }
 
 /// Get a syscall enum from the given nr.

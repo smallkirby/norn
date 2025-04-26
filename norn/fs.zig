@@ -17,21 +17,6 @@ pub const Stat = vfs.Stat;
 /// Path separator.
 pub const separator = '/';
 
-/// File instance.
-pub const File = struct {
-    /// Offset within the file.
-    pos: usize = 0,
-    /// Dentry of the file.
-    dentry: *vfs.Dentry,
-
-    /// Create a new file instance.
-    pub fn new(dentry: *vfs.Dentry) File {
-        return .{
-            .dentry = dentry,
-        };
-    }
-};
-
 /// Describes an open file.
 pub const FileDescriptor = enum(i32) {
     /// Standard input.
@@ -120,6 +105,13 @@ const FdTable = struct {
         self._next_fd = @enumFromInt(@intFromEnum(fd) + 1);
         self._map.put(fd, file) catch return Error.DescriptorFull;
         return fd;
+    }
+
+    /// Delete a file descriptor and close an associated file.
+    pub fn remove(self: *Self, fd: FileDescriptor) ?void {
+        const file = self.get(fd) orelse return null;
+        file.deinit();
+        norn.rtt.expectEqual(true, self._map.remove(fd));
     }
 
     /// Get the i-node corresponding to the file descriptor.
@@ -241,7 +233,9 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
             _ = try parent.createDirectory(basename, mode);
         } else {
             const dentry = try parent.createFile(basename, mode);
-            _ = try dentry.inode.write(try c.getData(), 0);
+            const file = try File.new(dentry);
+            defer file.deinit();
+            _ = try file.write(try c.getData(), 0);
         }
     }
 
@@ -267,9 +261,107 @@ pub fn getDentryFromFd(fd: FileDescriptor) ?*vfs.Dentry {
 // System call handlers.
 // =============================================================
 
+/// Linux-compatible linux_dirent64 structure.
+///
+/// This structure has variable length described by `reclen` field.
+const DirEnt64 = extern struct {
+    const Self = @This();
+
+    /// Inode number.
+    inode_number: u64,
+    /// Filesystem-specific value.
+    spec: u64 = 0,
+    /// Size of this structure.
+    reclen: u16,
+    /// File type.
+    type: vfs.FileType align(1),
+    /// Filename starts here.
+    __name_start: void = undefined,
+
+    const struct_size = @offsetOf(Self, "__name_start");
+    const ReclenType = @FieldType(DirEnt64, "reclen");
+
+    /// Calculate the entire structure size that has the specified name.
+    ///
+    /// - `name`: Name of the file. Must NOT be null-terminated.
+    pub fn calcSize(name: []const u8) ReclenType {
+        norn.rtt.expect(0 != name[name.len - 1]);
+        return @intCast(struct_size + name.len + 1); // +1 for null-termination.
+    }
+
+    /// Create a new DirEnt64 instance with the given name in the buffer.
+    pub fn createCopy(dentry: *const Dentry, buf: []u8) void {
+        const name = dentry.name;
+        const size = calcSize(name);
+        norn.rtt.expectEqual(size, buf.len);
+
+        // Copy fixed-size part.
+        const dirent = Self{
+            .inode_number = dentry.inode.number,
+            .reclen = size,
+            .type = dentry.inode.mode.type,
+        };
+        var cur: [*]u8 = buf.ptr;
+        @memcpy(cur[0..struct_size], std.mem.asBytes(&dirent)[0..struct_size]);
+        cur += struct_size;
+
+        // Copy name part.
+        @memcpy(cur[0..name.len], name);
+        cur[name.len] = 0; // null-terminate
+    }
+
+    comptime {
+        norn.comptimeAssert(19 == struct_size, "Size of DirEnt64 must be 19.");
+    }
+};
+
 /// Get the file descriptor table of the current task.
 inline fn getCurrentFdTable() *FdTable {
     return &sched.getCurrentTask().fs.fdtable;
+}
+
+/// Get as much directory entries from the given directory.
+///
+/// - `fd: File descriptor that describes a directory from which entries are read.
+/// - `dirp`: Pointer to buffer to which DirEnt64 is written.
+/// - `count`: Size of `dirp` buffer in bytes.
+///
+/// On success, the number of bytes read is returned.
+/// On end of directory, 0 is returned.
+pub fn sysGetDents64(fd: FileDescriptor, dirp: [*]u8, count: usize) syscall.Error!i64 {
+    const file = getCurrentFdTable().get(fd) orelse return error.Noent;
+    if (file.dentry.inode.mode.type != .directory) {
+        return error.NotDir;
+    }
+
+    var consumed: usize = 0;
+
+    const children = file.iterate() catch |err| return switch (err) {
+        error.OutOfMemory => error.Nomem,
+        error.NotDirectory => error.NotDir,
+        error.IsDirectory => error.IsDir,
+    };
+
+    // All entries are already read.
+    if (children.len <= file.pos) {
+        return 0;
+    }
+
+    // Iterate entries and fill the user buffer.
+    const start = file.pos;
+    for (children[start..]) |child| {
+        const dirent_size = DirEnt64.calcSize(child.name);
+        if (count - consumed < dirent_size) {
+            break;
+        }
+
+        const ptr = dirp + consumed;
+        DirEnt64.createCopy(child, ptr[0..dirent_size]);
+        consumed += dirent_size;
+        file.pos += 1;
+    }
+
+    return @bitCast(consumed);
 }
 
 /// Syscall handler for `fstat`.
@@ -292,6 +384,12 @@ pub fn sysNewFstatAt(fd: FileDescriptor, pathname: [*:0]const u8, buf: *Stat, _:
         ) catch return error.Noent;
     } else return error.Noent;
 
+    return 0;
+}
+
+/// Syscall handler for `close`.
+pub fn sysClose(fd: FileDescriptor) syscall.Error!i64 {
+    getCurrentFdTable().remove(fd) orelse return error.Badf;
     return 0;
 }
 
@@ -333,7 +431,7 @@ pub fn openFile(path: []const u8, flags: OpenFlags, mode: ?Mode) Error!*File {
 /// This function tries to open a file by the given path.
 /// Returns a file instance if the file is found or created.
 ///
-/// Note that this function does not add the file to the descriptor table.
+/// Note that this function does NOT add the file to the descriptor table.
 pub fn openFileAt(fd: FileDescriptor, pathname: []const u8, flags: OpenFlags, mode: ?vfs.Mode) Error!*File {
     const current = norn.sched.getCurrentTask();
     const is_absolute = std.fs.path.isAbsolutePosix(pathname);
@@ -353,25 +451,24 @@ pub fn openFileAt(fd: FileDescriptor, pathname: []const u8, flags: OpenFlags, mo
     };
 
     // Create a file instance.
-    const file = try allocator.create(File);
-    file.* = .{
-        .dentry = dentry,
-    };
-    return file;
+    return try File.new(dentry);
 }
 
+/// TODO: doc
 pub fn read(file: *File, buf: []u8) Error!usize {
-    const bytesRead = try file.dentry.inode.read(buf, file.pos);
+    const bytesRead = try file.read(buf, file.pos);
     file.pos += bytesRead;
     return bytesRead;
 }
 
+/// TODO: doc
 pub fn write(file: *File, buf: []const u8) Error!usize {
     _ = file; // autofix
     _ = buf; // autofix
     norn.unimplemented("fs.write");
 }
 
+/// TODO: doc
 pub fn seek(file: *File, offset: usize, whence: SeekMode) Error!usize {
     _ = file; // autofix
     _ = offset; // autofix
@@ -395,11 +492,13 @@ pub fn statAt(dir: *vfs.Dentry, path: []const u8) Error!Stat {
     return try dent.inode.stat();
 }
 
+/// TODO: doc
 pub fn mkdir(path: []const u8) Error!void {
     _ = path; // autofix
     norn.unimplemented("fs.mkdir");
 }
 
+/// TODO: doc
 pub fn close(file: *File) void {
     allocator.destroy(file);
 }
@@ -511,7 +610,7 @@ fn printDirectoryTree(root: *vfs.Dentry) Error!void {
     try printDirectoryTreeSub(root, current_path[0..current_path.len]);
 }
 
-fn printDirectoryTreeSub(dir: *const Dentry, current_path: []u8) Error!void {
+fn printDirectoryTreeSub(dir: *Dentry, current_path: []u8) Error!void {
     const parent_end_pos = blk: {
         for (current_path, 0..) |c, i| {
             if (c == 0) break :blk i;
@@ -521,7 +620,10 @@ fn printDirectoryTreeSub(dir: *const Dentry, current_path: []u8) Error!void {
     };
     current_path[parent_end_pos] = separator;
 
-    const children = try dir.inode.iterate(allocator);
+    const file = try File.new(dir);
+    defer file.deinit();
+
+    const children = try file.iterate();
     for (children) |child| {
         // Copy entry name.
         const len = parent_end_pos + 1 + child.name.len;
@@ -576,6 +678,7 @@ const cpio = @import("fs/cpio.zig");
 const RamFs = @import("fs/RamFs.zig");
 const vfs = @import("fs/vfs.zig");
 const Dentry = vfs.Dentry;
+const File = vfs.File;
 const Mode = vfs.Mode;
 
 const allocator = norn.mem.general_allocator;

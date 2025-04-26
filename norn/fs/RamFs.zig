@@ -20,11 +20,14 @@ const dentry_vtable = Dentry.Vtable{
 
 /// Inode operations.
 const inode_vtable = Inode.Vtable{
-    .iterate = iterate,
     .lookup = lookup,
+    .stat = stat,
+};
+
+const file_vtable = vfs.File.Vtable{
+    .iterate = iterate,
     .read = read,
     .write = write,
-    .stat = stat,
 };
 
 /// Default file mode.
@@ -229,11 +232,11 @@ fn createDirectory(dir: *Dentry, name: []const u8, mode: Mode) Error!*Dentry {
 }
 
 /// Iterate over children of the given directory.
-fn iterate(inode: *Inode, allocator: Allocator) Error![]*const Dentry {
+fn iterate(inode: *Inode, allocator: Allocator) Error![]*Dentry {
     const dir = getNode(inode).directory;
     const num_children = dir.children.len;
 
-    const entries = try allocator.alloc(*const Dentry, num_children);
+    const entries = try allocator.alloc(*Dentry, num_children);
     errdefer allocator.free(entries);
 
     var child = dir.children.first;
@@ -349,7 +352,8 @@ fn createInode(
         .uid = default_uid,
         .gid = default_gid,
         .size = 0,
-        .ops = &inode_vtable,
+        .inode_ops = &inode_vtable,
+        .file_ops = &file_vtable,
         .ctx = ctx,
     };
     return inode;
