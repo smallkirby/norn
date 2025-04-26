@@ -48,7 +48,12 @@ pub fn init(allocator: Allocator) Error!*Self {
     const root_inode = try self.createInode(
         .directory,
         self.assignInum(),
-        default_file_mode,
+        .{ // TODO: apply attributes of actual root directory.
+            .other = .full,
+            .group = .full,
+            .user = .full,
+            .type = .directory,
+        },
         root_node,
     );
     const root_dentry = try self.createDentry(
@@ -277,11 +282,11 @@ pub fn stat(inode: *Inode) Error!vfs.Stat {
             .dev = .zero, // TODO
             .inode = inode.number,
             .num_links = 1,
-            .mode = 0o777, // TODO
+            .mode = inode.mode,
             .uid = inode.uid,
             .gid = inode.gid,
             .rdev = .zero,
-            .size = 0, // TODO
+            .size = getNode(inode).directory.children.len,
             .block_size = 0, // TODO
             .num_blocks = 0, // TODO
             .access_time = 0, // TODO
@@ -295,7 +300,7 @@ pub fn stat(inode: *Inode) Error!vfs.Stat {
             .dev = .zero, // TODO
             .inode = inode.number,
             .num_links = 1,
-            .mode = 0o777, // TODO
+            .mode = inode.mode,
             .uid = inode.uid,
             .gid = inode.gid,
             .rdev = .zero,

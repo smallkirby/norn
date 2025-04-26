@@ -121,7 +121,15 @@ pub inline fn enqueueTask(task: *Thread) void {
 
 /// Create an initial task (PID 1) and set the current task to it.
 pub fn setupInitialTask() Error!void {
+    norn.rtt.expectEqual(0, getCurrentTask().tid);
+
     const init_task = try thread.createInitialThread(options.init_binary);
+
+    // Set FS.
+    init_task.fs.setRoot(getCurrentTask().fs.root);
+    init_task.fs.setCwd(getCurrentTask().fs.cwd);
+
+    // Enqueue the initial task to the run queue.
     enqueueTask(init_task);
 }
 

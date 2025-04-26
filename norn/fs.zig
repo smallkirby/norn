@@ -53,6 +53,11 @@ pub const FileDescriptor = enum(i32) {
             else => false,
         };
     }
+
+    /// Get a backing integer.
+    pub inline fn value(self: FileDescriptor) i32 {
+        return @intFromEnum(self);
+    }
 };
 
 /// Filesystem associated with a thread.
@@ -73,6 +78,16 @@ pub const ThreadFs = struct {
             .root = cwd,
             .fdtable = FdTable.new(),
         };
+    }
+
+    /// Set root directory.
+    pub fn setRoot(self: *Self, dentry: *Dentry) void {
+        self.root = dentry;
+    }
+
+    /// Set CWD.
+    pub fn setCwd(self: *Self, dentry: *Dentry) void {
+        self.cwd = dentry;
     }
 };
 
@@ -183,7 +198,14 @@ var ramfs: *RamFs = undefined;
 
 /// Initialize filesystem.
 pub fn init() Error!void {
+    norn.rtt.expectEqual(0, sched.getCurrentTask().tid);
+
+    // Init ramfs.
     ramfs = try RamFs.init(allocator);
+
+    // Set root and CWD.
+    sched.getCurrentTask().fs.setRoot(ramfs.root);
+    sched.getCurrentTask().fs.setCwd(ramfs.root);
 }
 
 /// Load initramfs cpio image and create entries.
@@ -197,8 +219,7 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
     while (cur) |c| : (cur = try iter.next()) {
         const path = try c.getPath();
         const basename = std.fs.path.basenamePosix(path);
-        const posix_mode = try c.getMode();
-        const mode = Mode.fromPosixMode(@truncate(posix_mode));
+        const mode = try c.getMode();
 
         if (std.mem.eql(u8, path, ".") or std.mem.eql(u8, path, "..")) {
             continue;
@@ -216,7 +237,7 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
         };
 
         // Create the file or directory.
-        if (bits.isset(posix_mode, 14)) {
+        if (mode.type == .directory) {
             _ = try parent.createDirectory(basename, mode);
         } else {
             const dentry = try parent.createFile(basename, mode);

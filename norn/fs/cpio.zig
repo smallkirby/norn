@@ -104,8 +104,9 @@ const NewAsciiCpio = extern struct {
         return try std.fmt.parseInt(u64, &self.inode, 16);
     }
 
-    pub fn getMode(self: *const Self) Error!u64 {
-        return try std.fmt.parseInt(u64, &self.mode, 16);
+    pub fn getMode(self: *const Self) Error!Mode {
+        const value = try std.fmt.parseInt(u32, &self.mode, 16);
+        return @bitCast(value);
     }
 
     pub fn getUid(self: *const Self) Error!u64 {

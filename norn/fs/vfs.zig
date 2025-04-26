@@ -26,7 +26,7 @@ pub const Stat = extern struct {
     num_links: u64,
 
     /// File mode.
-    mode: u32,
+    mode: Mode,
     /// User ID of the file.
     uid: u32,
     /// Group ID of the file.
@@ -125,38 +125,58 @@ pub const Uid = u32;
 /// Group ID.
 pub const Gid = u32;
 
+/// Access permission for each access type.
+pub const Permission = packed struct(u3) {
+    read: bool,
+    write: bool,
+    exec: bool,
+
+    pub const full = Permission{
+        .read = true,
+        .write = true,
+        .exec = true,
+    };
+};
+
 /// File mode.
 ///
 /// This struct is compatible with POSIX file mode.
-pub const Mode = packed struct(i32) {
+pub const Mode = packed struct(u32) {
     /// Other permission.
     other: Permission,
     /// Group permission.
     group: Permission,
     /// User permission.
     user: Permission,
+    /// Sticky bit.
+    sticky: bool = false,
+    /// SGID bit.
+    sgid: bool = false,
+    /// SUID bit.
+    suid: bool = false,
+    /// File type.
+    type: FileType = .regular,
     /// Reserved.
-    _reserved1: i3 = 0,
-    /// Reserved.
-    _reserved2: i3 = 0,
-    /// Reserved.
-    _reserved3: i1 = 0,
-    /// Directory flag.
-    directory: bool = false,
-    /// Reserved.
-    _reserved4: i15 = 0,
+    _reserved: u16 = 0,
 
-    /// Access permission for each access type.
-    const Permission = packed struct(u3) {
-        read: bool,
-        write: bool,
-        exec: bool,
+    /// File type.
+    const FileType = enum(u4) {
+        /// Named pipes or FIFOs.
+        fifo = 0o01,
+        /// Character special devices.
+        cdev = 0o02,
+        /// Directories.
+        directory = 0o04,
+        /// Block special files.
+        block = 0o06,
+        /// Regular files.
+        regular = 0o10,
+        /// Symbolic links.
+        symlink = 0o12,
+        /// Sockets.
+        socket = 0o14,
 
-        pub const full = Permission{
-            .read = true,
-            .write = true,
-            .exec = true,
-        };
+        _,
     };
 
     pub const anybody_full = Mode{
