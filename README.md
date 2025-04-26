@@ -18,16 +18,17 @@ zig build test --summary all -Druntime_test=true
 
 ### Options
 
-| Option | Type | Description |
-|---|---|---|
-| `optimize` | String: `Debug`, `ReleaseFast`, `ReleaseSmall` | Optimization level. |
-| `log_level` | String: `debug`, `info`, `warn`, `error` | Logging level. Output under the logging level is suppressed. |
-| `runtime_test` | Flag | Run runtime tests. |
-| `no_kvm` | Flag | Disable KVM. |
-| `wait_qemu` | Flag | Make QEMU wait for being attached by GDB. |
-| `debug_intr` | Flag | Print all interrupts and exceptions for debugging. |
-| `debug_exit` | Flag | Add `isa-debug-exit` device. When enabled, Norn can terminate QEMU with arbitrary exit code. |
-| `debug_syscall` | Flag | Print context for the unhandled or ignored syscalls. |
+| Option | Type | Description | Default |
+|---|---|---|---|
+| `debug_exit` | Flag | Add `isa-debug-exit` device. When enabled, Norn can terminate QEMU with arbitrary exit code. | `false` |
+| `debug_intr` | Flag | Print all interrupts and exceptions for debugging. | `false` |
+| `debug_syscall` | Flag | Print context for the unhandled or ignored syscalls. | `false` |
+| `init_binary` | String | Path to the init binary within rootfs. | `/sbin/init` |
+| `log_level` | String: `debug`, `info`, `warn`, `error` | Logging level. Output under the logging level is suppressed. | `info` |
+| `no_kvm` | Flag | Disable KVM. | `false` |
+| `optimize` | String: `Debug`, `ReleaseFast`, `ReleaseSmall` | Optimization level. | `Debug` |
+| `runtime_test` | Flag | Run runtime tests. | `false` |
+| `wait_qemu` | Flag | Make QEMU wait for being attached by GDB. | `false` |
 
 ## LICENSE
 
