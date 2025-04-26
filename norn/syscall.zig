@@ -132,7 +132,11 @@ pub fn invoke(self: Syscall, ctx: *const Context, arg1: u64, arg2: u64, arg3: u6
         return Error.Inval;
     }
     if (option.debug_syscall) {
-        log.debug("syscall: {s}", .{@tagName(self)});
+        if (std.enums.tagName(Syscall, self)) |tag| {
+            log.debug("syscall: {s}", .{tag});
+        } else {
+            log.debug("syscall: nr={d}", .{@intFromEnum(self)});
+        }
         log.debug("  arg1=0x{X:0>16}, arg2=0x{X:0>16}, arg3=0x{X:0>16}", .{ arg1, arg2, arg3 });
         log.debug("  arg4=0x{X:0>16}, arg5=0x{X:0>16}, arg6=0x{X:0>16}", .{ arg4, arg5, arg6 });
     }
