@@ -131,6 +131,11 @@ pub fn invoke(self: Syscall, ctx: *const Context, arg1: u64, arg2: u64, arg3: u6
     if (@intFromEnum(self) >= num_syscall) {
         return Error.Inval;
     }
+    if (option.debug_syscall) {
+        log.debug("syscall: {s}", .{@tagName(self)});
+        log.debug("  arg1=0x{X:0>16}, arg2=0x{X:0>16}, arg3=0x{X:0>16}", .{ arg1, arg2, arg3 });
+        log.debug("  arg4=0x{X:0>16}, arg5=0x{X:0>16}, arg6=0x{X:0>16}", .{ arg4, arg5, arg6 });
+    }
     return switch (syscall_table[@intFromEnum(self)]) {
         ._normal => |f| f(arg1, arg2, arg3, arg4, arg5, arg6),
         ._debug => |f| f(ctx, arg1, arg2, arg3, arg4, arg5, arg6),
@@ -256,9 +261,7 @@ fn unhandle(ctx: *const Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg
     log.err("  [1]={X:0>16} [2]={X:0>16} [3]={X:0>16}", .{ arg1, arg2, arg3 });
     log.err("  [4]={X:0>16} [5]={X:0>16} [6]={X:0>16}", .{ arg4, arg5, arg6 });
 
-    if (option.debug_syscall) {
-        debugPrintContext(ctx);
-    }
+    debugPrintContext(ctx);
 
     if (norn.is_runtime_test) {
         log.info("", .{});
@@ -271,9 +274,10 @@ fn unhandle(ctx: *const Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg
 
 /// Handler for ignored syscalls.
 fn ignore(ctx: *const Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) Error!i64 {
-    if (option.debug_syscall) {
-        debugPrintContext(ctx);
-    }
+    log.debug(
+        "Ignoring syscall: {s}",
+        .{@tagName(@as(Syscall, @enumFromInt(ctx.spec2.orig_rax)))},
+    );
 
     return error.Unimplemented;
 }
