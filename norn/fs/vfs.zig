@@ -1,15 +1,19 @@
 /// VFS error.
 pub const Error = error{
-    /// Failed to allocate memory.
-    OutOfMemory,
-    /// Operation for directory only is called on a non-directory.
-    NotDirectory,
-    /// Operation for regular file only is called on a non-regular file.
-    IsDirectory,
-    /// Overflow or underflow error.
-    Overflow,
+    /// File already exists.
+    AlreadyExists,
     /// Invalid argument.
     InvalidArgument,
+    /// Operation for regular file only is called on a non-regular file.
+    IsDirectory,
+    /// Operation for directory only is called on a non-directory.
+    NotDirectory,
+    /// File not found.
+    NotFound,
+    /// Failed to allocate memory.
+    OutOfMemory,
+    /// Calculation result overflowed or underflowed.
+    Overflow,
 };
 
 /// Device type.

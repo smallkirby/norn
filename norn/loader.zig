@@ -1,6 +1,6 @@
 pub const Error =
     arch.Error ||
-    fs.Error ||
+    fs.FsError ||
     mem.Error ||
     error{
         /// Invalid ELF file.

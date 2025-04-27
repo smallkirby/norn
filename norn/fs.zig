@@ -1,16 +1,35 @@
+// =============================================================
+// Error.
+// =============================================================
+
 /// FS Error.
-pub const Error = error{
-    /// File already exists.
-    AlreadyExists,
+pub const FsError = error{
     /// The file descriptor is invalid.
     BadFileDscriptor,
-    /// No available file descriptor.
+    /// No available file descriptor in pool.
     DescriptorFull,
-    /// Invalid argument.
-    InvalidArgument,
-    /// File not found.
-    NotFound,
 } || vfs.Error;
+
+/// Convert FsError to syscall error type.
+fn syscallError(err: FsError) syscall.Error {
+    const E = FsError;
+    const S = syscall.Error;
+    return switch (err) {
+        E.AlreadyExists => S.Exist,
+        E.BadFileDscriptor => S.Badf,
+        E.DescriptorFull => S.Mfile,
+        E.InvalidArgument => S.Inval,
+        E.IsDirectory => S.IsDir,
+        E.NotDirectory => S.NotDir,
+        E.NotFound => S.Noent,
+        E.OutOfMemory => S.Nomem,
+        E.Overflow => S.Inval,
+    };
+}
+
+// =============================================================
+// Constants.
+// =============================================================
 
 pub const Stat = vfs.Stat;
 
@@ -99,11 +118,11 @@ const FdTable = struct {
     }
 
     /// Add a file to the file descriptor table.
-    pub fn put(self: *Self, file: *File) Error!FileDescriptor {
+    pub fn put(self: *Self, file: *File) FsError!FileDescriptor {
         // TODO: should lock?
         const fd = self._next_fd;
         self._next_fd = @enumFromInt(@intFromEnum(fd) + 1);
-        self._map.put(fd, file) catch return Error.DescriptorFull;
+        self._map.put(fd, file) catch return FsError.DescriptorFull;
         return fd;
     }
 
@@ -179,7 +198,7 @@ pub const OpenFlags = struct {
 var ramfs: *RamFs = undefined;
 
 /// Initialize filesystem.
-pub fn init() Error!void {
+pub fn init() FsError!void {
     norn.rtt.expectEqual(0, sched.getCurrentTask().tid);
 
     // Init ramfs.
@@ -193,7 +212,7 @@ pub fn init() Error!void {
 /// Load initramfs cpio image and create entries.
 ///
 /// - `initimg`: Initramfs image. Caller can free this memory after this function returns.
-pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
+pub fn loadInitImage(initimg: []const u8) (FsError || cpio.Error)!void {
     var iter = cpio.CpioIterator.new(initimg);
     var cur = try iter.next();
 
@@ -326,12 +345,7 @@ pub fn sysGetDents64(fd: FileDescriptor, dirp: [*]u8, count: usize) syscall.Erro
 
     var consumed: usize = 0;
 
-    const children = file.iterate() catch |err| return switch (err) {
-        error.OutOfMemory => error.Nomem,
-        error.NotDirectory => error.NotDir,
-        error.IsDirectory => error.IsDir,
-        else => error.Unknown,
-    };
+    const children = file.iterate() catch |err| return syscallError(err);
 
     // All entries are already read.
     if (children.len <= file.pos) {
@@ -391,15 +405,9 @@ pub fn sysOpenAt(fd: FileDescriptor, pathname: [*:0]const u8, flags: posix.fs.Op
         util.sentineledToSlice(pathname),
         OpenFlags.fromPosix(flags),
         mode,
-    ) catch |err| return switch (err) {
-        Error.BadFileDscriptor => error.Badf,
-        else => error.Noent,
-    };
+    ) catch |err| return syscallError(err);
 
-    const result = getCurrentFdTable().put(file) catch |err| return switch (err) {
-        Error.DescriptorFull => error.Mfile,
-        else => error.Noent,
-    };
+    const result = getCurrentFdTable().put(file) catch |err| return syscallError(err);
     return @intFromEnum(result);
 }
 
@@ -408,10 +416,7 @@ pub fn sysOpenAt(fd: FileDescriptor, pathname: [*:0]const u8, flags: posix.fs.Op
 /// Currently, only supports reading from stdin (fd=0).
 pub fn sysRead(fd: FileDescriptor, buf: [*]u8, size: usize) syscall.Error!i64 {
     const file = getCurrentFdTable().get(fd) orelse return error.Badf;
-    const num_read = file.read(buf[0..size]) catch |err| return switch (err) {
-        error.IsDirectory => error.IsDir,
-        else => error.Busy,
-    };
+    const num_read = file.read(buf[0..size]) catch |err| return syscallError(err);
     return @bitCast(num_read);
 }
 
@@ -425,7 +430,7 @@ pub fn sysRead(fd: FileDescriptor, buf: [*]u8, size: usize) syscall.Error!i64 {
 /// Returns a file instance if the file is found or created.
 ///
 /// Note that this function does not add the file to the descriptor table.
-pub fn openFile(path: []const u8, flags: OpenFlags, mode: ?Mode) Error!*File {
+pub fn openFile(path: []const u8, flags: OpenFlags, mode: ?Mode) FsError!*File {
     return openFileAt(.cwd, path, flags, mode);
 }
 
@@ -435,20 +440,20 @@ pub fn openFile(path: []const u8, flags: OpenFlags, mode: ?Mode) Error!*File {
 /// Returns a file instance if the file is found or created.
 ///
 /// Note that this function does NOT add the file to the descriptor table.
-pub fn openFileAt(fd: FileDescriptor, pathname: []const u8, flags: OpenFlags, mode: ?vfs.Mode) Error!*File {
+pub fn openFileAt(fd: FileDescriptor, pathname: []const u8, flags: OpenFlags, mode: ?vfs.Mode) FsError!*File {
     const current = norn.sched.getCurrentTask();
     const is_absolute = std.fs.path.isAbsolutePosix(pathname);
     const origin = getDentryFromFd(fd) orelse blk: {
-        if (!is_absolute) return Error.BadFileDscriptor else break :blk current.fs.cwd;
+        if (!is_absolute) return FsError.BadFileDscriptor else break :blk current.fs.cwd;
     };
 
     // Get a dentry from the path.
     const dentry = if (lookup(.{ .dir = origin }, pathname)) |dent| dent else blk: {
-        if (!flags.create) return Error.NotFound;
+        if (!flags.create) return FsError.NotFound;
 
         // Try to create the file.
         const mode_using: Mode = mode orelse .anybody_rw;
-        const parent = kerneLookupParent(.origin_cwd, pathname) orelse return Error.NotFound;
+        const parent = kerneLookupParent(.origin_cwd, pathname) orelse return FsError.NotFound;
         const basename = std.fs.path.basenamePosix(pathname);
         break :blk try parent.createFile(basename, mode_using);
     };
@@ -458,30 +463,30 @@ pub fn openFileAt(fd: FileDescriptor, pathname: []const u8, flags: OpenFlags, mo
 }
 
 /// TODO: doc
-pub fn write(file: *File, buf: []const u8) Error!usize {
+pub fn write(file: *File, buf: []const u8) FsError!usize {
     _ = file; // autofix
     _ = buf; // autofix
     norn.unimplemented("fs.write");
 }
 
 /// Get a file status information of the given file.
-pub fn stat(file: *File) Error!Stat {
+pub fn stat(file: *File) FsError!Stat {
     return try file.dentry.inode.stat();
 }
 
 /// Get a file status information of the given path.
 ///
 /// The given `dir` is the directory to start the lookup if the path is not absolute.
-pub fn statAt(dir: *vfs.Dentry, path: []const u8) Error!Stat {
+pub fn statAt(dir: *vfs.Dentry, path: []const u8) FsError!Stat {
     const dent = lookup(
         .{ .dir = dir },
         path,
-    ) orelse return Error.NotFound;
+    ) orelse return FsError.NotFound;
     return try dent.inode.stat();
 }
 
 /// TODO: doc
-pub fn mkdir(path: []const u8) Error!void {
+pub fn mkdir(path: []const u8) FsError!void {
     _ = path; // autofix
     norn.unimplemented("fs.mkdir");
 }
@@ -593,12 +598,12 @@ fn kerneLookupParent(origin: LookupOrigin, path: []const u8) ?*vfs.Dentry {
 // =============================================================
 
 /// Print the directory tree.
-fn printDirectoryTree(root: *vfs.Dentry) Error!void {
+fn printDirectoryTree(root: *vfs.Dentry) FsError!void {
     var current_path = std.mem.zeroes([512]u8);
     try printDirectoryTreeSub(root, current_path[0..current_path.len]);
 }
 
-fn printDirectoryTreeSub(dir: *Dentry, current_path: []u8) Error!void {
+fn printDirectoryTreeSub(dir: *Dentry, current_path: []u8) FsError!void {
     const parent_end_pos = blk: {
         for (current_path, 0..) |c, i| {
             if (c == 0) break :blk i;
