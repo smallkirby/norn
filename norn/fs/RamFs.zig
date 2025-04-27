@@ -446,12 +446,13 @@ test "Read from file" {
     var len: usize = undefined;
 
     _ = try file1.write(s1, 0);
-    len = try file1.read(buf[0..], 0);
+    len = try file1.read(buf[0..]);
     try testing.expectEqual(len, s1.len);
     try testing.expectEqualStrings(s1, buf[0..s1.len]);
 
     _ = try file1.write(s2, 0);
-    len = try file1.read(buf[0..], 0);
+    _ = try file1.seek(0, .set);
+    len = try file1.read(buf[0..]);
     try testing.expectEqual(len, s2.len);
     try testing.expectEqualStrings(s2, buf[0..s2.len]);
 }

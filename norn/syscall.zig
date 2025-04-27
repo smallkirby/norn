@@ -10,7 +10,7 @@ const sys_entries = [_]SysEntry{
     // POSIX syscalls.
     // =============================================================
     // Read from a file descriptor.
-    .new("read", 0, .normal(sysRead)),
+    .new("read", 0, .normal(fs.sysRead)),
     // Write to a file descriptor.
     .new("write", 1, .normal(sysWrite)),
     // Close the file.
@@ -383,21 +383,6 @@ fn sysGetRandom(buf: [*]u8, size: usize, flags: GetRandomFlags) Error!i64 {
     rand.bytes(buf[0..size]);
 
     return @bitCast(size);
-}
-
-/// Syscall handler for `read`.
-///
-/// Currently, only supports reading from stdin (fd=0).
-fn sysRead(fd: u64, buf: [*]u8, size: usize) Error!i64 {
-    if (fd != 0) {
-        norn.unimplemented("sysRead(): fd other than 0.");
-    }
-
-    log.debug(
-        "sysRead(): fd={d} buf={X:0>16} size={X:0>16}",
-        .{ fd, @intFromPtr(buf), size },
-    );
-    norn.unimplemented("sysRead()");
 }
 
 /// Syscall handler for `write`.

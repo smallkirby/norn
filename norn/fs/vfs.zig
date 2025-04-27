@@ -6,6 +6,10 @@ pub const Error = error{
     NotDirectory,
     /// Operation for regular file only is called on a non-regular file.
     IsDirectory,
+    /// Overflow or underflow error.
+    Overflow,
+    /// Invalid argument.
+    InvalidArgument,
 };
 
 /// Device type.
@@ -213,6 +217,18 @@ pub const Mode = packed struct(u32) {
     }
 };
 
+/// Seek mode.
+pub const SeekMode = enum(u32) {
+    /// Seek from the beginning of the file.
+    set,
+    /// Seek from the current position.
+    current,
+    /// Seek from the end of the file.
+    end,
+
+    _,
+};
+
 /// Inode.
 pub const Inode = struct {
     const Self = @This();
@@ -321,11 +337,30 @@ pub const File = struct {
     }
 
     /// Read data from this inode.
-    pub fn read(self: *Self, buf: []u8, pos: usize) Error!usize {
+    pub fn read(self: *Self, buf: []u8) Error!usize {
         if (self.dentry.inode.inode_type == InodeType.directory) {
             return Error.IsDirectory;
         }
-        return self.vtable.read(self.dentry.inode, buf, pos);
+        const num_read = try self.vtable.read(
+            self.dentry.inode,
+            buf,
+            self.pos,
+        );
+        self.pos += num_read;
+        return num_read;
+    }
+
+    /// Reposition file offset.
+    ///
+    /// This functions allows the file offset to be set beyond the end of the file.
+    pub fn seek(file: *File, offset: usize, whence: SeekMode) Error!usize {
+        file.pos = switch (whence) {
+            .current => std.math.add(usize, file.pos, offset) catch return Error.Overflow,
+            .set => offset,
+            .end => std.math.sub(usize, file.dentry.inode.size, offset) catch return Error.Overflow,
+            else => return Error.InvalidArgument,
+        };
+        return file.pos;
     }
 
     /// Write data to this inode.

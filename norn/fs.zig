@@ -131,16 +131,6 @@ const FdTable = struct {
     }
 };
 
-/// Seek mode.
-pub const SeekMode = enum {
-    /// Seek from the beginning of the file.
-    Set,
-    /// Seek from the current position.
-    Current,
-    /// Seek from the end of the file.
-    End,
-};
-
 /// Open mode.
 pub const OpenMode = enum {
     /// Open the file in read-only mode.
@@ -340,6 +330,7 @@ pub fn sysGetDents64(fd: FileDescriptor, dirp: [*]u8, count: usize) syscall.Erro
         error.OutOfMemory => error.Nomem,
         error.NotDirectory => error.NotDir,
         error.IsDirectory => error.IsDir,
+        else => error.Unknown,
     };
 
     // All entries are already read.
@@ -412,6 +403,18 @@ pub fn sysOpenAt(fd: FileDescriptor, pathname: [*:0]const u8, flags: posix.fs.Op
     return @intFromEnum(result);
 }
 
+/// Syscall handler for `read`.
+///
+/// Currently, only supports reading from stdin (fd=0).
+pub fn sysRead(fd: FileDescriptor, buf: [*]u8, size: usize) syscall.Error!i64 {
+    const file = getCurrentFdTable().get(fd) orelse return error.Badf;
+    const num_read = file.read(buf[0..size]) catch |err| return switch (err) {
+        error.IsDirectory => error.IsDir,
+        else => error.Busy,
+    };
+    return @bitCast(num_read);
+}
+
 // =============================================================
 // File operations.
 // =============================================================
@@ -455,25 +458,10 @@ pub fn openFileAt(fd: FileDescriptor, pathname: []const u8, flags: OpenFlags, mo
 }
 
 /// TODO: doc
-pub fn read(file: *File, buf: []u8) Error!usize {
-    const bytesRead = try file.read(buf, file.pos);
-    file.pos += bytesRead;
-    return bytesRead;
-}
-
-/// TODO: doc
 pub fn write(file: *File, buf: []const u8) Error!usize {
     _ = file; // autofix
     _ = buf; // autofix
     norn.unimplemented("fs.write");
-}
-
-/// TODO: doc
-pub fn seek(file: *File, offset: usize, whence: SeekMode) Error!usize {
-    _ = file; // autofix
-    _ = offset; // autofix
-    _ = whence; // autofix
-    norn.unimplemented("fs.seek");
 }
 
 /// Get a file status information of the given file.

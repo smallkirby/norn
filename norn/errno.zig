@@ -65,6 +65,8 @@ pub const Errno = enum(i64) {
     /// Math result not representable.
     range = 34,
 
+    /// Unknown.
+    unknown = 98,
     /// Unimplemented.
     unimplemented = 99,
 
@@ -105,6 +107,7 @@ pub const Errno = enum(i64) {
             .pipe => "Broken pipe",
             .dom => "Math argument out of domain of func",
             .range => "Math result not representable",
+            .unknown => "Unknown error",
             .unimplemented => "Unimplemented",
             _ => "Unknown error",
         };
@@ -146,6 +149,7 @@ pub const Error = error{
     Dom,
     Range,
 
+    Unknown,
     Unimplemented,
 };
 
@@ -184,6 +188,7 @@ pub fn convertToErrno(err: Error) Errno {
         Error.Pipe => .pipe,
         Error.Dom => .dom,
         Error.Range => .range,
+        Error.Unknown => .unknown,
         Error.Unimplemented => .unimplemented,
     };
 }

@@ -80,7 +80,7 @@ fn readElfFile(filename: []const u8) Error![]align(8) u8 {
     const size = stat.size;
 
     const buf = try general_allocator.alignedAlloc(u8, 8, size);
-    const read_size = try fs.read(file, buf);
+    const read_size = try file.read(buf);
     norn.rtt.expectEqual(size, read_size);
 
     return buf;
