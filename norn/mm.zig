@@ -157,7 +157,7 @@ pub const MemoryMap = struct {
 /// Syscall handler for `brk`.
 ///
 /// Change the position of the program break.
-pub fn sysBrk(requested_brk: u64) syscall.Error!i64 {
+pub fn sysBrk(requested_brk: u64) SysError!i64 {
     const task = norn.sched.getCurrentTask();
     const mm = task.mm;
     const current_brk_start = mm.brk.start;
@@ -181,7 +181,7 @@ pub fn sysBrk(requested_brk: u64) syscall.Error!i64 {
             .rw,
         ) catch |err| {
             log.err("Failed to map growing brk: {?}", .{err});
-            return error.Nomem;
+            return SysError.NoMemory;
         };
         mm.vm_areas.append(new_last);
         mm.brk.end = new_last.end;
@@ -217,8 +217,8 @@ const log = std.log.scoped(.mm);
 const norn = @import("norn");
 const arch = norn.arch;
 const mem = norn.mem;
-const syscall = norn.syscall;
 const util = norn.util;
+const SysError = norn.syscall.SysError;
 const Virt = mem.Virt;
 const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
 

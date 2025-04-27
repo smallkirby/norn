@@ -22,7 +22,7 @@ const x64 = struct {
     };
 
     /// Syscall handler for `arch_prctl`.
-    pub fn sysArchPrctl(op: Operation, value: u64) syscall.Error!i64 {
+    pub fn sysArchPrctl(op: Operation, value: u64) SysError!i64 {
         return switch (op) {
             .get_fs => @bitCast(arch.getFs()),
             .set_fs => blk: {
@@ -34,7 +34,7 @@ const x64 = struct {
             // unsupported operation
             else => blk: {
                 log.warn("Unsupported operation: 0x{X}", .{@intFromEnum(op)});
-                break :blk error.Inval;
+                break :blk SysError.InvalidArg;
             },
         };
     }
@@ -50,4 +50,4 @@ const log = std.log.scoped(.prctl);
 
 const norn = @import("norn");
 const arch = norn.arch;
-const syscall = norn.syscall;
+const SysError = norn.syscall.SysError;

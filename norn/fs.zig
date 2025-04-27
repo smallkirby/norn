@@ -11,19 +11,19 @@ pub const FsError = error{
 } || vfs.Error;
 
 /// Convert FsError to syscall error type.
-fn syscallError(err: FsError) syscall.Error {
+fn syscallError(err: FsError) SysError {
     const E = FsError;
-    const S = syscall.Error;
+    const S = SysError;
     return switch (err) {
         E.AlreadyExists => S.Exist,
-        E.BadFileDscriptor => S.Badf,
-        E.DescriptorFull => S.Mfile,
-        E.InvalidArgument => S.Inval,
+        E.BadFileDscriptor => S.BadFd,
+        E.DescriptorFull => S.FdTooMany,
+        E.InvalidArgument => S.InvalidArg,
         E.IsDirectory => S.IsDir,
         E.NotDirectory => S.NotDir,
-        E.NotFound => S.Noent,
-        E.OutOfMemory => S.Nomem,
-        E.Overflow => S.Inval,
+        E.NotFound => S.NoEntry,
+        E.OutOfMemory => S.NoMemory,
+        E.Overflow => S.OutOfRange,
     };
 }
 
@@ -337,10 +337,10 @@ inline fn getCurrentFdTable() *FdTable {
 ///
 /// On success, the number of bytes read is returned.
 /// On end of directory, 0 is returned.
-pub fn sysGetDents64(fd: FileDescriptor, dirp: [*]u8, count: usize) syscall.Error!i64 {
-    const file = getCurrentFdTable().get(fd) orelse return error.Noent;
+pub fn sysGetDents64(fd: FileDescriptor, dirp: [*]u8, count: usize) SysError!i64 {
+    const file = getCurrentFdTable().get(fd) orelse return SysError.NoEntry;
     if (file.dentry.inode.mode.type != .directory) {
-        return error.NotDir;
+        return SysError.NotDir;
     }
 
     var consumed: usize = 0;
@@ -370,10 +370,10 @@ pub fn sysGetDents64(fd: FileDescriptor, dirp: [*]u8, count: usize) syscall.Erro
 }
 
 /// Syscall handler for `fstat`.
-pub fn sysFstat(fd: FileDescriptor, buf: *Stat) syscall.Error!i64 {
+pub fn sysFstat(fd: FileDescriptor, buf: *Stat) SysError!i64 {
     if (getCurrentFdTable().get(fd)) |f| {
-        buf.* = stat(f) catch return error.Noent;
-    } else return error.Noent;
+        buf.* = stat(f) catch return SysError.NoEntry;
+    } else return SysError.NoEntry;
 
     return 0;
 }
@@ -381,25 +381,25 @@ pub fn sysFstat(fd: FileDescriptor, buf: *Stat) syscall.Error!i64 {
 /// Syscall handler for `newfstatat`.
 ///
 /// TODO: Use flags argument.
-pub fn sysNewFstatAt(fd: FileDescriptor, pathname: [*:0]const u8, buf: *Stat, _: u64) syscall.Error!i64 {
+pub fn sysNewFstatAt(fd: FileDescriptor, pathname: [*:0]const u8, buf: *Stat, _: u64) SysError!i64 {
     if (getDentryFromFd(fd)) |dent| {
         buf.* = statAt(
             dent,
             util.sentineledToSlice(pathname),
-        ) catch return error.Noent;
-    } else return error.Noent;
+        ) catch return SysError.NoEntry;
+    } else return SysError.NoEntry;
 
     return 0;
 }
 
 /// Syscall handler for `close`.
-pub fn sysClose(fd: FileDescriptor) syscall.Error!i64 {
-    getCurrentFdTable().remove(fd) orelse return error.Badf;
+pub fn sysClose(fd: FileDescriptor) syscall.SysError!i64 {
+    getCurrentFdTable().remove(fd) orelse return SysError.BadFd;
     return 0;
 }
 
 /// Syscall handler for `openat`.
-pub fn sysOpenAt(fd: FileDescriptor, pathname: [*:0]const u8, flags: posix.fs.OpenFlags, mode: vfs.Mode) syscall.Error!i64 {
+pub fn sysOpenAt(fd: FileDescriptor, pathname: [*:0]const u8, flags: posix.fs.OpenFlags, mode: vfs.Mode) SysError!i64 {
     const file = openFileAt(
         fd,
         util.sentineledToSlice(pathname),
@@ -414,8 +414,8 @@ pub fn sysOpenAt(fd: FileDescriptor, pathname: [*:0]const u8, flags: posix.fs.Op
 /// Syscall handler for `read`.
 ///
 /// Currently, only supports reading from stdin (fd=0).
-pub fn sysRead(fd: FileDescriptor, buf: [*]u8, size: usize) syscall.Error!i64 {
-    const file = getCurrentFdTable().get(fd) orelse return error.Badf;
+pub fn sysRead(fd: FileDescriptor, buf: [*]u8, size: usize) SysError!i64 {
+    const file = getCurrentFdTable().get(fd) orelse return SysError.BadFd;
     const num_read = file.read(buf[0..size]) catch |err| return syscallError(err);
     return @bitCast(num_read);
 }
@@ -666,6 +666,7 @@ const posix = norn.posix;
 const sched = norn.sched;
 const syscall = norn.syscall;
 const util = norn.util;
+const SysError = syscall.SysError;
 
 const cpio = @import("fs/cpio.zig");
 const RamFs = @import("fs/RamFs.zig");

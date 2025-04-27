@@ -1,4 +1,88 @@
+//! This function provides a POSIX errno value and corresponding error set.
+
+/// Error set corresponding to POSIX errno.
+///
+/// Field names do not necessarily match errno to make them more understandable.
+/// The order of definitions has no significance.
+pub const Error = error{
+    /// Operation not permitted.
+    OpPermission,
+    /// No such file or directory.
+    NoEntry,
+    /// No such process.
+    NoProcess,
+    /// Interrupted system call.
+    Interrupted,
+    /// I/O error.
+    Io,
+    /// No such device or address.
+    NoAddr,
+    /// Argument list too long.
+    TooBig,
+    /// Exec format error.
+    ExecFormat,
+    /// Bad file number.
+    BadFd,
+    /// No child processes.
+    NoChild,
+    /// Try again.
+    Again,
+    /// Out of memory.
+    NoMemory,
+    /// Permission denied.
+    Access,
+    /// Bad address.
+    Fault,
+    /// Block device required.
+    NotBlock,
+    /// Device or resource busy.
+    Busy,
+    /// File exists.
+    Exist,
+    /// Cross-device link.
+    CrossDevice,
+    /// No such device.
+    NoDevice,
+    /// Not a directory.
+    NotDir,
+    /// Is a directory.
+    IsDir,
+    /// Invalid argument.
+    InvalidArg,
+    /// File table overflow for this process.
+    FdTooMany,
+    /// Too many open files in entire system.
+    FileTooMany,
+    /// Not a typewriter.
+    NotTty,
+    /// Text file busy.
+    TextBusy,
+    /// File too large.
+    FileLarge,
+    /// No space left on device.
+    NoSpace,
+    /// Illegal seek.
+    IllegalSeek,
+    /// Read-only file system.
+    RoFs,
+    /// Too many links.
+    LinkTooMany,
+    /// Broken pipe.
+    BrokenPipe,
+    /// Math argument out of domain of func.
+    Dom,
+    /// Math result not representable.
+    OutOfRange,
+
+    /// Function not implemented.
+    Unimplemented,
+};
+
 /// Error conditions.
+///
+/// Compatible with POSIX errno.
+/// Values must match POSIX errno.
+/// Field names should match POSIX errno as closey as possible unlike `Error`.
 pub const Errno = enum(i64) {
     /// Operation not permitted.
     perm = 1,
@@ -19,7 +103,11 @@ pub const Errno = enum(i64) {
     /// Bad file number.
     badf = 9,
     /// No child processes.
-    nomem = 10,
+    child = 10,
+    /// Try again.
+    again = 11,
+    /// Out of memory.
+    nomem = 12,
     /// Permission denied.
     access = 13,
     /// Bad address.
@@ -65,8 +153,6 @@ pub const Errno = enum(i64) {
     /// Math result not representable.
     range = 34,
 
-    /// Unknown.
-    unknown = 98,
     /// Unimplemented.
     unimplemented = 99,
 
@@ -84,7 +170,9 @@ pub const Errno = enum(i64) {
             .@"2big" => "Argument list too long",
             .noexec => "Exec format error",
             .badf => "Bad file number",
-            .nomem => "No child processes",
+            .child => "No child processes",
+            .again => "Try again",
+            .nomem => "Out ofmemory",
             .access => "Permission denied",
             .fault => "Bad address",
             .notblk => "Block device required",
@@ -107,88 +195,49 @@ pub const Errno = enum(i64) {
             .pipe => "Broken pipe",
             .dom => "Math argument out of domain of func",
             .range => "Math result not representable",
-            .unknown => "Unknown error",
             .unimplemented => "Unimplemented",
             _ => "Unknown error",
         };
     }
 };
 
-/// Error type corresponding to `Errno`.
-pub const Error = error{
-    Perm,
-    Noent,
-    Srch,
-    Intr,
-    Io,
-    Nxio,
-    TooBig,
-    Noexec,
-    Badf,
-    Nomem,
-    Access,
-    Fault,
-    NotBlk,
-    Busy,
-    Exist,
-    Xdev,
-    Nodev,
-    NotDir,
-    IsDir,
-    Inval,
-    Nfile,
-    Mfile,
-    NotTy,
-    TxtBsy,
-    Fbig,
-    Nospc,
-    Spipe,
-    Rofs,
-    Mlink,
-    Pipe,
-    Dom,
-    Range,
-
-    Unknown,
-    Unimplemented,
-};
-
-/// Convert `Error` to `Errno`.
+/// Convert `Error` error set  to `Errno` integer.
 pub fn convertToErrno(err: Error) Errno {
     return switch (err) {
-        Error.Perm => .perm,
-        Error.Noent => .noent,
-        Error.Srch => .srch,
-        Error.Intr => .intr,
+        Error.OpPermission => .perm,
+        Error.NoEntry => .noent,
+        Error.NoProcess => .srch,
+        Error.Interrupted => .intr,
         Error.Io => .io,
-        Error.Nxio => .nxio,
+        Error.NoAddr => .nxio,
         Error.TooBig => .@"2big",
-        Error.Noexec => .noexec,
-        Error.Badf => .badf,
-        Error.Nomem => .nomem,
+        Error.ExecFormat => .noexec,
+        Error.BadFd => .badf,
+        Error.NoChild => .child,
+        Error.Again => .again,
+        Error.NoMemory => .nomem,
         Error.Access => .access,
         Error.Fault => .fault,
-        Error.NotBlk => .notblk,
+        Error.NotBlock => .notblk,
         Error.Busy => .busy,
         Error.Exist => .exist,
-        Error.Xdev => .xdev,
-        Error.Nodev => .nodev,
+        Error.CrossDevice => .xdev,
+        Error.NoDevice => .nodev,
         Error.NotDir => .notdir,
         Error.IsDir => .isdir,
-        Error.Inval => .inval,
-        Error.Nfile => .nfile,
-        Error.Mfile => .mfile,
-        Error.NotTy => .notty,
-        Error.TxtBsy => .txtbsy,
-        Error.Fbig => .fbig,
-        Error.Nospc => .nospc,
-        Error.Spipe => .spipe,
-        Error.Rofs => .rofs,
-        Error.Mlink => .mlink,
-        Error.Pipe => .pipe,
+        Error.InvalidArg => .inval,
+        Error.FdTooMany => .nfile,
+        Error.FileTooMany => .mfile,
+        Error.NotTty => .notty,
+        Error.TextBusy => .txtbsy,
+        Error.FileLarge => .fbig,
+        Error.NoSpace => .nospc,
+        Error.IllegalSeek => .spipe,
+        Error.RoFs => .rofs,
+        Error.LinkTooMany => .mlink,
+        Error.BrokenPipe => .pipe,
         Error.Dom => .dom,
-        Error.Range => .range,
-        Error.Unknown => .unknown,
+        Error.OutOfRange => .range,
         Error.Unimplemented => .unimplemented,
     };
 }
