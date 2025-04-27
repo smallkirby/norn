@@ -1,6 +1,7 @@
 const std = @import("std");
 const zon: ZonStruct = @import("build.zig.zon");
 
+/// Type of build.zig.zon file.
 const ZonStruct = struct {
     version: []const u8,
     name: @Type(.enum_literal),
@@ -10,6 +11,7 @@ const ZonStruct = struct {
     paths: []const []const u8,
 };
 
+/// Norn version string.
 const norn_version = zon.version;
 
 /// Get SHA-1 hash of the current Git commit.
@@ -40,7 +42,9 @@ pub fn build(b: *std.Build) !void {
     const userland_target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // =============================================================
     // Options
+    // =============================================================
     const s_log_level = b.option(
         []const u8,
         "log_level",
@@ -106,7 +110,9 @@ pub fn build(b: *std.Build) !void {
     options.addOption([]const u8, "version", norn_version);
     options.addOption(bool, "debug_syscall", debug_syscall);
 
+    // =============================================================
     // Modules
+    // =============================================================
     const surtr_module = b.createModule(.{
         .root_source_file = b.path("surtr/surtr.zig"),
     });
@@ -119,7 +125,9 @@ pub fn build(b: *std.Build) !void {
     norn_module.addImport("surtr", surtr_module);
     norn_module.addOptions("option", options);
 
-    // Executables
+    // =============================================================
+    // Surtr Executable
+    // =============================================================
     const surtr = b.addExecutable(.{
         .name = "BOOTX64.EFI",
         .root_source_file = b.path("surtr/main.zig"),
@@ -133,6 +141,9 @@ pub fn build(b: *std.Build) !void {
     surtr.root_module.addOptions("option", options);
     b.installArtifact(surtr);
 
+    // =============================================================
+    // Norn Executable
+    // =============================================================
     const norn = b.addExecutable(.{
         .name = "norn.elf",
         .root_source_file = b.path("norn/main.zig"),
@@ -150,6 +161,9 @@ pub fn build(b: *std.Build) !void {
     norn.want_lto = false; // NOTE: LTO dead-strips exported functions in Zig file. cf: https://github.com/ziglang/zig/issues/22234
     b.installArtifact(norn);
 
+    // =============================================================
+    // Init Executable
+    // =============================================================
     const init = b.addExecutable(.{
         .name = "init",
         .root_source_file = b.path("apps/init/main.zig"),
@@ -159,7 +173,9 @@ pub fn build(b: *std.Build) !void {
     });
     b.installArtifact(init);
 
-    // Make initramfs
+    // =============================================================
+    // initramfs
+    // =============================================================
     const make_initramfs = b.addSystemCommand(&[_][]const u8{
         "bash",
         "-c",
@@ -174,7 +190,9 @@ pub fn build(b: *std.Build) !void {
     );
     make_initramfs.step.dependOn(&install_init.step);
 
+    // =============================================================
     // EFI directory
+    // =============================================================
     const out_dir_name = "img";
     const install_surtr = b.addInstallFile(
         surtr.getEmittedBin(),
@@ -190,7 +208,9 @@ pub fn build(b: *std.Build) !void {
     install_norn.step.dependOn(&norn.step);
     b.getInstallStep().dependOn(&install_norn.step);
 
-    // Run QEMU
+    // =============================================================
+    // QEMU
+    // =============================================================
     var qemu_args = std.ArrayList([]const u8).init(b.allocator);
     defer qemu_args.deinit();
     try qemu_args.appendSlice(&.{
@@ -239,7 +259,9 @@ pub fn build(b: *std.Build) !void {
     const run_qemu_cmd = b.step("run", "Run QEMU");
     run_qemu_cmd.dependOn(&qemu_cmd.step);
 
-    // Unit tests
+    // =============================================================
+    // Unit Tests
+    // =============================================================
     const unit_test = b.addTest(.{
         .name = "Unit Test",
         .root_source_file = b.path("norn/norn.zig"),
