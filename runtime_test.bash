@@ -17,8 +17,11 @@ DEFAULT_INIT_HEYSTACK=(
 )
 # Success indicator for "/bin/busybox ls -la".
 BUSYBOX_LS_HEYSTACK=(
-  "?rwxrwxrwx    1 0        0                0 Jan  1 00:00 ."
-  "[DEBUG] syscall | exit_group(): status=0"
+  "1 0        0               30 Jan  1 00:00 .gitignore"
+  "1 0        0                1 Jan  1 00:00 bin"
+  "1 0        0                2 Jan  1 00:00 dir1"
+  "1 0        0               13 Jan  1 00:00 hello.txt"
+  "1 0        0                2 Jan  1 00:00 sbin"
 )
 
 # Check the num of arguments
@@ -52,8 +55,8 @@ function check_success()
   ret=0
 
   for needle in "${SUCCESS_HEYSTACKS[@]}"; do
-    if ! grep -qF "$needle" "$TMPFILE"; then
-      echo "[ERROR] Missing: $needle"
+    if ! grep -qF -- "$needle" "$TMPFILE"; then
+      echo "[ERROR] Missing: '$needle'"
       ret=1
     fi
   done
