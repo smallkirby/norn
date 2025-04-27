@@ -6,7 +6,7 @@
 pub const PageAllocator = @import("mem/PageAllocator.zig");
 
 /// Errors.
-pub const Error = error{
+pub const MemError = error{
     /// Out of memory.
     OutOfMemory,
     /// The specified region is invalid.

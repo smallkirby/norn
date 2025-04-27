@@ -469,7 +469,7 @@ const norn = @import("norn");
 const SpinLock = norn.SpinLock;
 
 const vfs = @import("vfs.zig");
-const Error = vfs.Error;
+const Error = vfs.VfsError;
 const Dentry = vfs.Dentry;
 const Inode = vfs.Inode;
 const InodeType = vfs.InodeType;

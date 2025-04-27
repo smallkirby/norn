@@ -1,11 +1,11 @@
-pub const Error = error{
+pub const PageError = error{
     /// Invalid address.
     InvalidAddress,
     /// Specified address is not mapped.
     NotMapped,
     /// Specified address is already mapped.
     AlreadyMapped,
-} || mem.Error;
+} || mem.MemError;
 
 /// Page attribute.
 pub const Attribute = enum {
@@ -139,7 +139,7 @@ fn getLv1Entry(addr: Virt, lv1tbl_addr: Phys) *Lv1Entry {
 ///
 /// This function copies the current Level 4 page table first.
 /// Then, it clears the user space entries in the copied table.
-pub fn createPageTables() Error!Virt {
+pub fn createPageTables() PageError!Virt {
     const allocator = norn.mem.page_allocator;
     const current_lv4tbl = getLv4Table(am.readCr3());
 
@@ -154,9 +154,9 @@ pub fn createPageTables() Error!Virt {
 /// Change the page attribute of the given virtual address.
 ///
 /// The pages must be mapped as 4KiB pages.
-pub fn changeAttribute(cr3: Virt, vaddr: Virt, size: usize, attr: Attribute) Error!void {
-    if ((vaddr & page_mask_4k) != 0) return Error.InvalidAddress;
-    if ((size & page_mask_4k) != 0) return Error.InvalidAddress;
+pub fn changeAttribute(cr3: Virt, vaddr: Virt, size: usize, attr: Attribute) PageError!void {
+    if ((vaddr & page_mask_4k) != 0) return PageError.InvalidAddress;
+    if ((size & page_mask_4k) != 0) return PageError.InvalidAddress;
 
     const cr3_phys = virt2phys(cr3);
     var current = vaddr;
@@ -164,19 +164,19 @@ pub fn changeAttribute(cr3: Virt, vaddr: Virt, size: usize, attr: Attribute) Err
 
     while (current < end) : (current += size_4k) {
         const lv4ent = getLv4Entry(current, cr3_phys);
-        if (!lv4ent.present) return Error.NotMapped;
-        if (lv4ent.ps) return Error.NotMapped;
+        if (!lv4ent.present) return PageError.NotMapped;
+        if (lv4ent.ps) return PageError.NotMapped;
 
         const lv3ent = getLv3Entry(current, lv4ent.address());
-        if (!lv3ent.present) return Error.NotMapped;
-        if (lv3ent.ps) return Error.NotMapped;
+        if (!lv3ent.present) return PageError.NotMapped;
+        if (lv3ent.ps) return PageError.NotMapped;
 
         const lv2ent = getLv2Entry(current, lv3ent.address());
-        if (!lv2ent.present) return Error.NotMapped;
-        if (lv2ent.ps) return Error.NotMapped;
+        if (!lv2ent.present) return PageError.NotMapped;
+        if (lv2ent.ps) return PageError.NotMapped;
 
         const lv1ent = getLv1Entry(current, lv2ent.address());
-        if (!lv1ent.present) return Error.NotMapped;
+        if (!lv1ent.present) return PageError.NotMapped;
 
         lv1ent.rw = switch (attr) {
             .read_write, .read_write_executable => true,
@@ -199,10 +199,10 @@ pub fn changeAttribute(cr3: Virt, vaddr: Virt, size: usize, attr: Attribute) Err
 /// You can specify the attributes of the mapping.
 ///
 /// If the pages are already mapped, return an error.
-pub fn map(cr3: Virt, vaddr: Virt, paddr: Virt, size: usize, attr: Attribute) Error!void {
-    if ((vaddr & page_mask_4k) != 0) return Error.InvalidAddress;
-    if ((paddr & page_mask_4k) != 0) return Error.InvalidAddress;
-    if ((size & page_mask_4k) != 0) return Error.InvalidAddress;
+pub fn map(cr3: Virt, vaddr: Virt, paddr: Virt, size: usize, attr: Attribute) PageError!void {
+    if ((vaddr & page_mask_4k) != 0) return PageError.InvalidAddress;
+    if ((paddr & page_mask_4k) != 0) return PageError.InvalidAddress;
+    if ((size & page_mask_4k) != 0) return PageError.InvalidAddress;
     const allocator = norn.mem.page_allocator;
     const cr3_phys = virt2phys(cr3);
 
@@ -213,18 +213,18 @@ pub fn map(cr3: Virt, vaddr: Virt, paddr: Virt, size: usize, attr: Attribute) Er
 
         const lv4ent = getLv4Entry(cur_vaddr, cr3_phys);
         if (!lv4ent.present) lv4ent.* = Lv4Entry.newMapTable(try Lv3Entry.newTable(allocator), true, true);
-        if (lv4ent.ps) return Error.AlreadyMapped;
+        if (lv4ent.ps) return PageError.AlreadyMapped;
 
         const lv3ent = getLv3Entry(cur_vaddr, lv4ent.address());
         if (!lv3ent.present) lv3ent.* = Lv3Entry.newMapTable(try Lv2Entry.newTable(allocator), true, true);
-        if (lv3ent.ps) return Error.AlreadyMapped;
+        if (lv3ent.ps) return PageError.AlreadyMapped;
 
         const lv2ent = getLv2Entry(cur_vaddr, lv3ent.address());
         if (!lv2ent.present) lv2ent.* = Lv2Entry.newMapTable(try Lv1Entry.newTable(allocator), true, true);
-        if (lv2ent.ps) return Error.AlreadyMapped;
+        if (lv2ent.ps) return PageError.AlreadyMapped;
 
         const lv1ent = getLv1Entry(cur_vaddr, lv2ent.address());
-        if (lv1ent.present) return Error.AlreadyMapped;
+        if (lv1ent.present) return PageError.AlreadyMapped;
         lv1ent.* = Lv1Entry.newMapPage(cur_paddr, true, attr, true);
     }
 }
@@ -331,7 +331,7 @@ pub const boot = struct {
     /// Directly map all memory with offset.
     /// After calling this function, it is safe to unmap direct mappings of UEFI.
     /// This function must be called only once.
-    pub fn reconstruct(allocator: PageAllocator) Error!void {
+    pub fn reconstruct(allocator: PageAllocator) PageError!void {
         // We cannot use virt2phys and phys2virt here since page tables are not initialized yet.
 
         const lv4tbl_ptr: [*]Lv4Entry = @ptrCast(try boot.allocatePage(allocator));
@@ -415,47 +415,47 @@ pub const boot = struct {
     /// - `virt` is not page-aligned.
     /// - `phys` is not page-aligned.
     /// - `virt` is already mapped.
-    pub fn map4kPageDirect(virt: Virt, phys: Phys, attr: Attribute, allocator: PageAllocator) Error!void {
-        if ((virt & page_mask_4k) != 0) return Error.InvalidAddress;
-        if ((phys & page_mask_4k) != 0) return Error.InvalidAddress;
+    pub fn map4kPageDirect(virt: Virt, phys: Phys, attr: Attribute, allocator: PageAllocator) PageError!void {
+        if ((virt & page_mask_4k) != 0) return PageError.InvalidAddress;
+        if ((phys & page_mask_4k) != 0) return PageError.InvalidAddress;
 
         var lv4ent = getLv4Entry(virt, am.readCr3());
         if (!lv4ent.present) lv4ent.* = Lv4Entry.newMapTable(try Lv3Entry.newTable(allocator), true, false);
 
         const lv3ent = getLv3Entry(virt, lv4ent.address());
         if (!lv3ent.present) lv3ent.* = Lv3Entry.newMapTable(try Lv2Entry.newTable(allocator), true, false);
-        if (lv3ent.ps) return Error.AlreadyMapped;
+        if (lv3ent.ps) return PageError.AlreadyMapped;
 
         const lv2ent = getLv2Entry(virt, lv3ent.address());
         if (!lv2ent.present) lv2ent.* = Lv2Entry.newMapTable(try Lv1Entry.newTable(allocator), true, false);
-        if (lv2ent.ps) return Error.AlreadyMapped;
+        if (lv2ent.ps) return PageError.AlreadyMapped;
 
         const lv1ent = getLv1Entry(virt, lv2ent.address());
-        if (lv1ent.present) return Error.AlreadyMapped;
+        if (lv1ent.present) return PageError.AlreadyMapped;
 
         lv1ent.* = Lv1Entry.newMapPage(phys, true, attr, false);
     }
 
     /// Unmap single 4KiB page at the given virtual address.
-    pub fn unmap4kPage(virt: Virt) Error!void {
-        if ((virt & page_mask_4k) != 0) return Error.InvalidAddress;
+    pub fn unmap4kPage(virt: Virt) PageError!void {
+        if ((virt & page_mask_4k) != 0) return PageError.InvalidAddress;
 
         var lv4ent = getLv4Entry(virt, am.readCr3());
-        if (!lv4ent.present) return Error.NotMapped;
+        if (!lv4ent.present) return PageError.NotMapped;
 
         const lv3ent = getLv3Entry(virt, lv4ent.address());
-        if (!lv3ent.present or lv3ent.ps) return Error.NotMapped;
+        if (!lv3ent.present or lv3ent.ps) return PageError.NotMapped;
 
         const lv2ent = getLv2Entry(virt, lv3ent.address());
-        if (!lv2ent.present or lv2ent.ps) return Error.NotMapped;
+        if (!lv2ent.present or lv2ent.ps) return PageError.NotMapped;
 
         const lv1ent = getLv1Entry(virt, lv2ent.address());
-        if (!lv1ent.present) return Error.NotMapped;
+        if (!lv1ent.present) return PageError.NotMapped;
 
         lv1ent.present = false;
     }
 
-    fn cloneLevel3Table(lv3_table: []Lv3Entry, allocator: PageAllocator) Error![]Lv3Entry {
+    fn cloneLevel3Table(lv3_table: []Lv3Entry, allocator: PageAllocator) PageError![]Lv3Entry {
         const new_lv3ptr: [*]Lv3Entry = @ptrCast(try allocatePage(allocator));
         const new_lv3tbl = new_lv3ptr[0..num_table_entries];
         @memcpy(new_lv3tbl, lv3_table);
@@ -472,7 +472,7 @@ pub const boot = struct {
         return new_lv3tbl;
     }
 
-    fn cloneLevel2Table(lv2_table: []Lv2Entry, allocator: PageAllocator) Error![]Lv2Entry {
+    fn cloneLevel2Table(lv2_table: []Lv2Entry, allocator: PageAllocator) PageError![]Lv2Entry {
         const new_lv2ptr: [*]Lv2Entry = @ptrCast(try allocatePage(allocator));
         const new_lv2tbl = new_lv2ptr[0..num_table_entries];
         @memcpy(new_lv2tbl, lv2_table);
@@ -489,7 +489,7 @@ pub const boot = struct {
         return new_lv2tbl;
     }
 
-    fn cloneLevel1Table(lv1_table: []Lv1Entry, allocator: PageAllocator) Error![]Lv1Entry {
+    fn cloneLevel1Table(lv1_table: []Lv1Entry, allocator: PageAllocator) PageError![]Lv1Entry {
         const new_lv1ptr: [*]Lv1Entry = @ptrCast(try allocatePage(allocator));
         const new_lv1tbl = new_lv1ptr[0..num_table_entries];
         @memcpy(new_lv1tbl, lv1_table);
@@ -515,7 +515,7 @@ pub const boot = struct {
     }
 
     /// Helper function to allocate a 4KiB page using the page allocator.
-    fn allocatePage(allocator: PageAllocator) Error![*]align(size_4k) u8 {
+    fn allocatePage(allocator: PageAllocator) PageError![*]align(size_4k) u8 {
         const ret = try allocator.allocPages(1, .normal);
         return ret.ptr;
     }
@@ -685,7 +685,7 @@ fn EntryBase(table_level: TableLevel) type {
         }
 
         /// Create a new empty page table.
-        pub fn newTable(allocator: PageAllocator) Error![*]Self {
+        pub fn newTable(allocator: PageAllocator) PageError![*]Self {
             const table = try allocator.allocPages(1, .normal);
             @memset(@as([*]u8, @ptrCast(table.ptr))[0..size_4k], 0);
             return @ptrCast(table.ptr);

@@ -14,8 +14,6 @@
 /// Section name where per-CPU data is placed.
 pub const section = ".data..percpu";
 
-pub const Error = error{} || PageAllocator.Error;
-
 /// Alignment of per-CPU data.
 const percpu_align = 16;
 /// Address space of per-CPU data.
@@ -36,7 +34,7 @@ var percpu_instance: *void = undefined;
 var percpu_initialized: bool = false;
 
 /// Initialize per-CPU data.
-pub fn init(num_cpus: usize, percpu_base: Virt) Error!void {
+pub fn init(num_cpus: usize, percpu_base: Virt) PageAllocator.Error!void {
     const per_cpu_size = @intFromPtr(&__per_cpu_end) - @intFromPtr(&__per_cpu_start);
     if (per_cpu_size == 0) return;
 

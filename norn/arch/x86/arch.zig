@@ -6,12 +6,7 @@ pub const Context = regs.CpuContext;
 pub const LocalApic = apic.LocalApic;
 
 // Architecture-specific error type.
-pub const Error =
-    apic.Error ||
-    intr.Error ||
-    apic.Error ||
-    syscall.Error ||
-    pg.Error;
+pub const ArchError = apic.ApicError || intr.IntrError || pg.PageError || syscall.Error;
 
 /// Saved registers for system call handlers.
 pub const SyscallContext = regs.CpuContext;
@@ -162,7 +157,7 @@ pub fn setFs(base: u64) void {
 }
 
 /// Set the interrupt handler.
-pub fn setInterruptHandler(vector: u8, handler: interrupt.Handler) Error!void {
+pub fn setInterruptHandler(vector: u8, handler: interrupt.Handler) ArchError!void {
     return intr.setHandler(vector, handler);
 }
 
@@ -201,12 +196,12 @@ pub const mem = struct {
 
     /// Reconstruct the page tables
     /// Caller MUST ensure that this function is called only once.
-    pub fn bootReconstructPageTable(allocator: PageAllocator) pg.Error!void {
+    pub fn bootReconstructPageTable(allocator: PageAllocator) pg.PageError!void {
         try pg.boot.reconstruct(allocator);
     }
 
     /// Change the page attribute.
-    pub fn changeAttribute(cr3: Virt, vaddr: Virt, size: usize, attr: Attribute) Error!void {
+    pub fn changeAttribute(cr3: Virt, vaddr: Virt, size: usize, attr: Attribute) ArchError!void {
         return pg.changeAttribute(cr3, vaddr, size, attr);
     }
 
@@ -217,7 +212,7 @@ pub const mem = struct {
 
     /// Create a new root of page tables.
     /// Returns a virtual address of the root table (CR).
-    pub fn createPageTables() Error!Virt {
+    pub fn createPageTables() ArchError!Virt {
         return pg.createPageTables();
     }
 
@@ -232,7 +227,7 @@ pub const mem = struct {
     }
 
     /// Maps a physical address to a virtual address.
-    pub fn map(cr3: Virt, vaddr: Virt, paddr: Virt, size: usize, attr: Attribute) Error!void {
+    pub fn map(cr3: Virt, vaddr: Virt, paddr: Virt, size: usize, attr: Attribute) ArchError!void {
         return pg.map(cr3, vaddr, paddr, size, attr);
     }
 

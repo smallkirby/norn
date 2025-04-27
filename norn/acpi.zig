@@ -1,6 +1,6 @@
 //! https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html
 
-pub const Error = error{
+pub const AcpiError = error{
     /// Failed to validate SDT.
     InvalidTable,
     /// Failed to allocate memory.
@@ -62,18 +62,18 @@ const Rsdp = extern struct {
     }
 
     /// Check if the RSDP is valid and has expected values..
-    fn validate(self: *align(1) Rsdp) Error!void {
+    fn validate(self: *align(1) Rsdp) AcpiError!void {
         if (!std.mem.eql(u8, &self.signature, "RSD PTR ")) {
-            return Error.InvalidTable;
+            return AcpiError.InvalidTable;
         }
         if (self.revision != 2) {
-            return Error.InvalidTable;
+            return AcpiError.InvalidTable;
         }
         if (checksum(std.mem.asBytes(self)[0..size_rsdp_v1]) != 0) {
-            return Error.InvalidTable;
+            return AcpiError.InvalidTable;
         }
         if (checksum(std.mem.asBytes(self)[0..size_rsdp_v2]) != 0) {
-            return Error.InvalidTable;
+            return AcpiError.InvalidTable;
         }
     }
 };
@@ -461,13 +461,13 @@ const SdtHeader = extern struct {
     creator_revision: u32,
 
     /// Check if the SDT is valid.
-    fn validate(self: *SdtHeader, signature: []const u8) Error!void {
+    fn validate(self: *SdtHeader, signature: []const u8) AcpiError!void {
         if (!std.mem.eql(u8, &self.signature, signature)) {
-            return Error.InvalidTable;
+            return AcpiError.InvalidTable;
         }
         const bytes: [*]u8 = @ptrCast(self);
         if (checksum(bytes[0..self.length]) != 0) {
-            return Error.InvalidTable;
+            return AcpiError.InvalidTable;
         }
     }
 };
@@ -560,9 +560,9 @@ const PmTimer = struct {
     }
 
     /// Busy-wait for the specified number of microseconds.
-    fn spinForUsec(self: PmTimer, comptime usec: u64) Error!void {
+    fn spinForUsec(self: PmTimer, comptime usec: u64) AcpiError!void {
         const num_required_ticks = usec * freq / 1_000_000;
-        if (num_required_ticks >= self.mask) return Error.ValueOutOfRange;
+        if (num_required_ticks >= self.mask) return AcpiError.ValueOutOfRange;
 
         const start = self.readCounter();
         const end = (start + num_required_ticks) & self.mask;
@@ -592,7 +592,7 @@ pub fn getSystemInfo() SystemInfo {
 }
 
 /// Initialize the ACPI.
-pub fn init(rsdp_phys: *anyopaque, allocator: Allocator) Error!void {
+pub fn init(rsdp_phys: *anyopaque, allocator: Allocator) AcpiError!void {
     norn.rtt.expect(norn.mem.isPgtblInitialized());
 
     const mask = lock.lockDisableIrq();
@@ -605,7 +605,7 @@ pub fn init(rsdp_phys: *anyopaque, allocator: Allocator) Error!void {
     try xsdt.header.validate("XSDT");
 
     // Find MADT structure.
-    madt = @alignCast(@ptrCast(xsdt.find("APIC") orelse return Error.InvalidTable));
+    madt = @alignCast(@ptrCast(xsdt.find("APIC") orelse return AcpiError.InvalidTable));
     try madt.header.validate("APIC");
     if (norn.is_runtime_test) {
         // Check the validity of sizes.
@@ -639,7 +639,7 @@ pub fn init(rsdp_phys: *anyopaque, allocator: Allocator) Error!void {
     }
 
     // Find FADT structure.
-    fadt = @alignCast(@ptrCast(xsdt.find("FACP") orelse return Error.InvalidTable));
+    fadt = @alignCast(@ptrCast(xsdt.find("FACP") orelse return AcpiError.InvalidTable));
     try fadt.header.validate("FACP");
 
     // Initialize PM Timer.
@@ -650,7 +650,7 @@ pub fn init(rsdp_phys: *anyopaque, allocator: Allocator) Error!void {
 }
 
 /// Busy-wait for the specified number of microseconds using ACPI PM Timer.
-pub fn spinForUsec(comptime usec: u64) Error!void {
+pub fn spinForUsec(comptime usec: u64) AcpiError!void {
     norn.rtt.expectEqual(true, initialized.load(.acquire));
     return pm_timer.spinForUsec(usec);
 }

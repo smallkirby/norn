@@ -1,4 +1,4 @@
-pub const Error = error{
+pub const IntrError = error{
     /// Handler is already registered for the vector.
     AlreadyRegistered,
 };
@@ -84,9 +84,9 @@ pub fn dispatch(context: *Context) void {
 }
 
 /// Set an interrupt handler for the given vector.
-pub fn setHandler(vector: u8, handler: Handler) Error!void {
+pub fn setHandler(vector: u8, handler: Handler) IntrError!void {
     if (handlers[vector] != unhandledHandler) {
-        return Error.AlreadyRegistered;
+        return IntrError.AlreadyRegistered;
     }
     handlers[vector] = handler;
 }

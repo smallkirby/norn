@@ -1,11 +1,7 @@
-pub const Error =
-    arch.Error ||
-    fs.FsError ||
-    mem.Error ||
-    error{
-        /// Invalid ELF file.
-        InvalidElf,
-    };
+pub const LoaderError = error{
+    /// Invalid ELF file.
+    InvalidElf,
+} || arch.ArchError || fs.FsError || mem.MemError;
 
 /// Base address of a program break.
 const brk_base: u64 = 0x80_000_000;
@@ -24,7 +20,7 @@ pub const ElfLoader = struct {
     /// Read the ELF file and prepare for loading.
     ///
     /// Caller must deallocate the struct with `deinit`.
-    pub fn new(filename: []const u8) Error!Self {
+    pub fn new(filename: []const u8) LoaderError!Self {
         const elf_data = try readElfFile(filename);
         const elf_header = elf.Header.parse(elf_data[0..elf_header_size]) catch {
             return error.InvalidElf;
@@ -38,7 +34,7 @@ pub const ElfLoader = struct {
         };
     }
 
-    pub fn load(self: *Self, mm: *MemoryMap) Error!void {
+    pub fn load(self: *Self, mm: *MemoryMap) LoaderError!void {
         const elf_stream = std.io.fixedBufferStream(self._elf_data);
         var prog_iter = self._elf_header.program_header_iterator(elf_stream);
 
@@ -73,7 +69,7 @@ pub const ElfLoader = struct {
     }
 };
 
-fn readElfFile(filename: []const u8) Error![]align(8) u8 {
+fn readElfFile(filename: []const u8) LoaderError![]align(8) u8 {
     const file = try fs.openFile(filename, .{}, null);
     defer fs.close(file);
     const stat = try fs.stat(file);

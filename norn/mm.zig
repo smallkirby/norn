@@ -3,7 +3,7 @@ pub const MmError = error{
     OutOfMemory,
     /// Requested memory region is invalid.
     InvalidRegion,
-} || arch.Error;
+} || arch.ArchError;
 
 /// Memory attributes of a VM area.
 pub const VmFlags = packed struct {

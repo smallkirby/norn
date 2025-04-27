@@ -3,7 +3,7 @@ ptr: *anyopaque,
 /// The vtable for the allocator.
 vtable: *const Vtable,
 
-pub const Error = mem.Error;
+pub const Error = mem.MemError;
 
 const Self = @This();
 

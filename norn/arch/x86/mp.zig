@@ -1,4 +1,4 @@
-const Error = mem.Error || pg.Error;
+const MpError = mem.MemError || pg.PageError;
 
 /// Number of pages for the each AP stack.
 const num_ap_stack_pages = 10;
@@ -7,7 +7,7 @@ const num_ap_stack_pages = 10;
 var lock = SpinLock{};
 
 /// Boot all APs.
-pub fn bootAllAps() Error!void {
+pub fn bootAllAps() MpError!void {
     const ie = arch.isIrqEnabled();
     arch.disableIrq();
     defer if (ie) arch.enableIrq();

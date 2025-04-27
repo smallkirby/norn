@@ -1,8 +1,5 @@
 /// Error.
-pub const Error =
-    arch.Error ||
-    mem.Error ||
-    thread.Error;
+pub const SchedError = arch.ArchError || mem.MemError || thread.ThreadError;
 
 /// Run queue of this CPU.
 ///
@@ -24,7 +21,7 @@ var is_initialized: bool linksection(pcpu.section) = false;
 /// Initialize the scheduler for this CPU.
 ///
 /// Note that the timer that triggers the scheduler does not start yet.
-pub fn initThisCpu() Error!void {
+pub fn initThisCpu() SchedError!void {
     // Initialize the run queue
     const rq = try general_allocator.create(ThreadList);
     rq.* = .{};
@@ -120,7 +117,7 @@ pub inline fn enqueueTask(task: *Thread) void {
 }
 
 /// Create an initial task (PID 1) and set the current task to it.
-pub fn setupInitialTask() Error!void {
+pub fn setupInitialTask() SchedError!void {
     norn.rtt.expectEqual(0, getCurrentTask().tid);
 
     const init_task = try thread.createInitialThread(options.init_binary);
@@ -134,7 +131,7 @@ pub fn setupInitialTask() Error!void {
 }
 
 /// Create an idle task and append it to the run queue.
-fn setupIdleTask() Error!void {
+fn setupIdleTask() SchedError!void {
     const idle_task = try thread.createKernelThread("[idle]", idleTask);
     enqueueTask(idle_task);
 }

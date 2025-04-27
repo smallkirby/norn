@@ -4,10 +4,7 @@
 //! that are independent from the specific architecture.
 
 /// Error.
-pub const Error =
-    arch.Error ||
-    loader.Error ||
-    mem.Error;
+pub const ThreadError = arch.ArchError || loader.LoaderError || mem.MemError;
 
 /// Type of thread ID.
 pub const Tid = usize;
@@ -106,7 +103,7 @@ pub const Thread = struct {
     /// Create a new thread.
     ///
     /// - `name`: Name of the thread.
-    fn create(name: []const u8) Error!*Thread {
+    fn create(name: []const u8) ThreadError!*Thread {
         const self = try general_allocator.create(Thread);
         errdefer general_allocator.destroy(self);
         self.* = Thread{
@@ -165,7 +162,7 @@ fn assignNewTid() Tid {
 ///
 /// - `name` : Name of the kernel thread.
 /// - `entry`: Entry point of the kernel thread.
-pub fn createKernelThread(name: []const u8, entry: KernelThreadEntry) Error!*Thread {
+pub fn createKernelThread(name: []const u8, entry: KernelThreadEntry) ThreadError!*Thread {
     const thread = try Thread.create(name);
     thread.comm = try general_allocator.dupe(u8, "");
 
@@ -178,7 +175,7 @@ pub fn createKernelThread(name: []const u8, entry: KernelThreadEntry) Error!*Thr
 ///
 /// TODO: This function now has many hardcoded code for debug.
 /// TODO: Read init from FS and parse it.
-pub fn createInitialThread(comptime filename: []const u8) Error!*Thread {
+pub fn createInitialThread(comptime filename: []const u8) ThreadError!*Thread {
     const thread = try Thread.create("init");
     thread.comm = try general_allocator.dupe(u8, filename);
 

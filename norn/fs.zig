@@ -8,7 +8,7 @@ pub const FsError = error{
     BadFileDscriptor,
     /// No available file descriptor in pool.
     DescriptorFull,
-} || vfs.Error;
+} || vfs.VfsError;
 
 /// Convert FsError to syscall error type.
 fn syscallError(err: FsError) SysError {

@@ -1,4 +1,4 @@
-pub const Error = error{
+pub const ApicError = error{
     /// APIC is not on the chip.
     ApicNotAvailable,
     /// Specified value is out of range.
@@ -276,7 +276,7 @@ pub const Timer = struct {
 
     /// Start the periodic timer.
     /// Each time the timer expires, the interrupt is delivered with the specified vector.
-    pub fn startPeriodic(self: Timer, vector: u8, nsec: u64, self_freq: u64) Error!void {
+    pub fn startPeriodic(self: Timer, vector: u8, nsec: u64, self_freq: u64) ApicError!void {
         // Find the largest divider.
         const divider: Dcr.Divide = blk: {
             if (nsec % 128 == 0) break :blk .by_128;
@@ -292,7 +292,7 @@ pub const Timer = struct {
 
         // Check if the count does not overflow.
         const count = (self_freq / dcr.value()) * nsec / 1_000_000_000;
-        if (count > std.math.maxInt(u32)) return Error.ValueOutOfRange;
+        if (count > std.math.maxInt(u32)) return ApicError.ValueOutOfRange;
         self.lapic.write(u32, .initial_count, @as(u32, @truncate(count)));
         self.lapic.write(Dcr, .dcr_timer, dcr);
 
@@ -328,10 +328,10 @@ const DeliveryStatus = enum(u1) {
 
 /// Init the local APIC on this core.
 /// This function disables the old PIC, then enables the local APIC.
-pub fn init() Error!void {
+pub fn init() ApicError!void {
     // Check if APIC is available.
     const is_available = cpuid.Leaf.from(1).query(null).edx & 0b0010_0000_0000 != 0;
-    if (!is_available) return Error.ApicNotAvailable;
+    if (!is_available) return ApicError.ApicNotAvailable;
 
     // Disable old PIC.
     pic.initDisabled();

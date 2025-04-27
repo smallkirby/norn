@@ -1,4 +1,4 @@
-pub const Error = mem.Error || arch.Error;
+pub const TaskError = arch.ArchError || mem.MemError;
 
 /// Current TSS.
 ///
@@ -31,7 +31,7 @@ const ContextStackFrame = packed struct {
 };
 
 /// TODO: doc
-pub fn setupNewTask(task: *Thread) Error!void {
+pub fn setupNewTask(task: *Thread) TaskError!void {
     // Init page table.
     task.mm.pgtbl = try arch.mem.createPageTables();
 

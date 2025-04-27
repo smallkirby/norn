@@ -1,7 +1,7 @@
-pub const Error = error{
+pub const TimerError = error{
     /// Required feature is not supported.
     NotSupported,
-} || arch.Error || norn.acpi.Error;
+} || arch.ArchError || norn.acpi.AcpiError;
 
 /// Frequency of the timer interrupt in Hz.
 const freq_hz = 250;
@@ -13,7 +13,7 @@ var jiffies: u64 = 0;
 var tsc_freq_khz: u64 = undefined;
 
 /// Start the periodic timer service.
-pub fn init() Error!void {
+pub fn init() TimerError!void {
     // Set up timer interrupt handler.
     try arch.setInterruptHandler(
         @intFromEnum(norn.interrupt.VectorTable.timer),
@@ -48,9 +48,9 @@ pub fn getTimestamp() u64 {
 }
 
 /// Calibrate the TSC frequency in Hz.
-fn calibrateTsc() Error!u64 {
+fn calibrateTsc() TimerError!u64 {
     if (!arch.isTscSupported()) {
-        return Error.NotSupported;
+        return TimerError.NotSupported;
     }
 
     // Get TSC value from CPUID.
