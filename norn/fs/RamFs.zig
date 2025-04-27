@@ -412,36 +412,46 @@ test "Write to file" {
     const allocator = test_gpa.allocator();
     const rfs = try RamFs.init(allocator);
     const root = rfs.root;
-    const file1 = try root.createFile("file1", .anybody_full);
+    const dentry1 = try root.createFile("file1", .anybody_full);
+    const file1 = try vfs.File.new(dentry1, allocator);
+    defer file1.deinit();
 
     const s1 = "Hello, world!";
     const s2 = "Hello, world and beyond!";
-    var len = try file1.inode.write(s1, 0);
+    var len = try file1.write(s1, 0);
     try testing.expectEqual(len, s1.len);
-    try testing.expectEqualStrings(s1, getNode(file1.inode).file._data);
-    len = try file1.inode.write(s2, 0);
+    try testing.expectEqualStrings(
+        s1,
+        getNode(file1.dentry.inode).file._data,
+    );
+    len = try file1.write(s2, 0);
     try testing.expectEqual(len, s2.len);
-    try testing.expectEqualStrings(s2, getNode(file1.inode).file._data);
+    try testing.expectEqualStrings(
+        s2,
+        getNode(file1.dentry.inode).file._data,
+    );
 }
 
 test "Read from file" {
     const allocator = test_gpa.allocator();
     const rfs = try RamFs.init(allocator);
     const root = rfs.root;
-    const file1 = try root.createFile("file1", .anybody_full);
+    const dentry1 = try root.createFile("file1", .anybody_full);
+    const file1 = try vfs.File.new(dentry1, allocator);
+    defer file1.deinit();
 
     const s1 = "Hello, world!";
     const s2 = "Hello, world and beyond!";
     var buf: [1024]u8 = undefined;
     var len: usize = undefined;
 
-    _ = try file1.inode.write(s1, 0);
-    len = try file1.inode.read(buf[0..], 0);
+    _ = try file1.write(s1, 0);
+    len = try file1.read(buf[0..], 0);
     try testing.expectEqual(len, s1.len);
     try testing.expectEqualStrings(s1, buf[0..s1.len]);
 
-    _ = try file1.inode.write(s2, 0);
-    len = try file1.inode.read(buf[0..], 0);
+    _ = try file1.write(s2, 0);
+    len = try file1.read(buf[0..], 0);
     try testing.expectEqual(len, s2.len);
     try testing.expectEqualStrings(s2, buf[0..s2.len]);
 }

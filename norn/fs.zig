@@ -233,7 +233,7 @@ pub fn loadInitImage(initimg: []const u8) (Error || cpio.Error)!void {
             _ = try parent.createDirectory(basename, mode);
         } else {
             const dentry = try parent.createFile(basename, mode);
-            const file = try File.new(dentry);
+            const file = try File.new(dentry, allocator);
             defer file.deinit();
             _ = try file.write(try c.getData(), 0);
         }
@@ -451,7 +451,7 @@ pub fn openFileAt(fd: FileDescriptor, pathname: []const u8, flags: OpenFlags, mo
     };
 
     // Create a file instance.
-    return try File.new(dentry);
+    return try File.new(dentry, allocator);
 }
 
 /// TODO: doc
@@ -620,7 +620,7 @@ fn printDirectoryTreeSub(dir: *Dentry, current_path: []u8) Error!void {
     };
     current_path[parent_end_pos] = separator;
 
-    const file = try File.new(dir);
+    const file = try File.new(dir, allocator);
     defer file.deinit();
 
     const children = try file.iterate();

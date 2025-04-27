@@ -201,7 +201,7 @@ test "Read first entry" {
     try testing.expect(try cpio.isValid());
 
     try testing.expectEqual(46638358, try cpio.getInode());
-    try testing.expectEqual(0o40775, try cpio.getMode());
+    try testing.expectEqual(Mode.fromPosixMode(0o40775), try cpio.getMode());
     try testing.expectEqual(0, try cpio.getUid());
     try testing.expectEqual(1000, try cpio.getGid());
     try testing.expectEqual(3, try cpio.getNlink());
@@ -230,7 +230,7 @@ test "Iterator: read all entries" {
                 // Already tested in the previous test.
                 {
                     try testing.expectEqual(46638358, try cpio.getInode());
-                    try testing.expectEqual(0o40775, try cpio.getMode());
+                    try testing.expectEqual(Mode.fromPosixMode(0o40775), try cpio.getMode());
                     try testing.expectEqual(0, try cpio.getUid());
                     try testing.expectEqual(1000, try cpio.getGid());
                     try testing.expectEqual(3, try cpio.getNlink());
@@ -251,7 +251,7 @@ test "Iterator: read all entries" {
                 try testing.expectEqual(0x70, diff);
 
                 try testing.expectEqual(46638360, try cpio.getInode());
-                try testing.expectEqual(0o40775, try cpio.getMode());
+                try testing.expectEqual(Mode.fromPosixMode(0o40775), try cpio.getMode());
                 try testing.expectEqual(0, try cpio.getUid());
                 try testing.expectEqual(1000, try cpio.getGid());
                 try testing.expectEqual(2, try cpio.getNlink());
@@ -271,7 +271,7 @@ test "Iterator: read all entries" {
                 try testing.expectEqual(0xE4, diff);
 
                 try testing.expectEqual(46631722, try cpio.getInode());
-                try testing.expectEqual(0o100664, try cpio.getMode());
+                try testing.expectEqual(Mode.fromPosixMode(0o100664), try cpio.getMode());
                 try testing.expectEqual(0, try cpio.getUid());
                 try testing.expectEqual(1000, try cpio.getGid());
                 try testing.expectEqual(1, try cpio.getNlink());
@@ -300,7 +300,7 @@ test "Iterator: read all entries" {
     // Check the trailer.
     const cpio = iter._cur;
     try testing.expectEqual(0, try cpio.getInode());
-    try testing.expectEqual(0, try cpio.getMode());
+    try testing.expectEqual(Mode.fromPosixMode(0), try cpio.getMode());
     try testing.expectEqual(0, try cpio.getUid());
     try testing.expectEqual(0, try cpio.getGid());
     try testing.expectEqual(1, try cpio.getNlink());

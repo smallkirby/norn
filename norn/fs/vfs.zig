@@ -273,6 +273,8 @@ pub const File = struct {
     dentry: *Dentry,
     /// Operations.
     vtable: *const Vtable,
+    /// Allocator.
+    allocator: Allocator,
 
     /// File operations.
     pub const Vtable = struct {
@@ -291,11 +293,12 @@ pub const File = struct {
     };
 
     /// Allocate a new file instance.
-    pub fn new(dentry: *Dentry) Error!*Self {
+    pub fn new(dentry: *Dentry, allocator: Allocator) Error!*Self {
         const file = try allocator.create(File);
         file.* = .{
             .dentry = dentry,
             .vtable = dentry.inode.file_ops,
+            .allocator = allocator,
         };
 
         return file;
@@ -303,7 +306,7 @@ pub const File = struct {
 
     /// Deinitialize this file instance.
     pub fn deinit(self: *Self) void {
-        allocator.destroy(self);
+        self.allocator.destroy(self);
     }
 
     /// Iterate over all files in this directory inode.
@@ -311,7 +314,10 @@ pub const File = struct {
         if (self.dentry.inode.inode_type != InodeType.directory) {
             return Error.IsDirectory;
         }
-        return self.vtable.iterate(self.dentry.inode, allocator);
+        return self.vtable.iterate(
+            self.dentry.inode,
+            self.allocator,
+        );
     }
 
     /// Read data from this inode.
@@ -340,5 +346,3 @@ const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const mem = norn.mem;
-
-const allocator = norn.mem.general_allocator;
