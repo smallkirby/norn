@@ -69,9 +69,6 @@ pub const Credential = struct {
 pub const Thread = struct {
     const Self = @This();
 
-    /// Maximum length of the thread name.
-    const name_max_len: usize = 16;
-
     /// Thread ID.
     tid: Tid,
     /// Kernel stack bottom.
