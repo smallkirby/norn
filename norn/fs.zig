@@ -329,6 +329,20 @@ inline fn getCurrentFdTable() *FdTable {
     return &sched.getCurrentTask().fs.fdtable;
 }
 
+/// Change current working directory of the process.
+pub fn sysChdir(pathname: [*:0]const u8) SysError!i64 {
+    const path = util.sentineledToSlice(pathname);
+    if (lookup(.cwd, path)) |dentry| {
+        if (dentry.inode.mode.type != .directory) {
+            return SysError.NotDir;
+        }
+
+        sched.getCurrentTask().fs.cwd = dentry;
+    } else return SysError.NoEntry;
+
+    return 0;
+}
+
 /// Get as much directory entries from the given directory.
 ///
 /// - `fd: File descriptor that describes a directory from which entries are read.

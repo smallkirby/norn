@@ -26,6 +26,8 @@ const sys_entries = [_]SysEntry{
     .new("ioctl", 16, .normal(sysIoctl)),
     // Write data into multiple buffers.
     .new("writev", 20, .normal(sysWriteVec)),
+    // Change working directory.
+    .new("chdir", 80, .normal(fs.sysChdir)),
     // Get user identity.
     .new("arch_prctl", 158, .normal(norn.prctl.sysArchPrctl)),
     // Get user identity.
