@@ -19,7 +19,7 @@ const sys_entries = [_]SysEntry{
     // Get file status.
     .new("fstat", 5, .normal(fs.sysFstat)),
     // Set protection on a region of memory.
-    .new("mprotect", 10, .normal(sysMemoryProtect)),
+    .new("mprotect", 10, .normal(mm.sysMemoryProtect)),
     // Change data segment size.
     .new("brk", 12, .normal(norn.mm.sysBrk)),
     // Control device.
@@ -444,13 +444,6 @@ fn sysWriteVec(fd: u64, iov: [*]const IoVec, count: usize) SysError!i64 {
     return @bitCast(sum);
 }
 
-// TODO: implement
-fn sysMemoryProtect(addr: u64, len: u64, prot: u64) SysError!i64 {
-    log.warn("mprotect(): addr={X:0>16} len={X:0>16} prot={X:0>16}", .{ addr, len, prot });
-    log.warn("ignoring mprotect syscall", .{});
-    return 0;
-}
-
 /// Syscall handler for `exit_group`.
 /// TODO: implement
 fn sysExitGroup(status: i32) SysError!i64 {
@@ -491,6 +484,7 @@ const norn = @import("norn");
 const arch = norn.arch;
 const errno = norn.errno;
 const fs = norn.fs;
+const mm = norn.mm;
 const sched = norn.sched;
 const util = norn.util;
 
