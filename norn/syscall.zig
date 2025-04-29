@@ -315,7 +315,7 @@ fn debugPrintContext(ctx: *const Context) void {
 
     // Print task information.
     log.err("Task Information:", .{});
-    log.err("  PID: {d}, comm={s}", .{ task.tid, task.comm });
+    log.err("  PID: {d}, comm={s}", .{ task.tid, task.comm orelse "" });
     log.err("  RIP    : 0x{X:0>16}", .{ctx.rip});
     log.err("  RFLAGS : 0x{X:0>16}", .{ctx.rflags});
     log.err("  RAX    : 0x{X:0>16}", .{ctx.rax});

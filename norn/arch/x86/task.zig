@@ -70,27 +70,30 @@ fn getCpuFromStack(task: *Thread) *CpuContext {
 }
 
 /// Set up the initial stack frame for an orphaned task.
-/// This function sets the kernel stack pointer.
-pub fn initKernelStack(task: *Thread, ip: u64) void {
-    const orig_sp = @intFromPtr(task.kernel_stack_ptr);
+///
+/// Returns a kernel stack pointer.
+pub fn initKernelStack(kstack: [*]u8, ip: u64, args: ?*anyopaque) [*]u8 {
+    const orig_sp = @intFromPtr(kstack);
 
     const cpu_context: *CpuContext = @ptrFromInt(orig_sp - @sizeOf(CpuContext));
     norn.rtt.expectEqual(0, @intFromPtr(cpu_context) % 16);
     cpu_context.* = std.mem.zeroInit(CpuContext, .{});
+    cpu_context.rdi = ip;
+    cpu_context.rsi = @intFromPtr(args);
 
     const orphan_frame: *ContextStackFrame = @ptrFromInt(@intFromPtr(cpu_context) - @sizeOf(ContextStackFrame));
     norn.rtt.expectEqual(0, @intFromPtr(orphan_frame) % 16);
     orphan_frame.* = ContextStackFrame{
-        .r15 = 0,
-        .r14 = 0,
-        .r13 = 0,
         .r12 = 0,
+        .r13 = 0,
+        .r14 = 0,
+        .r15 = 0,
         .rbx = 0,
         .rbp = 0,
-        .rip = ip,
+        .rip = @intFromPtr(&kernelThreadArchEntry),
     };
 
-    task.kernel_stack_ptr = @ptrFromInt(orig_sp - (@sizeOf(CpuContext) + @sizeOf(ContextStackFrame)));
+    return @ptrFromInt(orig_sp - (@sizeOf(CpuContext) + @sizeOf(ContextStackFrame)));
 }
 
 /// Initialize the user CPU state.
@@ -117,6 +120,23 @@ pub fn setupUserContext(task: *Thread, rip: u64, rsp: u64) void {
     cpu_context.rip = rip;
     cpu_context.rsp = rsp;
     cpu_context.rflags = @bitCast(initial_rflags);
+}
+
+/// Architecture-specific kernel thread entry.
+export fn kernelThreadArchEntry() noreturn {
+    const task = sched.getCurrentTask();
+    const cpu_context: *const CpuContext = @ptrFromInt(@intFromPtr(task.kernel_stack_ptr) + @sizeOf(ContextStackFrame));
+
+    asm volatile (
+        \\movq %[args], %%rdi
+        \\callq *%[entry]
+        :
+        : [args] "r" (cpu_context.rsi),
+          [entry] "r" (cpu_context.rdi),
+        : "memory"
+    );
+
+    unreachable; // TODO
 }
 
 /// Switch to the initial task.
@@ -192,7 +212,7 @@ noinline fn switchToImpl() callconv(.naked) void {
 /// This function returns to the caller of switchTo().
 export fn switchToInternal(_: *Thread, next: *Thread) callconv(.c) void {
     // Restore TSS.RSP0.
-    const rsp0 = @intFromPtr(next.kernel_stack_ptr);
+    const rsp0 = @intFromPtr(next.kernel_stack_ptr); // TODO: Should not set this kernel stack.
     x64ctx(next).tss.rsp0 = rsp0;
     pcpu.ptr(&current_tss).rsp0 = rsp0;
 
@@ -279,6 +299,10 @@ export fn enterUserRestoreRegisters() callconv(.naked) noreturn {
             },
         ));
 }
+
+// =============================================================
+// Ipmorts
+// =============================================================
 
 const std = @import("std");
 

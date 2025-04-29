@@ -8,8 +8,6 @@ pub const ThreadError = arch.ArchError || loader.LoaderError || mem.MemError;
 
 /// Type of thread ID.
 pub const Tid = usize;
-/// Entry point of kernel thread.
-pub const KernelThreadEntry = *const fn () callconv(.c) noreturn;
 
 /// Type representing a linked list of threads.
 pub const ThreadList = InlineDoublyLinkedList(Thread, "list_head");
@@ -69,6 +67,8 @@ pub const Credential = struct {
 
 /// Execution context and resources.
 pub const Thread = struct {
+    const Self = @This();
+
     /// Maximum length of the thread name.
     const name_max_len: usize = 16;
 
@@ -85,7 +85,7 @@ pub const Thread = struct {
     /// Thread name with null-termination.
     name: [name_max_len:0]u8 = undefined,
     /// Command line.
-    comm: []const u8 = undefined,
+    comm: ?[]const u8 = null,
     /// Memory map.
     mm: *MemoryMap,
     /// CPU time consumed for the thread.
@@ -103,7 +103,9 @@ pub const Thread = struct {
     /// Create a new thread.
     ///
     /// - `name`: Name of the thread.
-    fn create(name: []const u8) ThreadError!*Thread {
+    /// - `kentry`: Entry point of kernel thread.
+    /// - `args`: Arguments for `kentry`.
+    fn create(name: []const u8, comptime kentry: anytype, args: anytype) ThreadError!*Thread {
         const self = try general_allocator.create(Thread);
         errdefer general_allocator.destroy(self);
         self.* = Thread{
@@ -118,6 +120,26 @@ pub const Thread = struct {
         // Initialize thread name.
         truncCopyName(&self.name, name);
 
+        // Set kernel thread entry point.
+        const ArgType = @TypeOf(args);
+        const ThreadInstance = struct {
+            /// Trampoline function for kernel thread entry point.
+            fn entryKernelThread(raw_args: ?*anyopaque) callconv(.c) void {
+                const args_ptr: *ArgType = @ptrCast(@alignCast(raw_args));
+                defer general_allocator.destroy(args_ptr);
+                callThreadFunction(kentry, args_ptr.*);
+            }
+        };
+        const args_ptr = try general_allocator.create(ArgType);
+        args_ptr.* = args;
+        errdefer general_allocator.destroy(args_ptr);
+
+        self.kernel_stack_ptr = arch.task.initKernelStack(
+            self.kernel_stack_ptr,
+            @intFromPtr(&ThreadInstance.entryKernelThread),
+            args_ptr,
+        );
+
         return self;
     }
 
@@ -125,6 +147,17 @@ pub const Thread = struct {
     fn destroy(self: *Thread) void {
         page_allocator.freePages(self.kernel_stack);
         general_allocator.destroy(self);
+    }
+
+    /// Set command string.
+    fn setComm(self: *Self, comm: []const u8) error{OutOfMemory}!void {
+        if (self.comm) |old| {
+            // If the com is already set, assign new one and then free the old one.
+            self.comm = try general_allocator.dupe(u8, comm);
+            general_allocator.free(old);
+        } else {
+            self.comm = try general_allocator.dupe(u8, comm);
+        }
     }
 
     /// Copy the thread name to the output buffer.
@@ -146,6 +179,30 @@ pub const Thread = struct {
             if (self.name[i] == 0) return self.name[0..i];
         } else return &self.name;
     }
+
+    /// Call a function with the given anytype argument.
+    fn callThreadFunction(comptime f: anytype, args: anytype) void {
+        switch (@typeInfo(@typeInfo(@TypeOf(f)).@"fn".return_type.?)) {
+            .void, .noreturn => {
+                @call(.auto, f, args);
+            },
+            .error_union => |info| {
+                switch (info.payload) {
+                    void, noreturn => {
+                        @call(.never_inline, f, args) catch |err| {
+                            std.log.scoped(.thread).err(
+                                "Thread returned error: {s}",
+                                .{@errorName(err)},
+                            );
+                            @panic("Panic.");
+                        };
+                    },
+                    else => @compileError("Kernel thread function cannot return value."),
+                }
+            },
+            else => @compileError("Kernel thread function cannot return value."),
+        }
+    }
 };
 
 /// Consume TID pool to allocate a new unique TID.
@@ -162,22 +219,21 @@ fn assignNewTid() Tid {
 ///
 /// - `name` : Name of the kernel thread.
 /// - `entry`: Entry point of the kernel thread.
-pub fn createKernelThread(name: []const u8, entry: KernelThreadEntry) ThreadError!*Thread {
-    const thread = try Thread.create(name);
-    thread.comm = try general_allocator.dupe(u8, "");
-
-    arch.task.initKernelStack(thread, @intFromPtr(entry));
-
-    return thread;
+/// - `args`: Arguments for `entry`.
+pub fn createKernelThread(comptime name: []const u8, comptime entry: anytype, args: anytype) ThreadError!*Thread {
+    return Thread.create(name, entry, args);
 }
 
 /// Create a initial thread (PID 1).
 ///
 /// TODO: This function now has many hardcoded code for debug.
-/// TODO: Read init from FS and parse it.
 pub fn createInitialThread(comptime filename: []const u8) ThreadError!*Thread {
-    const thread = try Thread.create("init");
-    thread.comm = try general_allocator.dupe(u8, filename);
+    const thread = try Thread.create(
+        "init",
+        norn.init.initialTask,
+        .{},
+    );
+    try thread.setComm(filename);
 
     // Setup FS.
     const current = sched.getCurrentTask();
@@ -197,8 +253,6 @@ pub fn createInitialThread(comptime filename: []const u8) ThreadError!*Thread {
     const stack_size = 0x1000 * 20;
     const stack_vma = try thread.mm.map(stack_base, stack_size, .rw);
     thread.mm.vm_areas.append(stack_vma);
-
-    arch.task.initKernelStack(thread, @intFromPtr(&norn.init.initialTask));
 
     // Initialize user stack.
     var sc = StackCreator.new(stack_vma) catch @panic("StackCreator.new");

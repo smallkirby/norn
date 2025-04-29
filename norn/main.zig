@@ -120,37 +120,21 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     const norn_thread = try norn.thread.createKernelThread(
         "[norn]",
         nornThread,
+        .{boot_info.initramfs},
     );
     norn.sched.enqueueTask(norn_thread);
     log.info("Entering Norn kernel thread...", .{});
-    initramfs = boot_info.initramfs;
     norn.sched.runInitialKernelThread();
 
     unreachable;
 }
 
-/// initramfs information passed to the initial kernel thread.
-/// TODO: Pass this variable as an argument.
-var initramfs: surtr.InitramfsInfo = undefined;
-
 /// Initial kernel thread with PID 0.
-///
-/// This is a wrapper function that allows the implementation to return an error.
-fn nornThread() callconv(.c) noreturn {
-    nornThreadImpl() catch |err| {
-        log.err("Norn thread aborted with error: {}", .{err});
-        @panic("Exiting...");
-    };
-
-    unreachable;
-}
-
-/// Implementation of the initial kernel thread.
 ///
 /// This function continues initialization of the kernel that requires the execution to have context.
 /// This thread becomes an idle task once the initialization is completed,
 /// and the initial task is launched.
-fn nornThreadImpl() !void {
+fn nornThread(initramfs: surtr.InitramfsInfo) !void {
     norn.rtt.expectEqual(false, norn.arch.isIrqEnabled());
 
     // Initialize filesystem.
