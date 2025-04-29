@@ -183,8 +183,8 @@ pub fn changeAttribute(cr3: Virt, vaddr: Virt, size: usize, attr: Attribute) Pag
             .read_only, .executable => false,
         };
         lv1ent.xd = switch (attr) {
-            .read_write, .read_only => false,
-            .read_write_executable, .executable => true,
+            .read_write, .read_only => true,
+            .read_write_executable, .executable => false,
         };
     }
 
