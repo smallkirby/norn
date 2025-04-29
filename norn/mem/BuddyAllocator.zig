@@ -461,6 +461,10 @@ inline fn isUsableMemory(descriptor: *MemoryDescriptor) bool {
     };
 }
 
+// =============================================================
+// Debug.
+// =============================================================
+
 // Debug print the statistics of managed regions.
 fn debugPrintStatistics(self: *Self, log_fn: norn.LogFn) void {
     log_fn("Statistics of Buddy Allocator's initial state:", .{});
@@ -493,7 +497,9 @@ fn debugPrintStatistics(self: *Self, log_fn: norn.LogFn) void {
     }
 }
 
-// ====================================================
+// =============================================================
+// Tests.
+// =============================================================
 
 const testing = std.testing;
 const rtt = norn.rtt;
@@ -632,7 +638,9 @@ test "Arena.roundUpToOrder" {
     try testing.expectEqual(4, Arena.roundUpToOrder(16));
 }
 
-// ====================================================
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
 const uefi = std.os.uefi;
