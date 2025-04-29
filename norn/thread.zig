@@ -74,7 +74,7 @@ pub const Thread = struct {
 
     /// Thread ID.
     tid: Tid,
-    /// Kernel stack top.
+    /// Kernel stack bottom.
     kernel_stack: []u8 = undefined,
     /// Kernel stack pointer.
     kernel_stack_ptr: [*]u8 = undefined,
@@ -82,8 +82,8 @@ pub const Thread = struct {
     user_stack: []u8 = undefined,
     /// Thread state.
     state: State = .running,
-    /// Thread name with null-termination.
-    name: [name_max_len:0]u8 = undefined,
+    /// Thread name.
+    name: []const u8,
     /// Command line.
     comm: ?[]const u8 = null,
     /// Memory map.
@@ -112,13 +112,8 @@ pub const Thread = struct {
             .tid = assignNewTid(),
             .mm = try MemoryMap.new(),
             .fs = fs.ThreadFs.new(undefined, undefined), // TODO
+            .name = try general_allocator.dupe(u8, name),
         };
-
-        // Initialize arch-specific context.
-        try arch.task.setupNewTask(self);
-
-        // Initialize thread name.
-        truncCopyName(&self.name, name);
 
         // Set kernel thread entry point.
         const ArgType = @TypeOf(args);
@@ -134,8 +129,9 @@ pub const Thread = struct {
         args_ptr.* = args;
         errdefer general_allocator.destroy(args_ptr);
 
-        self.kernel_stack_ptr = arch.task.initKernelStack(
-            self.kernel_stack_ptr,
+        // Initialize arch-specific context.
+        try arch.task.setupNewTask(
+            self,
             @intFromPtr(&ThreadInstance.entryKernelThread),
             args_ptr,
         );
@@ -160,24 +156,9 @@ pub const Thread = struct {
         }
     }
 
-    /// Copy the thread name to the output buffer.
-    ///
-    /// The name is truncated if it exceeds the maximum length.
-    /// The output buffer is null-terminated.
-    ///
-    /// - `out`: Buffer to copy the name.
-    /// - `in` : Name to copy.
-    inline fn truncCopyName(out: *[name_max_len:0]u8, in: []const u8) void {
-        const length = @min(in.len, name_max_len);
-        @memcpy(out[0..length], in[0..length]);
-        out[length] = 0;
-    }
-
-    /// Get the thread name.
-    pub fn getName(self: *Thread) []const u8 {
-        for (0..name_max_len) |i| {
-            if (self.name[i] == 0) return self.name[0..i];
-        } else return &self.name;
+    /// Set entry point and stack for user thread.
+    fn setUserContext(self: *Self, rip: u64, rsp: u64) void {
+        arch.task.setUserContext(self, rip, rsp);
     }
 
     /// Call a function with the given anytype argument.
@@ -262,11 +243,7 @@ pub fn createInitialThread(comptime filename: []const u8) ThreadError!*Thread {
     const stack_top = try sc.finalize();
 
     // Set up user stack.
-    arch.task.setupUserContext(
-        thread,
-        elf_loader.entry_point,
-        stack_top,
-    );
+    thread.setUserContext(elf_loader.entry_point, stack_top);
 
     return thread;
 }

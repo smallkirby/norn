@@ -151,7 +151,7 @@ pub fn debugPrintRunQueue(logger: anytype) void {
     const queue: *ThreadList = getRunQueue();
     var node: ?*Thread = queue.first;
     while (node) |th| {
-        logger("{d: >3}: {s}", .{ th.tid, th.getName() });
+        logger("{d: >3}: {s}", .{ th.tid, th.name });
         node = th.list_head.next;
     }
 }

@@ -19,8 +19,10 @@ const X64Context = struct {
 /// Initial value of RFLAGS register for tasks.
 const initial_rflags = std.mem.zeroInit(regs.Rflags, .{ .ie = true });
 
-/// Callee-saved registers saved and restored by context switch.
-const ContextStackFrame = packed struct {
+/// Stack frame for initial context switch.
+///
+/// This contains callee-saved registers, that are saved and restored by context switch.
+const OrphanFrame = packed struct {
     r15: u64,
     r14: u64,
     r13: u64,
@@ -30,8 +32,8 @@ const ContextStackFrame = packed struct {
     rip: u64,
 };
 
-/// TODO: doc
-pub fn setupNewTask(task: *Thread) TaskError!void {
+/// Arch-specific initialization of kernel thread.
+pub fn setupNewTask(task: *Thread, ip: u64, args: ?*anyopaque) TaskError!void {
     // Init page table.
     task.mm.pgtbl = try arch.mem.createPageTables();
 
@@ -56,6 +58,48 @@ pub fn setupNewTask(task: *Thread) TaskError!void {
         .rsp0 = @intFromPtr(task.kernel_stack.ptr), // TODO: fix the value
     };
     x64ctx(task).tss = tss;
+
+    // Setup CPU context.
+    // The context holds an entry point (R8) and arguments (R9) for kernel thread.
+    // If the task has an user thread, this function additionally holds a user context.
+    task.kernel_stack_ptr -= @sizeOf(CpuContext);
+    {
+        const cpu_context: *CpuContext = @alignCast(@ptrCast(task.kernel_stack_ptr));
+        norn.rtt.expectEqual(0, @intFromPtr(cpu_context) % 16);
+
+        // Zero clear.
+        cpu_context.* = std.mem.zeroInit(CpuContext, .{});
+
+        // Kernel thread entry and arguments.
+        cpu_context.r8 = ip;
+        cpu_context.r9 = @intFromPtr(args);
+
+        // User context.
+        cpu_context.rflags = @bitCast(initial_rflags);
+    }
+
+    // Setup orphan frame.
+    task.kernel_stack_ptr -= @sizeOf(OrphanFrame);
+    {
+        const orphan_frame: *OrphanFrame = @alignCast(@ptrCast(task.kernel_stack_ptr));
+        norn.rtt.expectEqual(0, @intFromPtr(orphan_frame) % 16);
+        orphan_frame.* = OrphanFrame{
+            .r12 = 0,
+            .r13 = 0,
+            .r14 = 0,
+            .r15 = 0,
+            .rbx = 0,
+            .rbp = 0,
+            .rip = @intFromPtr(&kernelThreadArchEntry),
+        };
+    }
+}
+
+/// Initialize the user CPU state.
+pub fn setUserContext(task: *Thread, rip: u64, rsp: u64) void {
+    const cpu_context = getCpuContextFromStack(task);
+    cpu_context.rip = rip;
+    cpu_context.rsp = rsp;
 }
 
 /// Convert arch-specific task context to x64 context.
@@ -63,81 +107,40 @@ inline fn x64ctx(task: *Thread) *X64Context {
     return @ptrCast(&task.arch_ctx);
 }
 
-/// Get user CPU context from kernel stack.
-fn getCpuFromStack(task: *Thread) *CpuContext {
-    const stack_bottom = @intFromPtr(task.kernel_stack.ptr) + kernel_stack_size;
-    return @ptrFromInt(stack_bottom - @sizeOf(CpuContext));
-}
-
-/// Set up the initial stack frame for an orphaned task.
+/// Get CPU context from kernel stack.
 ///
-/// Returns a kernel stack pointer.
-pub fn initKernelStack(kstack: [*]u8, ip: u64, args: ?*anyopaque) [*]u8 {
-    const orig_sp = @intFromPtr(kstack);
-
-    const cpu_context: *CpuContext = @ptrFromInt(orig_sp - @sizeOf(CpuContext));
-    norn.rtt.expectEqual(0, @intFromPtr(cpu_context) % 16);
-    cpu_context.* = std.mem.zeroInit(CpuContext, .{});
-    cpu_context.rdi = ip;
-    cpu_context.rsi = @intFromPtr(args);
-
-    const orphan_frame: *ContextStackFrame = @ptrFromInt(@intFromPtr(cpu_context) - @sizeOf(ContextStackFrame));
-    norn.rtt.expectEqual(0, @intFromPtr(orphan_frame) % 16);
-    orphan_frame.* = ContextStackFrame{
-        .r12 = 0,
-        .r13 = 0,
-        .r14 = 0,
-        .r15 = 0,
-        .rbx = 0,
-        .rbp = 0,
-        .rip = @intFromPtr(&kernelThreadArchEntry),
-    };
-
-    return @ptrFromInt(orig_sp - (@sizeOf(CpuContext) + @sizeOf(ContextStackFrame)));
+/// This functions can be called only before the thread starts.
+fn getCpuContextFromStack(task: *Thread) *CpuContext {
+    const stack_bottom = @intFromPtr(task.kernel_stack.ptr) + kernel_stack_size;
+    return @ptrFromInt(stack_bottom - @sizeOf(OrphanFrame) - @sizeOf(CpuContext));
 }
 
-/// Initialize the user CPU state.
-pub fn setupUserContext(task: *Thread, rip: u64, rsp: u64) void {
-    const cpu_context = getCpuFromStack(task);
-    // Clear registers.
-    cpu_context.rdi = 0;
-    cpu_context.rsi = 0;
-    cpu_context.rdx = 0;
-    cpu_context.rcx = 0;
-    cpu_context.rax = 0;
-    cpu_context.r8 = 0;
-    cpu_context.r9 = 0;
-    cpu_context.r10 = 0;
-    cpu_context.r11 = 0;
-    cpu_context.r12 = 0;
-    cpu_context.r13 = 0;
-    cpu_context.r14 = 0;
-    cpu_context.r15 = 0;
-    cpu_context.rbp = 0;
-    cpu_context.rbx = 0;
-
-    // Set up RIP / RSP / RFLAGS.
-    cpu_context.rip = rip;
-    cpu_context.rsp = rsp;
-    cpu_context.rflags = @bitCast(initial_rflags);
-}
+// =============================================================
+// Kernel thread entry point.
+// =============================================================
 
 /// Architecture-specific kernel thread entry.
-export fn kernelThreadArchEntry() noreturn {
+///
+/// All entry points of kernel threads are set to this function.
+noinline fn kernelThreadArchEntry() noreturn {
     const task = sched.getCurrentTask();
-    const cpu_context: *const CpuContext = @ptrFromInt(@intFromPtr(task.kernel_stack_ptr) + @sizeOf(ContextStackFrame));
+    const cpu_context: *const CpuContext = @ptrFromInt(@intFromPtr(task.kernel_stack_ptr) + @sizeOf(OrphanFrame));
 
     asm volatile (
         \\movq %[args], %%rdi
         \\callq *%[entry]
         :
-        : [args] "r" (cpu_context.rsi),
-          [entry] "r" (cpu_context.rdi),
+        : [args] "r" (cpu_context.r9),
+          [entry] "r" (cpu_context.r8),
         : "memory"
     );
 
     unreachable; // TODO
 }
+
+// =============================================================
+// Context switch functions.
+// =============================================================
 
 /// Switch to the initial task.
 ///
@@ -226,7 +229,7 @@ export fn switchToInternal(_: *Thread, next: *Thread) callconv(.c) void {
 /// Enter userland.
 pub noinline fn enterUser() noreturn {
     const task = sched.getCurrentTask();
-    const cpu_context = getCpuFromStack(task);
+    const cpu_context = getCpuContextFromStack(task);
 
     arch.disableIrq();
 
@@ -243,6 +246,9 @@ pub noinline fn enterUser() noreturn {
 /// Restore CPU registers from CpuContext and enter user mode using SYSRETQ.
 ///
 /// It's hidden but this function takes a pointer to CpuContext as an argument.
+///
+/// Caller-saved registers are cleared.
+/// Other registers are copied from CPU context of the thread.
 export fn enterUserRestoreRegisters() callconv(.naked) noreturn {
     // NOTE: Zig v0.14.0 does not support "%c" modifier for inline assembly.
     // For example, we want to write "%c[r15_offset](%%rax), (%%r15)" and ": [r15_offset] "i" (@offsetOf(CpuContext, "r15"))",
@@ -259,13 +265,13 @@ export fn enterUserRestoreRegisters() callconv(.naked) noreturn {
             \\movq {[rbx_offset]}(%%rax), %%rbx
             \\movq {[rbp_offset]}(%%rax), %%rbp
             // Caller-saved registers
-            \\movq {[r11_offset]}(%%rax), %%r11
-            \\movq {[r10_offset]}(%%rax), %%r10
-            \\movq {[r9_offset]}(%%rax), %%r9
-            \\movq {[r8_offset]}(%%rax), %%r8
-            \\movq {[rdx_offset]}(%%rax), %%rdx
-            \\movq {[rsi_offset]}(%%rax), %%rsi
-            \\movq {[rdi_offset]}(%%rax), %%rdi
+            \\xorq %%r11, %%r11
+            \\xorq %%r10, %%r10
+            \\xorq %%r9, %%r9
+            \\xorq %%r8, %%r8
+            \\xorq %%rdx, %%rdx
+            \\xorq %%rsi, %%rsi
+            \\xorq %%rdi, %%rdi
             // RFLAGS and RIP
             \\movq {[rflags_offset]}(%%rax), %%r11   # RFLAGS
             \\movq {[rip_offset]}(%%rax), %%rcx      # RIP
@@ -283,14 +289,6 @@ export fn enterUserRestoreRegisters() callconv(.naked) noreturn {
                 .r12_offset = @offsetOf(CpuContext, "r12"),
                 .rbx_offset = @offsetOf(CpuContext, "rbx"),
                 .rbp_offset = @offsetOf(CpuContext, "rbp"),
-
-                .r11_offset = @offsetOf(CpuContext, "r11"),
-                .r10_offset = @offsetOf(CpuContext, "r10"),
-                .r9_offset = @offsetOf(CpuContext, "r9"),
-                .r8_offset = @offsetOf(CpuContext, "r8"),
-                .rdx_offset = @offsetOf(CpuContext, "rdx"),
-                .rsi_offset = @offsetOf(CpuContext, "rsi"),
-                .rdi_offset = @offsetOf(CpuContext, "rdi"),
 
                 .rflags_offset = @offsetOf(CpuContext, "rflags"),
                 .rip_offset = @offsetOf(CpuContext, "rip"),
