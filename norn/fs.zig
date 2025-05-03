@@ -36,6 +36,9 @@ pub const Stat = vfs.Stat;
 /// Path separator.
 pub const separator = '/';
 
+/// Maximum path length.
+pub const path_max = 4096;
+
 /// Describes an open file.
 pub const FileDescriptor = enum(i32) {
     /// Standard input.
@@ -339,6 +342,26 @@ pub fn sysChdir(pathname: [*:0]const u8) SysError!i64 {
 
         sched.getCurrentTask().fs.cwd = dentry;
     } else return SysError.NoEntry;
+
+    return 0;
+}
+
+/// Get current working directory.
+pub fn sysGetCwd(buf: [*]allowzero u8, size: usize) SysError!i64 {
+    if (@intFromPtr(buf) == 0) {
+        return SysError.InvalidArg;
+    }
+    if (size == 0) {
+        return SysError.InvalidArg;
+    }
+
+    const cwd = sched.getCurrentTask().fs.cwd.name;
+    if (cwd.len + 1 > size) {
+        return SysError.OutOfRange;
+    }
+
+    @memcpy(buf[0..cwd.len], cwd);
+    buf[cwd.len] = 0; // null-terminate
 
     return 0;
 }

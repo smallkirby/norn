@@ -22,10 +22,18 @@ const sys_entries = [_]SysEntry{
     .new("mprotect", 10, .normal(mm.sysMemoryProtect)),
     // Change data segment size.
     .new("brk", 12, .normal(norn.mm.sysBrk)),
+    // Change a signal action.
+    .new("rt_sigaction", 13, .debug(ignore)),
     // Control device.
     .new("ioctl", 16, .normal(sysIoctl)),
     // Write data into multiple buffers.
     .new("writev", 20, .normal(sysWriteVec)),
+    // Get process ID.
+    .new("getpid", 39, .normal(sysGetPid)),
+    // Get name and information about current kernel.
+    .new("uname", 63, .debug(ignore)),
+    // Get current working directory.
+    .new("getcwd", 79, .normal(fs.sysGetCwd)),
     // Change working directory.
     .new("chdir", 80, .normal(fs.sysChdir)),
     // Get user identity.
@@ -34,6 +42,10 @@ const sys_entries = [_]SysEntry{
     .new("getuid", 102, .normal(sysGetUid)),
     // Set user identity.
     .new("setuid", 105, .debug(ignore)),
+    // Get effective user ID.
+    .new("geteuid", 107, .debug(ignore)),
+    // Get parent process ID.
+    .new("getppid", 110, .debug(ignore)),
     // Get time in seconds.
     .new("time", 201, .debug(ignore)),
     // Get directory entries
@@ -106,6 +118,8 @@ const syscall_table: [num_syscall]SyscallHandler = blk: {
 
     // Iterate over syscall enum and assign a corresponding handler.
     for (std.enums.values(Syscall)) |s| {
+        @setEvalBranchQuota(2000);
+
         const nr = @intFromEnum(s);
         table[nr] = for (sys_entries) |entry| {
             if (entry.nr == nr) break entry.handler;
@@ -371,6 +385,11 @@ const GetRandomFlags = packed struct(u64) {
     /// Reserved.
     _reserved: u62,
 };
+
+/// Syscall handler for `getpid.
+fn sysGetPid() SysError!i64 {
+    return @bitCast(norn.sched.getCurrentTask().tid);
+}
 
 /// Syscall handler for `getrandom`.
 ///
