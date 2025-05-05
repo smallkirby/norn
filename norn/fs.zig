@@ -453,7 +453,7 @@ pub fn openFileAt(fd: FileDescriptor, pathname: []const u8, flags: OpenFlags, mo
     };
 
     // Create a file instance.
-    return try File.new(dentry, allocator);
+    return try File.new(vfs.follow(dentry), allocator);
 }
 
 /// TODO: doc
@@ -465,7 +465,7 @@ pub fn write(file: *File, buf: []const u8) FsError!usize {
 
 /// Get a file status information of the given file.
 pub fn stat(file: *File) FsError!Stat {
-    return try file.dentry.inode.stat();
+    return try vfs.follow(file.dentry).inode.stat();
 }
 
 /// Get a file status information of the given path.
@@ -476,7 +476,7 @@ pub fn statAt(dir: *vfs.Dentry, path: []const u8) FsError!Stat {
         .{ .dir = dir },
         path,
     ) orelse return FsError.NotFound;
-    return try dent.inode.stat();
+    return try vfs.follow(dent).inode.stat();
 }
 
 /// TODO: doc

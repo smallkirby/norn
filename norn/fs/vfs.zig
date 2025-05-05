@@ -152,6 +152,24 @@ pub const Permission = packed struct(u3) {
         .write = true,
         .exec = true,
     };
+
+    pub const rwx = Permission{
+        .read = true,
+        .write = true,
+        .exec = true,
+    };
+
+    pub const rw = Permission{
+        .read = true,
+        .write = true,
+        .exec = false,
+    };
+
+    pub const ro = Permission{
+        .read = true,
+        .write = false,
+        .exec = false,
+    };
 };
 
 /// File type.
@@ -531,7 +549,7 @@ pub fn basename(path: []const u8) []const u8 {
 
 /// If the directory is a mount point, return the root of the filesystem.
 /// Otherwise, return the dentry itself.
-fn follow(dent: *Dentry) *Dentry {
+pub fn follow(dent: *Dentry) *Dentry {
     return if (dent.mounted_by) |mp| mp.root else dent;
 }
 
