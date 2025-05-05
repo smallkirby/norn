@@ -421,11 +421,40 @@ fn createDentry(
 
 const testing = std.testing;
 
+// TODO: use testing allocator to detect leak.
 var test_gpa = std.heap.GeneralPurposeAllocator(.{}){};
+
+/// Initialize ramfs for testing.
+fn testInitRamfs(allocator: Allocator) !*RamFs {
+    // Partially initialize myself.
+    const self = try allocator.create(Self);
+    errdefer allocator.destroy(self);
+    const fs = try allocator.create(vfs.FileSystem);
+    errdefer allocator.destroy(fs);
+    self.* = std.mem.zeroInit(Self, .{
+        .allocator = allocator,
+        .root = undefined, // filled later
+        .fs = fs,
+    });
+
+    const node = try Node.newDirectory(allocator);
+    const inode = try self.createInode(.directory, 0, .anybody_full, node);
+    const dentry = try self.createDentry(inode, undefined, "");
+    dentry.parent = dentry;
+    dentry.fs = self.fs;
+    self.fs.* = .{
+        .root = dentry,
+        .ctx = self,
+        .mounted_to = undefined,
+    };
+    self.root = dentry;
+
+    return self;
+}
 
 test "Create directories" {
     const allocator = test_gpa.allocator();
-    const rfs = try RamFs.init(allocator);
+    const rfs = try testInitRamfs(allocator);
     const root = rfs.root;
 
     const dir1 = try root.createDirectory("dir1", .anybody_full);
@@ -437,7 +466,7 @@ test "Create directories" {
 
 test "Create files" {
     const allocator = test_gpa.allocator();
-    const rfs = try RamFs.init(allocator);
+    const rfs = try testInitRamfs(allocator);
     const root = rfs.root;
 
     const dir1 = try root.createDirectory("dir1", .anybody_full);
@@ -447,7 +476,7 @@ test "Create files" {
 
 test "Write to file" {
     const allocator = test_gpa.allocator();
-    const rfs = try RamFs.init(allocator);
+    const rfs = try testInitRamfs(allocator);
     const root = rfs.root;
     const dentry1 = try root.createFile("file1", .anybody_full);
     const file1 = try vfs.File.new(dentry1, allocator);
@@ -471,7 +500,7 @@ test "Write to file" {
 
 test "Read from file" {
     const allocator = test_gpa.allocator();
-    const rfs = try RamFs.init(allocator);
+    const rfs = try testInitRamfs(allocator);
     const root = rfs.root;
     const dentry1 = try root.createFile("file1", .anybody_full);
     const file1 = try vfs.File.new(dentry1, allocator);
