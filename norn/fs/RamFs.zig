@@ -7,6 +7,8 @@ const Self = @This();
 allocator: Allocator,
 /// Next inode number.
 inum_next: usize = 0,
+/// VFS filesystem interface.
+fs: *vfs.FileSystem,
 /// Root directory.
 root: *Dentry,
 /// Spin lock.
@@ -37,48 +39,83 @@ const default_uid: Uid = 0; // TODO
 /// Default GID.
 const default_gid: Gid = 0; // TODO
 
-/// Initialize ramfs creating root directory.
-pub fn init(allocator: Allocator) Error!*Self {
+/// Load CPIO image and initialize ramfs.
+pub fn from(image: []const u8, allocator: Allocator) (Error || cpio.Error)!*Self {
+    // Partially initialize myself.
     const self = try allocator.create(Self);
     errdefer allocator.destroy(self);
+    const fs = try allocator.create(vfs.FileSystem);
+    errdefer allocator.destroy(fs);
     self.* = std.mem.zeroInit(Self, .{
         .allocator = allocator,
-        .root = undefined,
+        .root = undefined, // filled later
+        .fs = fs,
     });
 
-    // Create a root directory.
-    const root_node = try Node.newDirectory(allocator);
-    const root_inode = try self.createInode(
-        .directory,
-        self.assignInum(),
-        .{ // TODO: apply attributes of actual root directory.
-            .other = .full,
-            .group = .full,
-            .user = .full,
-            .type = .directory,
-        },
-        root_node,
-    );
-    const root_dentry = try self.createDentry(
-        root_inode,
-        undefined,
-        "",
-    );
-    root_dentry.parent = root_dentry;
+    // Iterate over the CPIO archive and create files.
+    var iter = cpio.CpioIterator.new(image);
+    var root_created = false;
+    while (try iter.next()) |entry| {
+        const path = try entry.getPath();
+        const basename = vfs.basename(path);
+        const mode = try entry.getMode();
 
-    // Initialize myself.
-    self.root = root_dentry;
-    root_dentry.fs = self.filesystem();
+        if (!root_created) {
+            // Root directory must be the first entry.
+            if (!std.mem.eql(u8, path, ".")) return Error.InvalidArgument;
+            if (mode.type != .directory) return Error.NotDirectory;
+
+            // Create a root directory.
+            const node = try Node.newDirectory(allocator);
+            const root_inode = try self.createInode(
+                .directory,
+                self.assignInum(),
+                mode,
+                node,
+            );
+            const root_dentry = try self.createDentry(
+                root_inode,
+                undefined,
+                "",
+            );
+            root_dentry.parent = root_dentry;
+
+            self.root = root_dentry;
+            self.fs.* = .{
+                .root = self.root,
+                .ctx = self,
+                .mounted_to = undefined,
+            };
+
+            root_created = true;
+            continue;
+        }
+
+        if (std.mem.eql(u8, path, ".") or std.mem.eql(u8, path, "..")) {
+            continue;
+        }
+
+        const result = try vfs.resolvePath(self.root, path);
+        if (result.result != null) return Error.AlreadyExists;
+        if (result.parent == null) return Error.NotFound;
+        const parent = result.parent.?;
+
+        switch (mode.type) {
+            .regular => {
+                const new = try createFile(parent, basename, mode);
+                const data = try entry.getData();
+                const written = try write(new.inode, data, 0);
+                norn.rtt.expectEqual(data.len, written);
+            },
+            .directory => {
+                const new = try createDirectory(parent, basename, mode);
+                norn.rtt.expectEqual(parent, new.parent);
+            },
+            else => @panic("Unexpected file type in CPIO"),
+        }
+    }
 
     return self;
-}
-
-/// Get the filesystem interface.
-pub fn filesystem(self: *Self) vfs.FileSystem {
-    return .{
-        .root = self.root,
-        .ctx = self,
-    };
 }
 
 /// Actual file or directory entity.
@@ -345,7 +382,7 @@ fn createInode(
 ) Error!*Inode {
     const inode = try self.allocator.create(Inode);
     inode.* = .{
-        .fs = self.filesystem(),
+        .fs = self.fs,
         .number = inum,
         .inode_type = inode_type,
         .mode = mode,
@@ -368,7 +405,7 @@ fn createDentry(
 ) Error!*Dentry {
     const dentry = try self.allocator.create(Dentry);
     dentry.* = .{
-        .fs = self.filesystem(),
+        .fs = self.fs,
         .inode = inode,
         .parent = parent,
         .name = try self.allocator.dupe(u8, name),
@@ -468,6 +505,7 @@ const DoublyLinkedList = std.DoublyLinkedList;
 const norn = @import("norn");
 const SpinLock = norn.SpinLock;
 
+const cpio = @import("cpio.zig");
 const vfs = @import("vfs.zig");
 const Error = vfs.VfsError;
 const Dentry = vfs.Dentry;

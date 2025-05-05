@@ -198,70 +198,27 @@ pub const OpenFlags = struct {
     }
 };
 
-var ramfs: *RamFs = undefined;
-
 /// Initialize filesystem.
 pub fn init() FsError!void {
     norn.rtt.expectEqual(0, sched.getCurrentTask().tid);
 
-    // Init ramfs.
-    ramfs = try RamFs.init(allocator);
+    // Init VFS system.
+    try vfs.init(allocator);
 
     // Set root and CWD.
-    sched.getCurrentTask().fs.setRoot(ramfs.root);
-    sched.getCurrentTask().fs.setCwd(ramfs.root);
+    sched.getCurrentTask().fs.setRoot(vfs.getRoot());
+    sched.getCurrentTask().fs.setCwd(vfs.getRoot());
 }
 
-/// Load initramfs cpio image and create entries.
+/// Load initramfs cpio image and mount ramfs.
 ///
 /// - `initimg`: Initramfs image. Caller can free this memory after this function returns.
 pub fn loadInitImage(initimg: []const u8) (FsError || cpio.Error)!void {
-    var iter = cpio.CpioIterator.new(initimg);
-    var cur = try iter.next();
+    // Init ramfs.
+    const ramfs = try RamFs.from(initimg, allocator);
 
-    // Iterate over entries in the CPIO archive.
-    while (cur) |c| : (cur = try iter.next()) {
-        const path = try c.getPath();
-        const basename = std.fs.path.basenamePosix(path);
-        const mode = try c.getMode();
-
-        if (std.mem.eql(u8, path, ".") or std.mem.eql(u8, path, "..")) {
-            continue;
-        }
-
-        // Check if the target file already exists.
-        if (lookup(.{ .dir = ramfs.root }, path) != null) {
-            log.warn("File already exists: {s}", .{path});
-            continue;
-        }
-        // Check if the parent directory exists.
-        const parent = kerneLookupParent(.{ .dir = ramfs.root }, path) orelse {
-            log.warn("Parent directory not found: {s}", .{path});
-            continue;
-        };
-
-        // Create the file or directory.
-        if (mode.type == .directory) {
-            _ = try parent.createDirectory(basename, mode);
-        } else {
-            const dentry = try parent.createFile(basename, mode);
-            const file = try File.new(dentry, allocator);
-            defer file.deinit();
-            _ = try file.write(try c.getData(), 0);
-        }
-    }
-
-    // Set root and cwd.
-    const current = sched.getCurrentTask();
-    current.fs.root = ramfs.root;
-    current.fs.cwd = ramfs.root;
-
-    // Debug print the loaded file tree.
-    log.debug("=== Initial FS ======================", .{});
-    printDirectoryTree(ramfs.root) catch |err| {
-        log.err("Failed to print directory tree: {s}", .{@errorName(err)});
-    };
-    log.debug("=====================================", .{});
+    // Mount ramfs on root directory.
+    try vfs.mount(ramfs.fs, "/", allocator);
 }
 
 /// Get the dentry from the file descriptor.
@@ -558,125 +515,24 @@ const LookupOrigin = union(Tag) {
 /// If it encounters a component that does not exist, the search stops and returns null.
 /// For example, `dne/..` will fail if `dne` does not exist.
 pub fn lookup(origin: LookupOrigin, path: []const u8) ?*vfs.Dentry {
-    // Calculate the origin dentry to start the lookup.
-    var iter = ComponentIterator(.posix, u8).init(path) catch {
-        return null;
-    };
-    const is_absolute = std.fs.path.isAbsolutePosix(path);
-    var dent = blk: {
-        if (is_absolute) {
-            break :blk sched.getCurrentTask().fs.root;
-        } else break :blk switch (origin) {
-            .cwd => sched.getCurrentTask().fs.cwd,
-            .dir => |d| d,
-        };
+    const dir = switch (origin) {
+        .cwd => sched.getCurrentTask().fs.cwd,
+        .dir => |d| d,
     };
 
-    // Iterate over the components of the path.
-    var next = iter.next();
-    while (next) |component| : (next = iter.next()) {
-        if (std.mem.eql(u8, component.name, ".")) {
-            continue;
-        } else if (std.mem.eql(u8, component.name, "..")) {
-            dent = dent.parent;
-        } else {
-            const result = dent.inode.lookup(component.name) catch return null;
-            if (result) |next_dentry| {
-                dent = next_dentry;
-            } else {
-                return null;
-            }
-        }
-    }
-
-    return dent;
+    const result = vfs.resolvePath(dir, path) catch return null;
+    return result.result;
 }
 
 /// Lookup a parent of the given path lexically.
 fn kerneLookupParent(origin: LookupOrigin, path: []const u8) ?*vfs.Dentry {
-    // Calculate the origin dentry to start the lookup.
-    var iter = ComponentIterator(.posix, u8).init(path) catch {
-        return null;
-    };
-    const is_absolute = std.fs.path.isAbsolutePosix(path);
-    var dent = blk: {
-        if (is_absolute) {
-            break :blk sched.getCurrentTask().fs.root;
-        } else break :blk switch (origin) {
-            .cwd => sched.getCurrentTask().fs.cwd,
-            .dir => |d| d,
-        };
+    const dir = switch (origin) {
+        .cwd => sched.getCurrentTask().fs.cwd,
+        .dir => |d| d,
     };
 
-    // Iterate over the components of the path.
-    var next = iter.next();
-    while (next) |component| : (next = iter.next()) {
-        if (std.mem.eql(u8, component.name, ".")) {
-            continue;
-        } else if (std.mem.eql(u8, component.name, "..")) {
-            dent = dent.parent;
-        } else {
-            const result = dent.inode.lookup(component.name) catch return null;
-            if (result) |next_dentry| {
-                dent = next_dentry;
-            } else if (iter.peekNext() == null) {
-                return dent;
-            } else {
-                return null;
-            }
-        }
-    } else {
-        return dent.parent;
-    }
-}
-
-// =============================================================
-// Debug
-// =============================================================
-
-/// Print the directory tree.
-fn printDirectoryTree(root: *vfs.Dentry) FsError!void {
-    var current_path = std.mem.zeroes([512]u8);
-    try printDirectoryTreeSub(root, current_path[0..current_path.len]);
-}
-
-fn printDirectoryTreeSub(dir: *Dentry, current_path: []u8) FsError!void {
-    const parent_end_pos = blk: {
-        for (current_path, 0..) |c, i| {
-            if (c == 0) break :blk i;
-        } else {
-            break :blk current_path.len;
-        }
-    };
-    current_path[parent_end_pos] = separator;
-
-    const file = try File.new(dir, allocator);
-    defer file.deinit();
-
-    const children = try file.iterate();
-    for (children) |child| {
-        // Copy entry name.
-        const len = parent_end_pos + 1 + child.name.len;
-        std.mem.copyBackwards(u8, current_path[parent_end_pos + 1 ..], child.name);
-        current_path[len] = 0;
-
-        // Print the entry.
-        log.debug(
-            "{[perm]s}  {[uid]d: <4} {[gid]d: <4} {[size]d: >8} {[name]s}",
-            .{
-                .perm = child.inode.mode.toString(),
-                .uid = child.inode.uid,
-                .gid = child.inode.gid,
-                .size = child.inode.size,
-                .name = current_path[0..len],
-            },
-        );
-
-        // Recurse if the entry is a directory.
-        if (child.inode.inode_type == .directory) {
-            try printDirectoryTreeSub(child, current_path);
-        }
-    }
+    const result = vfs.resolvePath(dir, path) catch return null;
+    return result.parent;
 }
 
 // =============================================================

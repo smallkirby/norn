@@ -16,6 +16,9 @@ pub const VfsError = error{
     Overflow,
 };
 
+/// Spin lock.
+var lock: norn.SpinLock = .{};
+
 /// Device type.
 pub const DevType = packed struct(u64) {
     minor: u32,
@@ -73,6 +76,8 @@ pub const FileSystem = struct {
     root: *Dentry,
     /// Backing filesystem instance.
     ctx: *anyopaque,
+    /// Directory this mount point is mounted on.
+    mounted_to: *Dentry,
 };
 
 /// Dentry that connects an inode with its name.
@@ -80,7 +85,7 @@ pub const Dentry = struct {
     const Self = @This();
 
     /// Filesystem this dentry belongs to.
-    fs: FileSystem,
+    fs: *FileSystem,
     /// Inode this dentry points to.
     inode: *Inode,
     /// Parent directory.
@@ -90,6 +95,9 @@ pub const Dentry = struct {
     name: []const u8,
     /// Operations for this dentry.
     ops: *const Vtable,
+    /// If null, this dentry is not a mount point.
+    /// If not null, the filesystem to which this dentry is mounted.
+    mounted_by: ?*FileSystem = null,
 
     /// Dentry operations.
     pub const Vtable = struct {
@@ -238,7 +246,7 @@ pub const Inode = struct {
     const Self = @This();
 
     /// Filesystem this inode belongs to.
-    fs: FileSystem,
+    fs: *FileSystem,
     /// Inode number.
     number: u64,
     /// Inode type.
@@ -375,6 +383,168 @@ pub const File = struct {
         return self.vtable.write(self.dentry.inode, data, pos);
     }
 };
+
+/// Dentry of root directory.
+///
+/// This variable is undefined until the filesystem is initialized
+var root_dentry: *Dentry = undefined;
+/// Whether the VFS system is initialized.
+var root_mounted: bool = false;
+
+const MountList = std.DoublyLinkedList(*FileSystem);
+const MountListNode = MountList.Node;
+/// List of mounted filesystems.
+var mount_list: MountList = .{};
+
+/// Initialize VFS system.
+pub fn init(allocator: Allocator) VfsError!void {
+    // Initialize the root directory entry.
+    const root = try allocator.create(Dentry);
+    root.* = .{
+        .fs = undefined,
+        .inode = try allocator.create(Inode),
+        .parent = root,
+        .name = undefined,
+        .ops = undefined,
+        .mounted_by = null,
+    };
+    root.inode.inode_type = .directory;
+
+    root_dentry = root;
+}
+
+/// Get the root directory entry.
+pub fn getRoot() *Dentry {
+    return root_dentry;
+}
+
+/// Mount the filesystem on the given path.
+///
+/// `entry_point` must be absolute path.
+pub fn mount(fs: *FileSystem, entry_point: []const u8, allocator: Allocator) VfsError!void {
+    const ie = lock.lockDisableIrq();
+    defer lock.unlockRestoreIrq(ie);
+
+    if (!isAbsolutePath(entry_point)) {
+        return VfsError.InvalidArgument;
+    }
+
+    // Get the directory on which the filesystem is being mounted.
+    const mp_dentry = blk: {
+        if (!root_mounted) {
+            if (std.mem.eql(u8, entry_point, "/")) {
+                break :blk root_dentry;
+            } else return VfsError.NotFound;
+        } else {
+            const result = try resolvePath(root_dentry, entry_point);
+            if (result.result) |dentry| break :blk dentry else return VfsError.NotFound;
+        }
+    };
+    if (mp_dentry.inode.inode_type != .directory) {
+        return VfsError.NotDirectory;
+    }
+    if (mp_dentry.mounted_by != null) {
+        return VfsError.AlreadyExists;
+    }
+
+    // TODO: check if the directory is empty.
+
+    // Register the mount.
+    const new_mount = try allocator.create(MountListNode);
+    new_mount.data = fs;
+    mount_list.append(new_mount);
+
+    mp_dentry.mounted_by = fs;
+    root_mounted = true;
+}
+
+/// Result of path resolution.
+const PathResult = struct {
+    /// Resolved dentry.
+    /// Null if the path is not found.
+    result: ?*Dentry,
+    /// Second-to-last path component.
+    /// Null if the component is not found.
+    ///
+    /// Note that this dentry is not necessarily the parent of the resolved dentry.
+    /// If this is null, result is also null.
+    parent: ?*Dentry,
+};
+
+/// Resolve the path string.
+///
+/// - origin: The dentry to start the search from. Ignored if the path is absolute.
+/// - path: The path string to resolve.
+pub fn resolvePath(origin: *Dentry, path: []const u8) VfsError!PathResult {
+    var result = PathResult{
+        .result = null,
+        .parent = origin,
+    };
+
+    var iter = std.fs.path.ComponentIterator(.posix, u8).init(path) catch {
+        return result;
+    };
+    var entry = follow(blk: {
+        if (std.fs.path.isAbsolute(path)) {
+            break :blk root_dentry;
+        } else {
+            break :blk origin;
+        }
+    });
+
+    while (iter.next()) |component| {
+        if (std.mem.eql(u8, component.name, ".")) {
+            continue;
+        } else if (std.mem.eql(u8, component.name, "..")) {
+            entry = followDotDot(entry);
+            continue;
+        }
+
+        if (entry.mounted_by) |mp| {
+            // Switch mount namespace.
+            entry = mp.root;
+        }
+        const lookup_result = entry.inode.lookup(component.name) catch {
+            return result;
+        };
+        if (lookup_result) |next| {
+            if (iter.peekNext() != null) result.parent = next;
+            entry = next;
+        } else {
+            return result;
+        }
+    }
+
+    result.result = entry;
+    return result;
+}
+
+/// Check if the path is absolute.
+pub fn isAbsolutePath(path: []const u8) bool {
+    return std.fs.path.isAbsolute(path);
+}
+
+/// Get a basename of the path.
+pub fn basename(path: []const u8) []const u8 {
+    return std.fs.path.basename(path);
+}
+
+/// If the directory is a mount point, return the root of the filesystem.
+/// Otherwise, return the dentry itself.
+fn follow(dent: *Dentry) *Dentry {
+    return if (dent.mounted_by) |mp| mp.root else dent;
+}
+
+/// Get a parent of dentry.
+///
+/// If the dentry is a mount point, follow the tree of the original dentry.
+fn followDotDot(dent: *const Dentry) *Dentry {
+    if (dent.mounted_by) |mp| {
+        return if (mp.mounted_to == root_dentry) dent.parent else mp.mounted_to;
+    } else {
+        return dent.parent;
+    }
+}
 
 // =============================================================
 // Imports
