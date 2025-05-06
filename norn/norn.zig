@@ -5,6 +5,7 @@
 pub const acpi = @import("acpi.zig");
 pub const arch = @import("arch.zig");
 pub const bits = @import("bits.zig");
+pub const device = @import("device.zig");
 pub const drivers = @import("drivers.zig");
 pub const errno = @import("errno.zig");
 pub const fs = @import("fs.zig");
@@ -27,6 +28,8 @@ pub usingnamespace @import("typing.zig");
 
 /// Whether the module is built with runtime tests enabled.
 pub const is_runtime_test = option.is_runtime_test;
+/// Whether the module is built for `zig build test`.
+pub const is_test = @import("builtin").is_test;
 pub const LogFn = klog.LogFn;
 pub const Serial = @import("Serial.zig");
 pub const SpinLock = @import("SpinLock.zig");
@@ -114,4 +117,3 @@ pub fn comptimeAssert(cond: bool, comptime msg: []const u8) void {
 const std = @import("std");
 const log = std.log;
 const option = @import("option");
-const is_test = @import("builtin").is_test;

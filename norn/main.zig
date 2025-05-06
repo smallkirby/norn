@@ -158,6 +158,9 @@ fn nornThread(initramfs: surtr.InitramfsInfo) !void {
     // Initialize syscall.
     try arch.enableSyscall();
 
+    // Initialize device system.
+    norn.device.init();
+
     // Print Norn banner.
     log.info("", .{});
     log.info("Norn Kernel - version {s} ({s})", .{ norn.version, norn.sha });

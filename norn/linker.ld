@@ -30,6 +30,10 @@ SECTIONS {
 
     .rodata ALIGN(4K) : AT (ADDR(.rodata) - KERNEL_VADDR_BASE) {
         *(.rodata)
+
+        __module_init_start = .;
+        KEEP(*(.module.init))
+        __module_init_end = .;
     } :rodata
 
     .data ALIGN(4K) : AT (ADDR(.data) - KERNEL_VADDR_BASE) {
