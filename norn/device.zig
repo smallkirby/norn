@@ -8,6 +8,11 @@
 //!
 //! For device major and minor numbers, see https://www.kernel.org/doc/Documentation/admin-guide/devices.txt .
 
+pub const DeviceError = error{
+    /// File operation failed.
+    FileOperationFailed,
+} || DevFs.DevFsError || fs.FsError;
+
 /// Signature of init functions.
 const ModuleInit = *const fn () callconv(.c) void;
 /// Start address of the init functions array.
@@ -18,7 +23,7 @@ extern const __module_init_end: *void;
 const init_section = ".module.init";
 
 /// Initialize the module system.
-pub fn init() void {
+pub fn init() DeviceError!void {
     // Call registered init functions.
     const array_len = (@intFromPtr(&__module_init_end) - @intFromPtr(&__module_init_start)) / @sizeOf(ModuleInit);
     const initcalls_ptr: [*]const ModuleInit = @alignCast(@ptrCast(&__module_init_start));
@@ -26,6 +31,16 @@ pub fn init() void {
     for (initcalls_ptr[0..array_len]) |initcall| {
         initcall();
     }
+
+    // Create /dev directory.
+    _ = try fs.createDirectory("/dev", .{
+        .other = .rx,
+        .group = .rx,
+        .user = .rwx,
+        .type = .directory,
+    });
+    const devfs = try DevFs.new(allocator);
+    try fs.mount("/dev", devfs.filesystem());
 }
 
 /// Register a init function for module.
@@ -62,3 +77,7 @@ const log = std.log.scoped(.device);
 const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
+const fs = norn.fs;
+const allocator = norn.mem.general_allocator;
+
+const DevFs = @import("fs/DevFs.zig");

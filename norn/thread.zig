@@ -235,7 +235,7 @@ pub fn createInitialThread(comptime filename: []const u8) ThreadError!*Thread {
     // Initialize user stack.
     const stack_top = blk: {
         var sc = StackCreator.new(stack_vma) catch @panic("StackCreator.new");
-        try sc.appendArgvs(&.{ filename, "tree", "/" });
+        try sc.appendArgvs(&.{ filename, "ls", "-la" });
         const at_random_handle = try sc.appendOpaqueData(u128, 0x0123_4567_89AB_CDEF_1122_3344_5566_7788);
         try sc.appendAuxvWithHandle(AuxVector.new(.random, at_random_handle));
 

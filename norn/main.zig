@@ -159,7 +159,8 @@ fn nornThread(initramfs: surtr.InitramfsInfo) !void {
     try arch.enableSyscall();
 
     // Initialize device system.
-    norn.device.init();
+    try norn.device.init();
+    log.debug("Initialized module system.", .{});
 
     // Print Norn banner.
     log.info("", .{});

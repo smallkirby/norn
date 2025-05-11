@@ -55,6 +55,7 @@ pub const CpuContext = packed struct {
         norn.comptimeAssert(@bitSizeOf(SpecData1) == 64, "Invalid size of SpecData1");
         norn.comptimeAssert(@bitSizeOf(SpecData2) == 64, "Invalid size of SpecData2");
         norn.comptimeAssert(@sizeOf(@This()) % 0x10 == 0, "Invalid size of CpuContext");
+        norn.comptimeAssert(@sizeOf(@This()) == 0xB0, "Invalid size of CpuContext");
     }
 
     /// Check if the interrupt is called from user mode.
