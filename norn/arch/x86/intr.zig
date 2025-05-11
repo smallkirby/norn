@@ -134,6 +134,18 @@ fn unhandledHandler(context: *Context) void {
     log.err("CR3    : 0x{X:0>16}", .{cr3});
     log.err("CR4    : 0x{X:0>16}", .{cr4});
 
+    if (context.isFromUserMode()) {
+        log.err("Memory map of the current task:", .{});
+        const task = norn.sched.getCurrentTask();
+        var node: ?*norn.mm.VmArea = task.mm.vm_areas.first;
+        while (node) |area| : (node = area.list_head.next) {
+            log.err(
+                "  {X}-{X} {s}",
+                .{ area.start, area.end, area.flags.toString() },
+            );
+        }
+    }
+
     // Check if it's a kernel stack overflow.
     if (norn.sched.isInitialized()) {
         const current = norn.sched.getCurrentTask();
