@@ -72,6 +72,8 @@ pub const Stat = extern struct {
 
 /// Virtual filesystem.
 pub const FileSystem = struct {
+    /// Name of the filesystem.
+    name: []const u8,
     /// Root directory of this filesystem.
     root: *Dentry,
     /// Backing filesystem instance.
@@ -116,7 +118,10 @@ pub const Dentry = struct {
         const inode = self.inode;
         if (inode.inode_type != InodeType.directory) return VfsError.NotDirectory;
 
-        return self.ops.createDirectory(self, name, mode);
+        if (self.ops.createDirectory(self, name, mode)) |new| {
+            new.parent = followUp(self);
+            return new;
+        } else |err| return err;
     }
 
     /// Create a file named `name` in this directory inode.
@@ -165,10 +170,22 @@ pub const Permission = packed struct(u3) {
         .exec = false,
     };
 
+    pub const rx = Permission{
+        .read = true,
+        .write = false,
+        .exec = true,
+    };
+
     pub const ro = Permission{
         .read = true,
         .write = false,
         .exec = false,
+    };
+
+    pub const x = Permission{
+        .read = false,
+        .write = false,
+        .exec = true,
     };
 };
 
@@ -417,16 +434,44 @@ var mount_list: MountList = .{};
 /// Initialize VFS system.
 pub fn init(allocator: Allocator) VfsError!void {
     // Initialize the root directory entry.
+    const fs = try allocator.create(FileSystem);
     const root = try allocator.create(Dentry);
+    const root_inode = try allocator.create(Inode);
+    errdefer allocator.destroy(root_inode);
+    errdefer allocator.destroy(root);
+    errdefer allocator.destroy(fs);
+
+    fs.* = .{
+        .name = "bare",
+        .root = root,
+        .ctx = undefined,
+        .mounted_to = root,
+    };
     root.* = .{
-        .fs = undefined,
-        .inode = try allocator.create(Inode),
+        .fs = fs,
+        .inode = root_inode,
         .parent = root,
-        .name = undefined,
+        .name = "/",
         .ops = undefined,
         .mounted_by = null,
     };
-    root.inode.inode_type = .directory;
+    root_inode.* = .{
+        .fs = fs,
+        .number = 0,
+        .inode_type = InodeType.directory,
+        .mode = .{
+            .other = .rwx,
+            .group = .rwx,
+            .user = .rwx,
+            .type = .directory,
+        },
+        .uid = 0,
+        .gid = 0,
+        .size = 0,
+        .inode_ops = undefined,
+        .file_ops = undefined,
+        .ctx = undefined,
+    };
 
     root_dentry = root;
 }
@@ -473,6 +518,7 @@ pub fn mount(fs: *FileSystem, entry_point: []const u8, allocator: Allocator) Vfs
     mount_list.append(new_mount);
 
     mp_dentry.mounted_by = fs;
+    fs.mounted_to = mp_dentry;
     root_mounted = true;
 }
 
@@ -502,7 +548,7 @@ pub fn resolvePath(origin: *Dentry, path: []const u8) VfsError!PathResult {
     var iter = std.fs.path.ComponentIterator(.posix, u8).init(path) catch {
         return result;
     };
-    var entry = follow(blk: {
+    var entry = followDown(blk: {
         if (std.fs.path.isAbsolute(path)) {
             break :blk root_dentry;
         } else {
@@ -549,19 +595,25 @@ pub fn basename(path: []const u8) []const u8 {
 
 /// If the directory is a mount point, return the root of the filesystem.
 /// Otherwise, return the dentry itself.
-pub fn follow(dent: *Dentry) *Dentry {
-    return if (dent.mounted_by) |mp| mp.root else dent;
+pub fn followDown(dent: *const Dentry) *Dentry {
+    return if (dent.mounted_by) |mp| mp.root else @constCast(dent);
+}
+
+/// If the directory is mounted to parent filesystem, return the dentry of the parent FS.
+/// Otherwise, return the dentry itself.
+pub fn followUp(dent: *Dentry) *Dentry {
+    if (dent.fs.root == dent) {
+        return dent.fs.mounted_to;
+    } else {
+        return dent;
+    }
 }
 
 /// Get a parent of dentry.
 ///
 /// If the dentry is a mount point, follow the tree of the original dentry.
-fn followDotDot(dent: *const Dentry) *Dentry {
-    if (dent.mounted_by) |mp| {
-        return if (mp.mounted_to == root_dentry) dent.parent else mp.mounted_to;
-    } else {
-        return dent.parent;
-    }
+fn followDotDot(dent: *Dentry) *Dentry {
+    return followUp(dent).parent;
 }
 
 // =============================================================

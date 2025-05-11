@@ -447,13 +447,13 @@ pub fn openFileAt(fd: FileDescriptor, pathname: []const u8, flags: OpenFlags, mo
 
         // Try to create the file.
         const mode_using: Mode = mode orelse .anybody_rw;
-        const parent = kerneLookupParent(.origin_cwd, pathname) orelse return FsError.NotFound;
-        const basename = std.fs.path.basenamePosix(pathname);
+        const parent = kernelLookupParent(.origin_cwd, pathname) orelse return FsError.NotFound;
+        const basename = vfs.basename(pathname);
         break :blk try parent.createFile(basename, mode_using);
     };
 
     // Create a file instance.
-    return try File.new(vfs.follow(dentry), allocator);
+    return try File.new(vfs.followDown(dentry), allocator);
 }
 
 /// TODO: doc
@@ -465,7 +465,7 @@ pub fn write(file: *File, buf: []const u8) FsError!usize {
 
 /// Get a file status information of the given file.
 pub fn stat(file: *File) FsError!Stat {
-    return try vfs.follow(file.dentry).inode.stat();
+    return try vfs.followDown(file.dentry).inode.stat();
 }
 
 /// Get a file status information of the given path.
@@ -476,13 +476,26 @@ pub fn statAt(dir: *vfs.Dentry, path: []const u8) FsError!Stat {
         .{ .dir = dir },
         path,
     ) orelse return FsError.NotFound;
-    return try vfs.follow(dent).inode.stat();
+    return try vfs.followDown(dent).inode.stat();
 }
 
-/// TODO: doc
-pub fn mkdir(path: []const u8) FsError!void {
-    _ = path; // autofix
-    norn.unimplemented("fs.mkdir");
+/// Create a new directory.
+pub fn createDirectory(path: []const u8, mode: Mode) FsError!*Dentry {
+    const parent = kernelLookupParent(.cwd, path) orelse return FsError.NotFound;
+    return vfs.followDown(parent).createDirectory(vfs.basename(path), mode);
+}
+
+/// Create a new directory at the given path.
+pub fn createDirectoryAt(dir: *const Dentry, name: []const u8, mode: Mode) FsError!*Dentry {
+    if (mode.type != .directory) {
+        return FsError.InvalidArgument;
+    }
+    return vfs.followDown(dir).createDirectory(name, mode);
+}
+
+/// Mount a filesystem on the given path.
+pub fn mount(path: []const u8, fs: *vfs.FileSystem) FsError!void {
+    return vfs.mount(fs, path, allocator);
 }
 
 /// TODO: doc
@@ -525,7 +538,7 @@ pub fn lookup(origin: LookupOrigin, path: []const u8) ?*vfs.Dentry {
 }
 
 /// Lookup a parent of the given path lexically.
-fn kerneLookupParent(origin: LookupOrigin, path: []const u8) ?*vfs.Dentry {
+fn kernelLookupParent(origin: LookupOrigin, path: []const u8) ?*vfs.Dentry {
     const dir = switch (origin) {
         .cwd => sched.getCurrentTask().fs.cwd,
         .dir => |d| d,

@@ -82,6 +82,7 @@ pub fn from(image: []const u8, allocator: Allocator) (Error || cpio.Error)!*Self
 
             self.root = root_dentry;
             self.fs.* = .{
+                .name = "ramfs",
                 .root = self.root,
                 .ctx = self,
                 .mounted_to = undefined,
@@ -443,6 +444,7 @@ fn testInitRamfs(allocator: Allocator) !*RamFs {
     dentry.parent = dentry;
     dentry.fs = self.fs;
     self.fs.* = .{
+        .name = "ramfs",
         .root = dentry,
         .ctx = self,
         .mounted_to = undefined,
