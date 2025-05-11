@@ -55,7 +55,7 @@ pub fn setupNewTask(task: *Thread, ip: u64, args: ?*anyopaque) TaskError!void {
     // Init TSS.
     const tss = try mem.general_allocator.create(TaskStateSegment);
     tss.* = TaskStateSegment{
-        .rsp0 = @intFromPtr(task.kernel_stack.ptr), // TODO: fix the value
+        .rsp0 = @intFromPtr(task.kernel_stack_ptr), // TODO: fix the value
     };
     x64ctx(task).tss = tss;
 
@@ -66,6 +66,7 @@ pub fn setupNewTask(task: *Thread, ip: u64, args: ?*anyopaque) TaskError!void {
     {
         const cpu_context: *CpuContext = @alignCast(@ptrCast(task.kernel_stack_ptr));
         norn.rtt.expectEqual(0, @intFromPtr(cpu_context) % 16);
+        norn.rtt.expectEqual(cpu_context, getCpuContextFromStack(task));
 
         // Zero clear.
         cpu_context.* = std.mem.zeroInit(CpuContext, .{});
@@ -111,8 +112,8 @@ inline fn x64ctx(task: *Thread) *X64Context {
 ///
 /// This functions can be called only before the thread starts.
 fn getCpuContextFromStack(task: *Thread) *CpuContext {
-    const stack_bottom = @intFromPtr(task.kernel_stack.ptr) + kernel_stack_size;
-    return @ptrFromInt(stack_bottom - @sizeOf(OrphanFrame) - @sizeOf(CpuContext));
+    const stack_bottom = @intFromPtr(task.kernel_stack.ptr) + task.kernel_stack.len;
+    return @ptrFromInt(stack_bottom - @sizeOf(CpuContext));
 }
 
 // =============================================================
