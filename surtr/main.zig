@@ -1,21 +1,4 @@
-const builtin = @import("builtin");
-const std = @import("std");
-const log = std.log.scoped(.surtr);
-const uefi = std.os.uefi;
-const elf = std.elf;
-
-const AllocateType = uefi.tables.AllocateType;
-const BootServices = uefi.tables.BootServices;
-const File = uefi.protocol.File;
-const MemoryType = uefi.tables.MemoryType;
-
-const surtr = @import("surtr.zig");
-const blog = @import("log.zig");
-const arch = @import("arch.zig");
-
-const page_size = arch.page.page_size_4k;
-const page_mask = arch.page.page_mask_4k;
-const is_debug = builtin.mode == .Debug;
+//! Surtr bootloader as a UEFI application.
 
 // Override the default log options
 pub const std_options = blog.default_log_options;
@@ -34,10 +17,10 @@ const SurtrError = error{
 };
 const Error = SurtrError || arch.page.PageError;
 
-// TODO: do not hardcode. Must be sync with norn.mem
+/// TODO: do not hardcode. Must be sync with norn.mem
 const percpu_base = 0xFFFF_FFFF_8010_0000;
 
-// Bootloader entry point.
+/// Bootloader entry point.
 pub fn main() uefi.Status {
     boot() catch |e| {
         log.err("Failed to boot: {s}", .{@errorName(e)});
@@ -47,6 +30,7 @@ pub fn main() uefi.Status {
     return .success;
 }
 
+/// Main function.
 pub fn boot() Error!void {
     var status: uefi.Status = undefined;
 
@@ -400,6 +384,33 @@ fn loadInitramfs(root: *const File, bs: *BootServices) Error![]u8 {
     const loaded_size = try readFile(initramfs, start[0..initramfs_size]);
     return start[0..loaded_size];
 }
+
+// =============================================================
+// Imports
+// =============================================================
+
+const builtin = @import("builtin");
+const std = @import("std");
+const log = std.log.scoped(.surtr);
+const uefi = std.os.uefi;
+const elf = std.elf;
+
+const AllocateType = uefi.tables.AllocateType;
+const BootServices = uefi.tables.BootServices;
+const File = uefi.protocol.File;
+const MemoryType = uefi.tables.MemoryType;
+
+const surtr = @import("surtr.zig");
+const blog = @import("log.zig");
+const arch = @import("arch.zig");
+
+const page_size = arch.page.page_size_4k;
+const page_mask = arch.page.page_mask_4k;
+const is_debug = builtin.mode == .Debug;
+
+// =============================================================
+// Tests
+// =============================================================
 
 fn assert(condition: bool, comptime message: []const u8) void {
     if (is_debug) {
