@@ -1,0 +1,6 @@
+# This configuration file is used by Surtr bootloader.
+#
+# To update the configuration, edit this file and run `zig build update-bootparams`.
+
+# Command line arguments passed to Norn kernel.
+SURTR_CMDLINE=init=/bin/init

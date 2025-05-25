@@ -71,3 +71,13 @@ pub const MemoryDescriptorIterator = struct {
         return md;
     }
 };
+
+// =============================================================
+// Tests
+// =============================================================
+const std = @import("std");
+const testing = std.testing;
+
+test {
+    testing.refAllDecls(@import("param.zig"));
+}

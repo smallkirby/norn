@@ -209,6 +209,21 @@ pub fn build(b: *std.Build) !void {
     b.getInstallStep().dependOn(&install_norn.step);
 
     // =============================================================
+    // Boot parameters
+    // =============================================================
+    const path_bootparams = b.option(
+        []const u8,
+        "bootparams",
+        "Path to Surtr boot parameters file.",
+    ) orelse "assets/boot/bootprarams";
+    const update_bootparams = b.addInstallFile(
+        b.path(path_bootparams),
+        b.fmt("{s}/efi/boot/bootparams", .{out_dir_name}),
+    );
+    const cmd_update_bootparams = b.step("update-bootparams", "Update boot parameters.");
+    cmd_update_bootparams.dependOn(&update_bootparams.step);
+
+    // =============================================================
     // QEMU
     // =============================================================
     var qemu_args = std.ArrayList([]const u8).init(b.allocator);
@@ -262,18 +277,29 @@ pub fn build(b: *std.Build) !void {
     // =============================================================
     // Unit Tests
     // =============================================================
-    const unit_test = b.addTest(.{
-        .name = "Unit Test",
+    const norn_unit_test = b.addTest(.{
+        .name = "Norn Unit Test",
         .root_source_file = b.path("norn/norn.zig"),
         .target = userland_target,
         .optimize = optimize,
         .link_libc = true,
     });
-    unit_test.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
-    unit_test.root_module.addImport("norn", unit_test.root_module);
-    unit_test.root_module.addImport("surtr", surtr_module);
-    unit_test.root_module.addOptions("option", options);
-    const run_unit_tests = b.addRunArtifact(unit_test);
+    norn_unit_test.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
+    norn_unit_test.root_module.addImport("norn", norn_unit_test.root_module);
+    norn_unit_test.root_module.addImport("surtr", surtr_module);
+    norn_unit_test.root_module.addOptions("option", options);
+    const run_norn_unit_tests = b.addRunArtifact(norn_unit_test);
+
+    const surtr_unit_test = b.addTest(.{
+        .name = "Surtr Unit Test",
+        .root_source_file = b.path("surtr/surtr.zig"),
+        .target = userland_target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const run_surtr_unit_tests = b.addRunArtifact(surtr_unit_test);
+
     const unit_test_step = b.step("test", "Run unit tests");
-    unit_test_step.dependOn(&run_unit_tests.step);
+    unit_test_step.dependOn(&run_norn_unit_tests.step);
+    unit_test_step.dependOn(&run_surtr_unit_tests.step);
 }
