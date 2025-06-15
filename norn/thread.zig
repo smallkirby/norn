@@ -482,10 +482,12 @@ const StackCreator = struct {
             comptime norn.comptimeAssert(
                 value_size != 0,
                 "StackCreator does not support zero-sized type",
+                .{},
             );
             comptime norn.comptimeAssert(
                 value_size % 8 == 0,
                 "StackCreator only supports 64-bit aligned types",
+                .{},
             );
 
             if (util.ptrLte(self._sp - value_size, self._stack_top)) {

@@ -98,14 +98,8 @@ pub const vmem_size = 512 * gib;
 pub const kernel_base = 0xFFFF_FFFF_8000_0000;
 
 comptime {
-    norn.comptimeAssert(
-        direct_map_base + direct_map_size <= vmem_base,
-        "Invalid memory layout",
-    );
-    norn.comptimeAssert(
-        vmem_base + vmem_size <= kernel_base,
-        "Invalid memory layout",
-    );
+    norn.comptimeAssert(direct_map_base + direct_map_size <= vmem_base, "Invalid memory layout", .{});
+    norn.comptimeAssert(vmem_base + vmem_size <= kernel_base, "Invalid memory layout", .{});
 }
 
 // =============================================================

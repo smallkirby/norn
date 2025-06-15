@@ -451,7 +451,8 @@ pub const TaskStateSegment = extern struct {
     comptime {
         norn.comptimeAssert(
             @sizeOf(TaskStateSegment) == 104,
-            std.fmt.comptimePrint("Invalid size of TaskStateSegment: {d}", .{@sizeOf(TaskStateSegment)}),
+            "Invalid size of TaskStateSegment: {d}",
+            .{@sizeOf(TaskStateSegment)},
         );
     }
 };

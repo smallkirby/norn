@@ -104,9 +104,9 @@ test {
 }
 
 /// Assert at compile time.
-pub fn comptimeAssert(cond: bool, comptime msg: []const u8) void {
+pub fn comptimeAssert(cond: bool, comptime msg: []const u8, args: anytype) void {
     if (!cond) {
-        @compileError(msg);
+        @compileError(std.fmt.comptimePrint(msg, args));
     }
 }
 

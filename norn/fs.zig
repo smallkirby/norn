@@ -280,7 +280,7 @@ const DirEnt64 = extern struct {
     }
 
     comptime {
-        norn.comptimeAssert(19 == struct_size, "Size of DirEnt64 must be 19.");
+        norn.comptimeAssert(19 == struct_size, "Size of DirEnt64 must be 19.", .{});
     }
 };
 
