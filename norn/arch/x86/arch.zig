@@ -122,11 +122,11 @@ pub fn isTscSupported() bool {
 }
 
 /// Write a byte to an I/O port.
-pub fn out(T: type, value: T, port: u16) void {
+pub fn out(T: type, value: anytype, port: u16) void {
     return switch (T) {
-        u8 => am.outb(value, port),
-        u16 => am.outw(value, port),
-        u32 => am.outl(value, port),
+        u8 => am.outb(@bitCast(value), port),
+        u16 => am.outw(@bitCast(value), port),
+        u32 => am.outl(@bitCast(value), port),
         else => @compileError("Unsupported type for asm out()"),
     };
 }
