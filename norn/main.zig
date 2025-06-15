@@ -178,6 +178,9 @@ fn nornThread(initramfs: surtr.InitramfsInfo) !void {
     log.info("Starting scheduler...", .{});
     try norn.timer.init();
 
+    // PCI
+    norn.pci.debugPrintAllDevices();
+
     // Start the scheduler.
     // This function never returns.
     norn.sched.schedule();
