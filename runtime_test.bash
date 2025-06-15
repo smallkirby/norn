@@ -78,6 +78,8 @@ qemu-system-x86_64 \
   -m 512M \
   -bios /usr/share/ovmf/OVMF.fd \
   -drive file=fat:rw:zig-out/img,format=raw \
+  -device nec-usb-xhci,id=xhci \
+  -device usb-kbd \
   -nographic \
   -serial mon:stdio \
   -no-reboot \

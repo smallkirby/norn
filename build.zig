@@ -236,6 +236,10 @@ pub fn build(b: *std.Build) !void {
         "/usr/share/ovmf/OVMF.fd", // TODO: Make this configurable
         "-drive",
         b.fmt("file=fat:rw:{s}/{s},format=raw", .{ b.install_path, out_dir_name }),
+        "-device",
+        "nec-usb-xhci,id=xhci",
+        "-device",
+        "usb-kbd",
         "-nographic",
         "-serial",
         "mon:stdio",
