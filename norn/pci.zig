@@ -151,11 +151,6 @@ fn HeaderGenerator(layout: ?Header.Layout) type {
             });
         };
 
-        /// Predefined header.
-        _pre: P,
-        /// Type-specific header.
-        _cont: C,
-
         /// Check if the field is in the predefined header.
         inline fn isInPredefinedHeader(comptime field: FieldEnum) bool {
             return @intFromEnum(field) < c_start_idx;
