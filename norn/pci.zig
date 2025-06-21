@@ -45,6 +45,9 @@ fn ConfigurationSpaceGenerator(layout: ?Header.Layout) type {
         /// Alignment for register offsets to ensure 32-bit access.
         const register_align = @as(RegisterOffset, 0b11);
 
+        /// Invalid Vendor ID.
+        const invalid_vendor_id: VendorId = 0xFFFF;
+
         /// Create a reader and writer for the PCI configuration space.
         pub fn new(bus: BusNumber, device: DeviceNumber, function: FunctionNumber) Self {
             return Self{
@@ -175,9 +178,6 @@ fn HeaderGenerator(layout: ?Header.Layout) type {
         }
     };
 }
-
-/// Invalid Vendor ID.
-const invalid_vendor_id: VendorId = 0xFFFF;
 
 /// Namespace for PCI configuration space header types.
 const Header = struct {
