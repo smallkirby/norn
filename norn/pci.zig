@@ -1,3 +1,12 @@
+pub const PciError = error{
+    /// Data is corrupted or invalid.
+    InvalidData,
+    /// Device not found.
+    NotFound,
+    /// Operation not supported.
+    NotSupported,
+};
+
 /// Data type for function number.
 const FunctionNumber = u3;
 /// Data type for device number.
@@ -68,14 +77,12 @@ fn ConfigurationSpaceGenerator(layout: ?Header.Layout) type {
             const T = HeaderType.typeOf(field);
 
             // Configure CONFIG_ADDRESS register.
-            rtt.expectEqual(0, aligned_offset & register_align);
-            const addr = ConfigAddress{
+            setConfigAddress(.{
                 .register = aligned_offset,
                 .function = self._function,
                 .device = self._device,
                 .bus = self._bus,
-            };
-            arch.out(u32, addr, config_address);
+            });
 
             // Read a value and extract the required bits.
             const result = arch.in(u32, config_data);
@@ -90,6 +97,43 @@ fn ConfigurationSpaceGenerator(layout: ?Header.Layout) type {
             return @bitCast(truncated_result);
         }
 
+        /// TODO: doc
+        pub fn write(self: Self, comptime field: HeaderType.FieldEnum, value: HeaderType.typeOf(field)) void {
+            // Since all writes must be 32-bit aligned, we need to write the whole DWORD.
+            const exact_offset = HeaderType.offsetOf(field);
+            const aligned_offset = exact_offset & ~register_align;
+            const diff_bitoffset = (exact_offset - aligned_offset) * 8;
+            const T = HeaderType.typeOf(field);
+            const mask: u32 = switch (@bitSizeOf(T)) {
+                8 => 0xFF,
+                16 => 0xFFFF,
+                32 => 0xFFFFFFFF,
+                else => @compileError("Unsupported type size for PCI configuration space write"),
+            };
+            const value_int: u32 = switch (@bitSizeOf(T)) {
+                8 => @as(u8, @bitCast(value)),
+                16 => @as(u16, @bitCast(value)),
+                32 => @as(u32, @bitCast(value)),
+                else => @compileError("Unsupported type size for PCI configuration space write"),
+            };
+
+            // Configure CONFIG_ADDRESS register.
+            setConfigAddress(.{
+                .register = aligned_offset,
+                .function = self._function,
+                .device = self._device,
+                .bus = self._bus,
+            });
+
+            // Write the value.
+            const original = arch.in(u32, config_data);
+            arch.out(
+                u32,
+                (original & ~(mask << diff_bitoffset)) | (value_int << diff_bitoffset),
+                config_data,
+            );
+        }
+
         /// Check if the device is a single-function device.
         pub fn isSingleFunction(self: Self) bool {
             const header_type = self.read(.header_type);
@@ -100,6 +144,12 @@ fn ConfigurationSpaceGenerator(layout: ?Header.Layout) type {
         pub fn isValid(self: Self) bool {
             return self.read(.vendor_id) != invalid_vendor_id;
         }
+
+        /// Set the CONFIG_ADDRESS register.
+        fn setConfigAddress(addr: ConfigAddress) void {
+            rtt.expectEqual(0, addr.register & register_align);
+            arch.out(u32, addr, config_address);
+        }
     };
 }
 
@@ -109,6 +159,27 @@ const ConfigurationSpaceAny = ConfigurationSpaceGenerator(null);
 const ConfigurationSpace0 = ConfigurationSpaceGenerator(.standard);
 /// Specialized PCI configuration space reader and writer for the layout type 0x1.
 const ConfigurationSpace1 = ConfigurationSpaceGenerator(.bridge);
+
+/// Union of configuration spaces.
+const ConfigurationSpace = union(Header.Layout) {
+    standard: ConfigurationSpace0,
+    bridge: ConfigurationSpace1,
+    cardbus_bridge: ConfigurationSpaceAny,
+
+    /// Read the configuration space to instantiate the appropriate configuration space reader/writer.
+    fn specialize(bus: BusNumber, device: DeviceNumber, function: FunctionNumber) PciError!ConfigurationSpace {
+        const config = ConfigurationSpaceAny.new(bus, device, function);
+        if (!config.isValid()) {
+            return error.NotFound;
+        }
+
+        return switch (config.read(.header_type).layout) {
+            .standard => .{ .standard = ConfigurationSpace0.new(bus, device, function) },
+            .bridge => .{ .bridge = ConfigurationSpace1.new(bus, device, function) },
+            else => @panic("Unsupported PCI configuration space layout"),
+        };
+    }
+};
 
 /// Utility to generate a PCI configuration space header data type,
 /// that can handle both predefined and type-specific headers.
@@ -239,17 +310,17 @@ const Header = struct {
     /// PCI configuration space header type 0x0 (standard).
     const TypeSpecific0 = packed struct {
         /// Base address register #0
-        bar0: u32,
+        bar0: Bar,
         /// Base address register #1
-        bar1: u32,
+        bar1: Bar,
         /// Base address register #2
-        bar2: u32,
+        bar2: Bar,
         /// Base address register #3
-        bar3: u32,
+        bar3: Bar,
         /// Base address register #4
-        bar4: u32,
+        bar4: Bar,
         /// Base address register #5
-        bar5: u32,
+        bar5: Bar,
         /// Cardbus CIS pointer.
         cardbus_cis: u32,
         /// Subsystem vendor ID.
@@ -277,9 +348,9 @@ const Header = struct {
     /// PCI configuration space header type 0x1 (PCI-to-PCI bridge).
     const TypeSpecific1 = packed struct {
         /// Base address register #0
-        bar0: u32,
+        bar0: Bar,
         /// Base address register #1
-        bar1: u32,
+        bar1: Bar,
         /// Primary bus number.
         primary_bus_number: BusNumber,
         /// Secondary bus number.
@@ -397,6 +468,117 @@ const Status = packed struct(u16) {
     signaled_system_error: bool,
     /// Set when the device detects a parity error.
     signaled_parity_error: bool,
+};
+
+/// Base address register.
+const Bar = packed struct(u32) {
+    /// Raw data of the BAR.
+    _data: u32,
+
+    /// Used to get the required memory size.
+    const all_set_bar: Bar = .{
+        ._data = 0xFFFF_FFFF,
+    };
+
+    /// Types of BARs.
+    const BarType = enum(u1) {
+        /// Memory space base address register.
+        mmio = 0,
+        /// I/O space base address register.
+        pio = 1,
+    };
+
+    /// Union of BAR.
+    const Union = union(BarType) {
+        mmio: MmioBar,
+        pio: PioBar,
+    };
+
+    /// Memory space base address register
+    const MmioBar = packed struct(u32) {
+        /// Always 0 for memory space BAR.
+        _bar_type: u1 = 0,
+        /// Size of BAR and memory space.
+        type: SpaceType,
+        /// If true, the memory has no side effects when read.
+        prefetchable: bool,
+        /// 16-byte aligned base address.
+        base: u28,
+
+        const SpaceType = enum(u2) {
+            /// BAR is 32-bits wide. The memory can be mapped anywhere in the 32bit memory space.
+            map32 = 0b00,
+            /// BAR is 64-bits wide. The memory can be mapped anywhere in the 64bit memory space.
+            map64 = 0b10,
+
+            _,
+        };
+    };
+
+    /// I/O space base address register
+    const PioBar = packed struct(u32) {
+        /// Always 1 for I/O space BAR.
+        _bar_type: u1 = 1,
+        /// Reserved.
+        _reserved: u1 = 0,
+        /// 4-byte aligned base address.
+        base: u30,
+    };
+
+    /// Specialize the BAR to a specific type based on the data.
+    fn specialize(self: Bar) Union {
+        return switch (@as(u1, @truncate(self._data))) {
+            0 => .{ .mmio = @bitCast(self._data) },
+            1 => .{ .pio = @bitCast(self._data) },
+        };
+    }
+};
+
+/// PCI device.
+const Device = struct {
+    const Self = @This();
+
+    /// Bus number of the device.
+    bus: BusNumber,
+    /// Device number of the device.
+    device: DeviceNumber,
+    /// Function number of the device.
+    function: FunctionNumber,
+
+    /// Configuration space.
+    config: ConfigurationSpace,
+
+    /// Create a new PCI device.
+    pub fn new(bus: BusNumber, device: DeviceNumber, function: FunctionNumber) PciError!Self {
+        return .{
+            .bus = bus,
+            .device = device,
+            .function = function,
+            .config = try ConfigurationSpace.specialize(bus, device, function),
+        };
+    }
+
+    /// Read n-th BAR of the device.
+    ///
+    /// Returns an error when the device's configuration space does not have the BAR.
+    pub fn readBar(self: Self, comptime n: u3) PciError!Bar {
+        switch (self.config) {
+            .standard => |c| {
+                return c.read(switch (n) {
+                    0 => .bar0,
+                    1 => .bar1,
+                    2 => .bar2,
+                    3 => .bar3,
+                    4 => .bar4,
+                    5 => .bar5,
+                    else => PciError.NotSupported,
+                });
+            },
+            else => {
+                return PciError.NotSupported;
+            },
+        }
+    }
 };
 
 // =============================================================
