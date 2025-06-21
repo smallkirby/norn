@@ -83,6 +83,7 @@ fn ConfigurationSpaceGenerator(layout: ?Header.Layout) type {
             const truncated_result = switch (@bitSizeOf(T)) {
                 8 => @as(u8, @truncate(shifted_result)),
                 16 => @as(u16, @truncate(shifted_result)),
+                24 => @as(u24, @truncate(shifted_result)),
                 32 => @as(u32, @truncate(shifted_result)),
                 else => @compileError("Unsupported type size for PCI configuration space read"),
             };
@@ -433,12 +434,16 @@ pub fn debugPrintAllDevices() void {
 
         fn printFunction(bus: BusNumber, device: DeviceNumber, function: FunctionNumber) void {
             const func = ConfigurationSpaceAny.new(bus, device, function);
-            log.info("{X:0>2}:{X:0>2}.{X:0>1} - 0x{X:0>4}:0x{X:0>4} (layout: {s})", .{
+            const class: ClassCode = @bitCast(func.read(.class_code));
+            log.info("{X:0>2}:{X:0>2}.{X:0>1} - {X:0>4}:{X:0>4} {X:0>2}:{X:0>2}:{X:0>2} (layout: {s})", .{
                 bus,
                 device,
                 function,
                 func.read(.vendor_id),
                 func.read(.device_id),
+                class.base_class,
+                class.sub_class,
+                class.interface,
                 @tagName(func.read(.header_type).layout),
             });
         }
