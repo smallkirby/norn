@@ -338,14 +338,20 @@ fn allocatePages(
     num_pages: usize,
     requested_address: ?u64,
 ) Error![]align(arch.page.page_size_4k) u8 {
-    var out_buffer: [*]align(arch.page.page_size_4k) u8 = @ptrFromInt(if (requested_address) |addr| addr else undefined);
+    var out_buffer_allowzero: [*]allowzero align(arch.page.page_size_4k) u8 =
+        @ptrFromInt(if (requested_address) |addr| addr else undefined);
     const status = bs.allocatePages(
         alloc_type,
         surtr.toUefiMemoryType(mem_type),
         num_pages,
-        @ptrCast(&out_buffer),
+        @ptrCast(&out_buffer_allowzero),
     );
-    return if (status == .success) out_buffer[0 .. num_pages * arch.page.page_size_4k] else Error.AllocatePool;
+
+    const out_buffer: [*]align(arch.page.page_size_4k) u8 = @ptrCast(out_buffer_allowzero);
+    return if (status == .success)
+        out_buffer[0 .. num_pages * arch.page.page_size_4k]
+    else
+        Error.AllocatePool;
 }
 
 /// Read file content to the buffer.
