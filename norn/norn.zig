@@ -96,6 +96,11 @@ pub fn endlessHalt() noreturn {
     }
 }
 
+/// Execute an undefined instruction.
+pub inline fn trap() noreturn {
+    arch.ud();
+}
+
 // =============================================================
 // Test
 // =============================================================

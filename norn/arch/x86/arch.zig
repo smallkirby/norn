@@ -189,6 +189,12 @@ pub fn setPerCpuBase(base: Virt) void {
     am.wrmsr(.kernel_gs_base, base);
 }
 
+/// Execute an undefined instruction.
+pub fn ud() noreturn {
+    asm volatile ("ud2");
+    unreachable;
+}
+
 /// Memory-related services.
 pub const mem = struct {
     /// Page attribute.
