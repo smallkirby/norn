@@ -665,7 +665,7 @@ test "Configuration space layout" {
     try testing.expectEqual(VendorId, CA.HeaderType.typeOf(.vendor_id));
 
     try testing.expectEqual(VendorId, C0.HeaderType.typeOf(.vendor_id));
-    try testing.expectEqual(u32, C0.HeaderType.typeOf(.bar5));
+    try testing.expectEqual(Bar, C0.HeaderType.typeOf(.bar5));
 
     try testing.expectEqual(VendorId, C1.HeaderType.typeOf(.vendor_id));
     try testing.expectEqual(u16, C1.HeaderType.typeOf(.prefetchable_memory_base));

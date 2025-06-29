@@ -120,6 +120,10 @@ pub const mock_for_testing = struct {
 
     pub fn initThisCpu(_: usize) void {}
 
+    pub fn isThisCpuInitialized(_: usize) bool {
+        return false;
+    }
+
     pub fn ptr(comptime pointer: anytype) *@typeInfo(@TypeOf(pointer)).pointer.child {
         return pointer;
     }
