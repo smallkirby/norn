@@ -354,6 +354,7 @@ pub fn new() Self {
 }
 
 /// Initialize buddy allocator.
+///
 /// This function must be called after the memory map is initialized.
 pub fn init(self: *Self, bs: *BootstrapAllocator, log_fn: ?norn.LogFn) void {
     rttExpectNewMap();
@@ -448,6 +449,7 @@ fn freePagesRaw(ctx: *anyopaque, addr: Virt, num_pages: usize) Error!void {
 }
 
 /// Check if the memory region described by the descriptor is usable for norn kernel.
+///
 /// Note that these memory areas may contain crucial data for the kernel,
 /// including page tables, stack, and GDT.
 /// You MUST copy them before using the area.
@@ -456,6 +458,8 @@ inline fn isUsableMemory(descriptor: *MemoryDescriptor) bool {
         .conventional_memory,
         .boot_services_code,
         .boot_services_data,
+        .loader_code,
+        .loader_data,
         => true,
         else => false,
     };

@@ -29,16 +29,11 @@ const Page = packed struct {
 };
 
 /// The size of memory this allocator provides.
-const max_size = 1 * mem.mib;
+const max_size = 50 * mem.mib;
 /// Maximum number of pages this allocator provides.
 const num_max_pages = max_size / mem.size_4kib;
 /// Total size in 4KiB pages of meta data.
-const meta_total_pages = if (@sizeOf(Page) % mem.size_4kib == 0)
-blk: {
-    break :blk @sizeOf(Page) / mem.size_4kib;
-} else blk: {
-    break :blk @sizeOf(Page) / mem.size_4kib + 1;
-};
+const meta_total_pages = norn.util.roundup(@sizeOf(Page) * num_max_pages, mem.size_4kib) / mem.size_4kib;
 
 /// Vtable for PageAllocator interface.
 const vtable = PageAllocator.Vtable{
@@ -79,6 +74,7 @@ pub fn init(self: *Self, map: MemoryMap) void {
         phys_start += meta_total_pages * mem.size_4kib;
 
         // Mark the pages as available.
+        norn.rtt.expectEqual(0, phys_start % mem.size_4kib);
         for (0..num_max_pages - meta_total_pages) |i| {
             self.pages[i + meta_total_pages] = Page.new(phys_start, false);
             phys_start += mem.size_4kib;
@@ -161,11 +157,14 @@ fn freePagesRaw(_: *anyopaque, _: mem.Virt, _: usize) Error!void {
 }
 
 /// Check if the memory region described by the descriptor is usable for this allocator.
-/// Page tables are not reconstructed, so BootServicesData is not usable here.
+///
+/// Page tables are not reconstructed, so .loader_data is not usable here.
 inline fn isUsableMemory(descriptor: *uefi.tables.MemoryDescriptor) bool {
     return switch (descriptor.type) {
         .conventional_memory,
         .boot_services_code,
+        .boot_services_data,
+        .loader_code,
         => true,
         else => false,
     };

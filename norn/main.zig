@@ -54,12 +54,6 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         return error.InvalidBootInfo;
     };
 
-    // Copy boot_info into Norn's stack since it becomes inaccessible soon.
-    // `var` is to avoid the copy from being delayed.
-    // (If the copy is performed after the mapping reconstruction, we cannot access the original boot_info and results in #PF).
-    var boot_info: BootInfo = undefined;
-    boot_info = early_boot_info;
-
     // Initialize GDT.
     arch.initEarlyGdt();
     log.info("Initialized GDT.", .{});
@@ -70,8 +64,22 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     log.info("Initialized IDT.", .{});
 
     // Initialize bootstrap allocator.
-    norn.mem.initBootstrapAllocator(boot_info.memory_map);
+    norn.mem.initBootstrapAllocator(early_boot_info.memory_map);
     log.info("Initialized bootstrap allocator.", .{});
+
+    // Copy boot_info into Norn's stack since it becomes inaccessible soon.
+    // `var` is to avoid the copy from being delayed.
+    // (If the copy is performed after the mapping reconstruction, we cannot access the original boot_info and results in #PF).
+    var boot_info: BootInfo = undefined;
+    boot_info = early_boot_info;
+    // Also, copy the initramfs from .loader_data to Norn memory.
+    {
+        const src = boot_info.initramfs;
+        const dest = try norn.mem.boottimeAlloc(src.size);
+        const src_ptr: [*]const u8 = @ptrFromInt(src.addr);
+        @memcpy(dest[0..src.size], src_ptr[0..src.size]);
+        boot_info.initramfs.addr = @intFromPtr(dest.ptr);
+    }
 
     // Reconstruct memory mapping from the one provided by UEFI and Sutr.
     log.info("Reconstructing memory mapping...", .{});

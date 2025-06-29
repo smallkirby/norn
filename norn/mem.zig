@@ -127,6 +127,15 @@ var pgtbl_initialized = atomic.Value(bool).init(false);
 // Functions
 // =============================================================
 
+/// Allocate memory from bootstrap allocator.
+///
+/// Can be used only before the page table is initialized.
+pub fn boottimeAlloc(size: usize) anyerror![]u8 {
+    norn.rtt.expect(!pgtbl_initialized.load(.acquire));
+    const num_pages = norn.util.roundup(size, size_4kib) / size_4kib;
+    return bootstrap_allocator_instance.getAllocator().allocPages(num_pages, .normal);
+}
+
 /// Initialize the bootstrap allocator.
 ///
 /// You MUST call this function before using `page_allocator`.
