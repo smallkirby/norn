@@ -30,11 +30,17 @@ var cpu_offsets = [_]usize{0} ** norn.num_max_cpu;
 /// Per-CPU data instance.
 var percpu_instance: *void = undefined;
 
-/// Whether per-CPU data is initialized.
+/// Whether per-CPU framework is initialized.
+///
+/// Note that this does not mean that per-CPU data is initialized.
 var percpu_initialized: bool = false;
+/// Whether per-CPU data for this CPU is initialized.
+var percpu_thiscpu_initialized: [norn.num_max_cpu]bool = [_]bool{false} ** norn.num_max_cpu;
 
 /// Initialize per-CPU data.
 pub fn init(num_cpus: usize, percpu_base: Virt) PageAllocator.Error!void {
+    norn.rtt.expect(mem.isPgtblInitialized());
+
     const per_cpu_size = @intFromPtr(&__per_cpu_end) - @intFromPtr(&__per_cpu_start);
     if (per_cpu_size == 0) return;
 
@@ -63,7 +69,16 @@ pub fn init(num_cpus: usize, percpu_base: Virt) PageAllocator.Error!void {
 /// Initialize per-CPU data for this core.
 pub fn initThisCpu(cpu: usize) void {
     norn.rtt.expect(percpu_initialized);
+    norn.rtt.expect(!percpu_thiscpu_initialized[cpu]);
+
     norn.arch.setPerCpuBase(@intFromPtr(rawGetCpuHead(cpu)));
+
+    percpu_thiscpu_initialized[cpu] = true;
+}
+
+/// Check if per-CPU data is initialized for this CPU.
+pub fn isThisCpuInitialized(cpu: usize) bool {
+    return percpu_initialized and percpu_thiscpu_initialized[cpu];
 }
 
 /// Get the address of per-CPU data relative to the per-CPU address space for the current CPU.

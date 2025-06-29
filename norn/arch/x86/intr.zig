@@ -96,8 +96,9 @@ fn unhandledHandler(context: *Context) void {
 
     const exception: Exception = @enumFromInt(context.spec1.vector);
     log.err("============ Oops! ===================", .{});
-    // TODO Print the CPU ID
-    log.err("Unhandled interrupt: {s} ({})", .{
+    const cpuid = norn.arch.getLocalApic().id();
+    log.err("Core#{d:0>2}: Unhandled interrupt: {s} ({})", .{
+        cpuid,
         exception.name(),
         context.spec1.vector,
     });
@@ -134,7 +135,7 @@ fn unhandledHandler(context: *Context) void {
     log.err("CR3    : 0x{X:0>16}", .{cr3});
     log.err("CR4    : 0x{X:0>16}", .{cr4});
 
-    if (context.isFromUserMode()) {
+    if (norn.pcpu.isThisCpuInitialized(cpuid) and context.isFromUserMode()) {
         log.err("Memory map of the current task:", .{});
         const task = norn.sched.getCurrentTask();
         var node: ?*norn.mm.VmArea = task.mm.vm_areas.first;
@@ -147,7 +148,7 @@ fn unhandledHandler(context: *Context) void {
     }
 
     // Check if it's a kernel stack overflow.
-    if (norn.sched.isInitialized()) {
+    if (norn.pcpu.isThisCpuInitialized(cpuid) and norn.sched.isInitialized()) {
         const current = norn.sched.getCurrentTask();
         const kstack = current.kernel_stack;
         const kstack_guard_start = @intFromPtr(kstack.ptr);
