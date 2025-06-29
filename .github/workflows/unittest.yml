@@ -10,7 +10,6 @@ on:
 
 env:
   ZIG_VERSION: 0.14.1
-  LLVM_VERSION: 19
 
 jobs:
   unit_test:
@@ -20,17 +19,15 @@ jobs:
 
       - name: Install dependency
         run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository 'deb http://apt.llvm.org/noble/ llvm-toolchain-noble-${{env.LLVM_VERSION}} main'
           sudo apt update
           sudo apt install -y \
             git sudo binutils curl wget tar xz-utils
 
       - name: Install zig
         run: |
-          curl https://ziglang.org/download/${{env.ZIG_VERSION}}/zig-linux-x86_64-${{env.ZIG_VERSION}}.tar.xz -L -o zig.tar.xz
+          curl https://ziglang.org/download/${{env.ZIG_VERSION}}/zig-x86_64-linux-${{env.ZIG_VERSION}}.tar.xz -L -o zig.tar.xz
           tar -xf zig.tar.xz
-          echo "$(pwd)/zig-linux-x86_64-${{env.ZIG_VERSION}}" >> $GITHUB_PATH
+          echo "$(pwd)/zig-x86_64-linux-${{env.ZIG_VERSION}}" >> $GITHUB_PATH
 
       - name: Unit Tests
         run: |
