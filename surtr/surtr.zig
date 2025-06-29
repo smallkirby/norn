@@ -72,6 +72,54 @@ pub const MemoryDescriptorIterator = struct {
     }
 };
 
+/// Memory type with Surtr / Norn -specific extensions.
+///
+/// This enum type extends uefi.tables.MemoryType.
+pub const MemoryType = blk: {
+    const extended_types = [_][:0]const u8{
+        // Reserved by Norn.
+        //
+        // Cannot be used even after exiting boot services.
+        "norn_reserved",
+    };
+    // 0x7000_0000 ~ 0x7FFF_FFFF are reserved by OEM.
+    // 0x8000_0000 ~ 0xFFFF_FFFF are reserved by UEFI OS loaders.
+    const extended_start_ix: u32 = 0x8000_0000;
+
+    const original_types = std.meta.fields(uefi.tables.MemoryType);
+    const fields_len = original_types.len + extended_types.len;
+    var enumFields: [fields_len]std.builtin.Type.EnumField = undefined;
+
+    for (original_types, 0..) |field, i| {
+        enumFields[i] = field;
+    }
+    for (extended_types, 0..) |name, i| {
+        enumFields[original_types.len + i] = .{
+            .name = name,
+            .value = @as(u32, extended_start_ix + i),
+        };
+    }
+
+    break :blk @Type(.{
+        .@"enum" = .{
+            .tag_type = u32,
+            .fields = &enumFields,
+            .decls = &.{},
+            .is_exhaustive = false,
+        },
+    });
+};
+
+/// Convert a extended memory type to UEFI memory type.
+pub inline fn toUefiMemoryType(mtype: MemoryType) uefi.tables.MemoryType {
+    return @enumFromInt(@intFromEnum(mtype));
+}
+
+/// Convert a UEFI memory type to a Surtr / Norn -specific extended memory type.
+pub inline fn toExtendedMemoryType(mtype: uefi.tables.MemoryType) MemoryType {
+    return @enumFromInt(@intFromEnum(mtype));
+}
+
 // =============================================================
 // Tests
 // =============================================================

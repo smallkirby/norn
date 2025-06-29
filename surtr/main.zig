@@ -115,10 +115,21 @@ pub fn boot() Error!void {
     log.info("Kernel image: 0x{X:0>16} - 0x{X:0>16} (0x{X} pages)", .{ kernel_start_phys, kernel_end_phys, pages_4kib });
 
     // Allocate memory for kernel image.
-    status = bs.allocatePages(.allocate_address, .loader_data, pages_4kib, @ptrCast(&kernel_start_phys));
-    if (status != .success) {
-        log.err("Failed to allocate memory for kernel image: {?}", .{status});
-        return Error.AllocatePool;
+    const allocated_kern_memory = allocatePages(
+        bs,
+        .allocate_address,
+        .norn_reserved,
+        pages_4kib,
+        kernel_start_phys,
+    ) catch |err| {
+        log.err("Failed to allocate memory for kernel image: {?}", .{err});
+        return err;
+    };
+    if (@intFromPtr(allocated_kern_memory.ptr) != kernel_start_phys) {
+        log.err("Failed to allocate memory at expected address: 0x{X:0>16} != 0x{X:0>16}", .{
+            @intFromPtr(allocated_kern_memory.ptr),
+            kernel_start_phys,
+        });
     }
     log.info("Allocated memory for kernel image @ 0x{X:0>16} ~ 0x{X:0>16}", .{ kernel_start_phys, kernel_start_phys + pages_4kib * page_size });
 
@@ -240,7 +251,7 @@ pub fn boot() Error!void {
             log.debug("  0x{X:0>16} - 0x{X:0>16} : {s}", .{
                 md.physical_start,
                 md.physical_start + md.number_of_pages * page_size,
-                @tagName(md.type),
+                @tagName(surtr.toExtendedMemoryType(md.type)),
             });
         } else break;
     }
@@ -311,8 +322,30 @@ fn openFile(
 /// Allocate memory pool.
 fn allocatePool(bs: *BootServices, size: usize, mem_type: MemoryType) Error![]align(8) u8 {
     var out_buffer: [*]align(8) u8 = undefined;
-    const status = bs.allocatePool(mem_type, size, &out_buffer);
+    const status = bs.allocatePool(
+        surtr.toUefiMemoryType(mem_type),
+        size,
+        &out_buffer,
+    );
     return if (status == .success) out_buffer[0..size] else Error.AllocatePool;
+}
+
+/// Allocate pages of memory.
+fn allocatePages(
+    bs: *BootServices,
+    alloc_type: uefi.tables.AllocateType,
+    mem_type: MemoryType,
+    num_pages: usize,
+    requested_address: ?u64,
+) Error![]align(arch.page.page_size_4k) u8 {
+    var out_buffer: [*]align(arch.page.page_size_4k) u8 = @ptrFromInt(if (requested_address) |addr| addr else undefined);
+    const status = bs.allocatePages(
+        alloc_type,
+        surtr.toUefiMemoryType(mem_type),
+        num_pages,
+        @ptrCast(&out_buffer),
+    );
+    return if (status == .success) out_buffer[0 .. num_pages * arch.page.page_size_4k] else Error.AllocatePool;
 }
 
 /// Read file content to the buffer.
@@ -367,22 +400,18 @@ fn loadInitramfs(root: *const File, bs: *BootServices) Error![]u8 {
     const initramfs_size = initramfs_info.file_size;
 
     // Allocate memory for initramfs in .loader_data pages.
-    var initramfs_start: u64 = undefined;
     const initramfs_size_pages = (initramfs_size + (page_size - 1)) / page_size;
-    status = bs.allocatePages(
+    const initramfs_start = try allocatePages(
+        bs,
         .allocate_any_pages,
         .loader_data,
         initramfs_size_pages,
-        @ptrCast(&initramfs_start),
+        null,
     );
-    if (status != .success) {
-        return Error.AllocatePool;
-    }
 
     // Load initramfs.
-    const start: [*]u8 = @ptrFromInt(initramfs_start);
-    const loaded_size = try readFile(initramfs, start[0..initramfs_size]);
-    return start[0..loaded_size];
+    const loaded_size = try readFile(initramfs, initramfs_start[0..initramfs_size]);
+    return initramfs_start[0..loaded_size];
 }
 
 // =============================================================
@@ -398,11 +427,11 @@ const elf = std.elf;
 const AllocateType = uefi.tables.AllocateType;
 const BootServices = uefi.tables.BootServices;
 const File = uefi.protocol.File;
-const MemoryType = uefi.tables.MemoryType;
 
 const surtr = @import("surtr.zig");
 const blog = @import("log.zig");
 const arch = @import("arch.zig");
+const MemoryType = surtr.MemoryType;
 
 const page_size = arch.page.page_size_4k;
 const page_mask = arch.page.page_mask_4k;
