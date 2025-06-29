@@ -12,8 +12,10 @@ pub const ArchError = apic.ApicError || intr.IntrError || pg.PageError || syscal
 pub const SyscallContext = regs.CpuContext;
 
 /// Disable external interrupts.
-pub inline fn disableIrq() void {
+pub fn disableIrq() bool {
+    const ie = isIrqEnabled();
     am.cli();
+    return ie;
 }
 
 /// Enable external interrupts.

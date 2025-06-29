@@ -6,7 +6,7 @@ var panicked = atomic.Value(bool).init(false);
 
 fn panic(msg: []const u8, _: ?*builtin.StackTrace, _: ?usize) noreturn {
     @branchHint(.cold);
-    arch.disableIrq();
+    _ = arch.disableIrq();
 
     // Print the panic message.
     log.err("{s}", .{msg});

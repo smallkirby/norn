@@ -138,6 +138,9 @@ pub fn init() void {
 
 /// Differentiate a GDT for this CPU.
 pub fn setupThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
+    const ie = norn.arch.disableIrq();
+    defer if (ie) norn.arch.enableIrq();
+
     if (pcpu.get(&gdt_initialized) and norn.is_runtime_test) {
         @panic("GDT is being initialized twice.");
     }
@@ -167,7 +170,7 @@ pub fn setupThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
 
     // Set RSP0
     const rsp0 = try allocator.allocPages(1, .normal);
-    tss.rsp0 = @intFromPtr(rsp0.ptr) + mem.size_4kib;
+    tss.rsp0 = @intFromPtr(rsp0.ptr) + @sizeOf(Ist);
 
     // Set IST1 ~ IST3.
     for (0..3) |i| {

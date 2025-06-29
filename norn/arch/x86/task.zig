@@ -232,7 +232,7 @@ pub noinline fn enterUser() noreturn {
     const task = sched.getCurrentTask();
     const cpu_context = getCpuContextFromStack(task);
 
-    arch.disableIrq();
+    _ = arch.disableIrq();
 
     asm volatile (
         \\movq %[ctx], %%rdi

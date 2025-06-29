@@ -170,8 +170,8 @@ pub fn isPgtblInitialized() bool {
 pub fn reconstructMapping() !void {
     norn.rtt.expect(!pgtbl_initialized.load(.acquire));
 
-    arch.disableIrq();
-    defer arch.enableIrq();
+    const ie = arch.disableIrq();
+    defer if (ie) arch.enableIrq();
 
     // Remap pages.
     try arch.mem.bootReconstructPageTable(bootstrap_allocator_instance.getAllocator());

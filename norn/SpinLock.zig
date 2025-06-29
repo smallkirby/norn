@@ -23,8 +23,7 @@ pub fn lock(self: *Self) void {
 /// Must be paired with `unlockRestoreIrq()`.
 pub fn lockDisableIrq(self: *SpinLock) bool {
     if (!is_test) {
-        const ie = arch.isIrqEnabled();
-        arch.disableIrq();
+        const ie = arch.disableIrq();
         lock(self);
         return ie;
     } else {

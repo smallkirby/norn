@@ -8,8 +8,7 @@ var lock = SpinLock{};
 
 /// Boot all APs.
 pub fn bootAllAps() MpError!void {
-    const ie = arch.isIrqEnabled();
-    arch.disableIrq();
+    const ie = arch.disableIrq();
     defer if (ie) arch.enableIrq();
 
     const system_info = acpi.getSystemInfo();

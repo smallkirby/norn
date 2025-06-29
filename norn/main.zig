@@ -121,7 +121,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     try arch.mp.bootAllAps();
 
     // Initialize scheduler.
-    norn.arch.disableIrq();
+    _ = norn.arch.disableIrq();
     try norn.sched.initThisCpu();
 
     // Enter the Norn kernel thread.

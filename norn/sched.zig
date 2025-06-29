@@ -49,7 +49,7 @@ pub fn runInitialKernelThread() noreturn {
 
 /// Schedule the next task.
 pub fn schedule() void {
-    arch.disableIrq();
+    _ = arch.disableIrq();
     arch.getLocalApic().eoi();
 
     const rq: *ThreadList = getRunQueue();

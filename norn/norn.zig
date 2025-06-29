@@ -91,7 +91,7 @@ pub fn endlessHalt() noreturn {
         terminateQemu(3);
     }
     while (true) {
-        arch.disableIrq();
+        _ = arch.disableIrq();
         arch.halt();
     }
 }
