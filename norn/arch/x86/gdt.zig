@@ -3,16 +3,26 @@ const max_num_gdt = 0x10;
 
 /// Descriptor table type.
 const DescriptorTable = [max_num_gdt]SegmentDescriptor;
+/// Interrupt stack table type.
+const Ist = [mem.size_4kib]u8;
 
 /// Boot-time GDT.
 var early_gdt: DescriptorTable = [_]SegmentDescriptor{
     SegmentDescriptor.newNull(),
 } ** max_num_gdt;
 
+/// Boot-time TSS.
+///
+/// This provides only IST1.
+/// This does not provide RSPx.
+var early_tss: TaskStateSegment align(mem.size_4kib) = .{
+    // (Initialized at runtime.)
+};
+/// Boot-time interrupt stack.
+var early_istack: Ist align(mem.size_4kib) = [_]u8{0} ** @sizeOf(Ist);
+
 /// GDT is initialized and differentiated for this CPU.
 var gdt_initialized: bool linksection(pcpu.section) = false;
-/// TSS is initialized and set for this CPU.
-var tss_initialized: bool linksection(pcpu.section) = false;
 
 /// Index of the kernel 32-bit code segment.
 /// Not used in Norn.
@@ -109,17 +119,27 @@ pub fn init() void {
         // BUG: Zig 0.14.0: https://github.com/ziglang/zig/issues/23101
         .base = @ptrFromInt(@intFromPtr(&early_gdt)),
     };
-
-    // Load segment selectors.
     loadKernelGdt(early_gdtr);
 
+    // Load TR.
+    early_tss.ist1 = @intFromPtr(&early_istack) + @sizeOf(Ist);
+    const tss_desc = TssDescriptor.new(
+        @intFromPtr(&early_tss),
+        std.math.maxInt(u20),
+    );
+    @as(*TssDescriptor, @alignCast(@ptrCast(&early_gdt[kernel_tss_index]))).* = tss_desc;
+    loadKernelTss();
+
+    // Testing
     testGdtEntries();
+    testEarlyTssDescriptor(@intFromPtr(&early_tss));
+    testEarlyTss();
 }
 
 /// Differentiate a GDT for this CPU.
 pub fn setupThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
     if (pcpu.get(&gdt_initialized) and norn.is_runtime_test) {
-        @panic("GDT is initialized twice.");
+        @panic("GDT is being initialized twice.");
     }
 
     // Allocate a page for GDT.
@@ -135,14 +155,41 @@ pub fn setupThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
     gdt[user_ds_index] = user_ds;
     gdt[user_cs_index] = user_cs;
 
-    // Load GDTR.
+    // Create TSS.
+    const tss_page = try allocator.allocPages(1, .normal);
+    const tss: *TaskStateSegment = @ptrCast(tss_page.ptr);
+    tss.* = .{};
+    const tss_desc = TssDescriptor.new(
+        @intFromPtr(tss_page.ptr),
+        std.math.maxInt(u20),
+    );
+    @as(*TssDescriptor, @alignCast(@ptrCast(&gdt[kernel_tss_index]))).* = tss_desc;
+
+    // Set RSP0
+    const rsp0 = try allocator.allocPages(1, .normal);
+    tss.rsp0 = @intFromPtr(rsp0.ptr) + mem.size_4kib;
+
+    // Set IST1 ~ IST3.
+    for (0..3) |i| {
+        const ist = try allocator.allocPages(1, .normal);
+        @memset(ist[0..@sizeOf(Ist)], 0);
+        switch (i) {
+            0 => tss.ist1 = @intFromPtr(ist.ptr) + @sizeOf(Ist),
+            1 => tss.ist2 = @intFromPtr(ist.ptr) + @sizeOf(Ist),
+            2 => tss.ist3 = @intFromPtr(ist.ptr) + @sizeOf(Ist),
+            else => unreachable,
+        }
+    }
+
+    // Load GDTR and segment selectors.
     const gdtr = GdtRegister{
         .limit = @sizeOf(DescriptorTable) - 1,
         .base = @ptrCast(gdt.ptr),
     };
-
-    // Load segment selectors.
     loadKernelGdt(gdtr);
+
+    // Load TR.
+    loadKernelTss();
 
     // Mark as initialized.
     pcpu.set(&gdt_initialized, true);
@@ -159,14 +206,9 @@ fn loadKernelGdt(gdtr: GdtRegister) void {
     loadKernelCs();
 }
 
-/// Set the TSS.
-pub fn setTss(tss: Virt) void {
-    const desc = TssDescriptor.new(tss, std.math.maxInt(u20));
-    @as(*TssDescriptor, @alignCast(@ptrCast(&early_gdt[kernel_tss_index]))).* = desc;
-
-    loadKernelTss();
-
-    testTssDescriptor(tss);
+/// Get GDTR of the current CPU.
+fn getKernelGdt() GdtRegister {
+    return @bitCast(am.sgdt());
 }
 
 /// Load the kernel data segment selector.
@@ -402,15 +444,14 @@ pub const SegmentSelector = packed struct(u16) {
 };
 
 /// GDTR.
-const GdtRegister = packed struct {
+const GdtRegister = packed struct(u80) {
     limit: u16,
     base: *DescriptorTable,
 };
 
 /// Task State Segment.
 ///
-/// This structure should be exported, so this should be extern struct.
-/// (e.g. Used by syscall entry point).
+/// This structure should be exported (e.g. Used by syscall entry point).
 ///
 /// cf. SDM Vol.3A Figure 8-11.
 pub const TaskStateSegment = extern struct {
@@ -457,7 +498,9 @@ pub const TaskStateSegment = extern struct {
     }
 };
 
-// =======================================
+// =============================================================
+// Tests
+// =============================================================
 
 const rtt = norn.rtt;
 
@@ -492,7 +535,7 @@ fn testGdtEntries() void {
     }
 }
 
-fn testTssDescriptor(base: Virt) void {
+fn testEarlyTssDescriptor(base: Virt) void {
     if (norn.is_runtime_test) {
         const bits = norn.bits;
 
@@ -521,6 +564,34 @@ fn testTssDescriptor(base: Virt) void {
         );
     }
 }
+
+fn testEarlyTss() void {
+    if (norn.is_runtime_test) {
+        // Check if IST1 is set correctly.
+        const tss_ptr: *u64 = @ptrCast(&early_tss);
+        const tss_ist1_low_ptr: *u32 = @ptrFromInt(@intFromPtr(tss_ptr) + 0x24);
+        const tss_ist1_high_ptr: *u32 = @ptrFromInt(@intFromPtr(tss_ptr) + 0x28);
+        const tss_ist1 = norn.bits.concat(u64, tss_ist1_high_ptr.*, tss_ist1_low_ptr.*);
+        rtt.expectEqual(@intFromPtr(&early_istack) + @sizeOf(Ist), tss_ist1);
+
+        // Check if TR is set correctly.
+        const tr: SegmentSelector = @bitCast(asm volatile (
+            \\str %[tr]
+            : [tr] "={ax}" (-> u16),
+            :
+            : "rax"
+        ));
+        rtt.expectEqual(SegmentSelector{
+            .index = kernel_tss_index,
+            .ti = .gdt,
+            .rpl = 0,
+        }, tr);
+    }
+}
+
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
 

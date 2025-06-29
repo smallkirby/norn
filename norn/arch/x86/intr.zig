@@ -13,20 +13,8 @@ var idtr = IdtRegister{
     .base = &idt,
 };
 
-const Ist = [mem.size_4kib]u8;
-const num_ists = 7;
-/// Interrupt stack tables.
-/// TODO: Must be per-CPU.
-var ists: [num_ists]Ist align(mem.size_4kib) = [_]Ist{std.mem.zeroes(Ist)} ** num_ists;
-
-const Rsp = [mem.size_4kib]u8;
-/// Ring-0 stack pointer.
-/// TODO: Must be per-CPU.
-var rsp0: Rsp align(mem.size_4kib) = undefined;
-
-/// TSS.
-/// TODO: Must be per-CPU.
-var tss: gdt.TaskStateSegment align(mem.size_4kib) = .{};
+/// Norn provides 3 ISTs (IST1~3).
+const num_ists = 3;
 
 /// Index of IST for #DF.
 const df_ist_index = 1;
@@ -51,19 +39,13 @@ pub fn init() void {
     idt[@intFromEnum(Exception.double_fault)].ist = df_ist_index;
     idt[@intFromEnum(Exception.page_fault)].ist = df_ist_index;
 
-    // Load TSS.
-    tss.ist1 = @intFromPtr(&ists[df_ist_index - 1]) + @sizeOf(Ist) - 0x10;
-    tss.rsp0 = @intFromPtr(&rsp0) + @sizeOf(Rsp) - 0x10;
-    gdt.setTss(@intFromPtr(&tss));
-
     // Load IDTR.
     idtr.base = &idt;
     loadKernelIdt();
-
-    testTss();
 }
 
 /// Load the IDT.
+///
 /// Caller must ensure that the IDT is initialized.
 pub fn loadKernelIdt() void {
     am.lidt(@intFromPtr(&idtr));
@@ -77,8 +59,9 @@ fn setGate(
     idt[index] = gate;
 }
 
-/// Called from the ISR stub.
 /// Dispatches the interrupt to the appropriate handler.
+///
+/// Called from the ISR stub.
 pub fn dispatch(context: *Context) void {
     handlers[context.spec1.vector](context);
 }
@@ -297,31 +280,6 @@ const IdtRegister = packed struct {
 // ====================================================
 
 const testing = std.testing;
-const rtt = norn.rtt;
-
-fn testTss() void {
-    if (norn.is_runtime_test) {
-        // Check if IST1 is set correctly.
-        const tss_ptr: *u64 = @ptrCast(&tss);
-        const tss_ist1_low_ptr: *u32 = @ptrFromInt(@intFromPtr(tss_ptr) + 0x24);
-        const tss_ist1_high_ptr: *u32 = @ptrFromInt(@intFromPtr(tss_ptr) + 0x28);
-        const tss_ist1 = norn.bits.concat(u64, tss_ist1_high_ptr.*, tss_ist1_low_ptr.*);
-        rtt.expectEqual(@intFromPtr(&ists[0]) + @sizeOf(Ist) - 0x10, tss_ist1);
-
-        // Check if TR is set correctly.
-        const tr: gdt.SegmentSelector = @bitCast(asm volatile (
-            \\str %[tr]
-            : [tr] "={ax}" (-> u16),
-            :
-            : "rax"
-        ));
-        rtt.expectEqual(gdt.SegmentSelector{
-            .index = gdt.kernel_tss_index,
-            .ti = .gdt,
-            .rpl = 0,
-        }, tr);
-    }
-}
 
 test {
     testing.refAllDeclsRecursive(@This());

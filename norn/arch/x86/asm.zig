@@ -174,6 +174,17 @@ pub fn rdtsc() u64 {
     return bits.concat(u64, edx, eax);
 }
 
+pub fn sgdt() u80 {
+    var gdtr: u80 = undefined;
+    asm volatile (
+        \\sgdt %[gdtr]
+        : [gdtr] "=m" (gdtr),
+        :
+        : "memory"
+    );
+    return gdtr;
+}
+
 pub inline fn sti() void {
     asm volatile ("sti" ::: "cc");
 }
