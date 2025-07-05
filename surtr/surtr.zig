@@ -6,16 +6,24 @@ pub const magic: usize = 0xDEADBEEF_CAFEBABE;
 
 /// Boot information.
 /// This struct is passed from the bootloader to the kernel.
+///
+/// This structure is located at Surtr stack (.boot_services_data).
+///
+/// Norn must deep-copy this data structure before .boot_services_data and .loader_data is freed.
 pub const BootInfo = extern struct {
     /// Magic number to check if the boot info is valid.
     magic: usize = magic,
     /// Memory map provided by UEFI.
+    ///
+    /// Located at .boot_services_data.
     memory_map: MemoryMap,
     /// RSDP.
     rsdp: *anyopaque,
     /// Virtual address where per-CPU data is loaded.
     percpu_base: u64,
     /// Information about initramfs.
+    ///
+    /// Located at .loader_data.
     initramfs: InitramfsInfo,
 };
 
@@ -41,6 +49,32 @@ pub const MemoryMap = extern struct {
     descriptor_size: usize,
     /// UEFI memory descriptor version.
     descriptor_version: u32,
+
+    /// Deep copy the internal buffers using the given allocator.
+    ///
+    /// This function does not free the old buffers.
+    pub fn deepCopy(self: *MemoryMap, allocator: Allocator) (Allocator.Error || error{InvalidData})!void {
+        const num_descriptors = self.map_size / self.descriptor_size;
+
+        const buffer = try allocator.alloc(u8, self.buffer_size);
+        errdefer allocator.free(buffer);
+        if (buffer.len != self.buffer_size) {
+            return error.InvalidData;
+        }
+
+        const new_descriptors: [*]uefi.tables.MemoryDescriptor = @alignCast(@ptrCast(buffer.ptr));
+        @memcpy(new_descriptors[0..num_descriptors], self.descriptors[0..num_descriptors]);
+
+        self.descriptors = new_descriptors;
+    }
+
+    /// Get the internal buffer.
+    ///
+    /// Caller can free this buffer.
+    pub fn getInternalBuffer(self: *MemoryMap, phys2virt: *const fn (anytype) u64) []const u8 {
+        const ptr: [*]const u8 = @ptrFromInt(phys2virt(self.descriptors));
+        return ptr[0..self.buffer_size];
+    }
 };
 
 /// Memory descriptor iterator.
@@ -123,9 +157,16 @@ pub inline fn toExtendedMemoryType(mtype: uefi.tables.MemoryType) MemoryType {
 // =============================================================
 // Tests
 // =============================================================
-const std = @import("std");
+
 const testing = std.testing;
 
 test {
     testing.refAllDecls(@import("param.zig"));
 }
+
+// =============================================================
+// Imports
+// =============================================================
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;

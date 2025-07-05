@@ -80,18 +80,31 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         @memcpy(dest[0..src.size], src_ptr[0..src.size]);
         boot_info.initramfs.addr = @intFromPtr(dest.ptr);
     }
+    // Copy memory map.
+    try boot_info.memory_map.deepCopy(norn.mem.getLimitedBoottimeAllocator());
 
     // Reconstruct memory mapping from the one provided by UEFI and Sutr.
     log.info("Reconstructing memory mapping...", .{});
     try norn.mem.reconstructMapping();
     log.info("Memory mapping is reconstructed.", .{});
 
-    norn.mem.initBuddyAllocator(log.debug);
+    norn.mem.initBuddyAllocator(boot_info.memory_map, log.debug);
     log.info("Initialized buddy allocator.", .{});
 
     // Initialize general allocator.
     norn.mem.initGeneralAllocator();
     log.info("Initialized general allocator.", .{});
+
+    // Deactivate the memory map.
+    // We can no longer use the memory map.
+    {
+        const buffer = boot_info.memory_map.getInternalBuffer(norn.mem.phys2virt);
+        try norn.mem.page_allocator.freePagesRaw(
+            @intFromPtr(buffer.ptr),
+            buffer.len / norn.mem.size_4kib,
+        );
+    }
+    log.debug("Deactivated memory map provided by Surtr.", .{});
 
     // Initialize ACPI.
     try norn.acpi.init(boot_info.rsdp, norn.mem.general_allocator);

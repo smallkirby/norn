@@ -136,6 +136,32 @@ pub fn boottimeAlloc(size: usize) anyerror![]u8 {
     return bootstrap_allocator_instance.getAllocator().allocPages(num_pages, .normal);
 }
 
+/// Get the bootstrap allocator.
+///
+/// Can be used only before the page table is initialized.
+pub fn getLimitedBoottimeAllocator() Allocator {
+    norn.rtt.expect(!pgtbl_initialized.load(.acquire));
+    const S = struct {
+        fn alloc(_: *anyopaque, len: usize, _: std.mem.Alignment, _: usize) ?[*]u8 {
+            if (len % size_4kib != 0) return null;
+            const ret = boottimeAlloc(len) catch return null;
+            return ret.ptr;
+        }
+        fn panic() noreturn {
+            @panic("Limited boottime allocator does not support this operation.");
+        }
+    };
+    return .{
+        .ptr = undefined,
+        .vtable = &.{
+            .alloc = S.alloc,
+            .resize = @ptrCast(&S.panic),
+            .remap = @ptrCast(&S.panic),
+            .free = @ptrCast(&S.panic),
+        },
+    };
+}
+
 /// Initialize the bootstrap allocator.
 ///
 /// You MUST call this function before using `page_allocator`.
@@ -147,8 +173,8 @@ pub fn initBootstrapAllocator(map: MemoryMap) void {
 /// Initialize the buddy allocator.
 ///
 /// You MUST call this function before using `buddy_allocator`.
-pub fn initBuddyAllocator(log_fn: ?norn.LogFn) void {
-    buddy_allocator_instance.init(&bootstrap_allocator_instance, log_fn);
+pub fn initBuddyAllocator(map: surtr.MemoryMap, log_fn: ?norn.LogFn) void {
+    buddy_allocator_instance.init(&bootstrap_allocator_instance, map, log_fn);
 }
 
 /// Initialize the general allocator.

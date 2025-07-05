@@ -356,14 +356,14 @@ pub fn new() Self {
 /// Initialize buddy allocator.
 ///
 /// This function must be called after the memory map is initialized.
-pub fn init(self: *Self, bs: *BootstrapAllocator, log_fn: ?norn.LogFn) void {
+pub fn init(self: *Self, bs: *BootstrapAllocator, map: MemoryMap, log_fn: ?norn.LogFn) void {
     rttExpectNewMap();
 
     const ie = self.lock.lockDisableIrq();
     defer self.lock.unlockRestoreIrq(ie);
 
     // Convert the physical address to the virtual address.
-    self.map = bs.map;
+    self.map = map;
     self.map.descriptors = @ptrFromInt(mem.phys2virt(self.map.descriptors));
 
     const inuse_region = bs.getUsedRegion();
