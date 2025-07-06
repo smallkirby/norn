@@ -24,14 +24,14 @@ SECTIONS {
     . = __per_cpu_end;
 
     .text ALIGN(4K) : AT (ADDR(.text) - KERNEL_VADDR_BASE) {
-        __text_start = .;
+        __norn_text_start = .;
         *(.text)
         *(.ltext)
-        __text_end = .;
+        __norn_text_end = .;
     } :text
 
     .rodata ALIGN(4K) : AT (ADDR(.rodata) - KERNEL_VADDR_BASE) {
-        __rodata_start = .;
+        __norn_rodata_start = .;
 
         *(.rodata)
 
@@ -39,22 +39,22 @@ SECTIONS {
         KEEP(*(.module.init))
         __module_init_end = .;
 
-        __rodata_end = .;
+        __norn_rodata_end = .;
     } :rodata
 
     .data ALIGN(4K) : AT (ADDR(.data) - KERNEL_VADDR_BASE) {
-        __data_start = .;
+        __norn_data_start = .;
         *(.data)
         *(.ldata)
-        __data_end = .;
+        __norn_data_end = .;
     } :data
 
     .bss ALIGN(4K) : AT (ADDR(.bss) - KERNEL_VADDR_BASE) {
-        __bss_start = .;
+        __norn_bss_start = .;
         *(COMMON)
         *(.bss)
         *(.lbss)
-        __bss_end = .;
+        __norn_bss_end = .;
     } :bss
 
     __early_stack ALIGN(4K) (NOLOAD) : AT (ADDR(__early_stack) - KERNEL_VADDR_BASE) {

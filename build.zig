@@ -288,6 +288,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
         .link_libc = true,
     });
+    norn_unit_test.addAssemblyFile(b.path("norn/tests/mock.S"));
     norn_unit_test.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
     norn_unit_test.root_module.addImport("norn", norn_unit_test.root_module);
     norn_unit_test.root_module.addImport("surtr", surtr_module);

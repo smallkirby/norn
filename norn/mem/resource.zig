@@ -1,3 +1,5 @@
+//! This module provides a map of physical memory resources in the system.
+
 const ResourceList = InlineDoublyLinkedList(MemoryResource, "list_head");
 
 /// List of memory resources.
@@ -119,8 +121,8 @@ fn populateKernelMap(allocator: Allocator) Allocator.Error!void {
     const text = try allocator.create(MemoryResource);
     text.* = .{
         .name = "Kernel text",
-        .start = mem.virt2phys(&__text_start),
-        .size = mem.virt2phys(&__text_end) - mem.virt2phys(&__text_start),
+        .start = mem.virt2phys(&__norn_text_start),
+        .size = mem.virt2phys(&__norn_text_end) - mem.virt2phys(&__norn_text_start),
         .kind = .norn_image,
     };
     norn_image.appendChild(text);
@@ -128,8 +130,8 @@ fn populateKernelMap(allocator: Allocator) Allocator.Error!void {
     const data = try allocator.create(MemoryResource);
     data.* = .{
         .name = "Kernel data",
-        .start = mem.virt2phys(&__data_start),
-        .size = mem.virt2phys(&__data_end) - mem.virt2phys(&__data_start),
+        .start = mem.virt2phys(&__norn_data_start),
+        .size = mem.virt2phys(&__norn_data_end) - mem.virt2phys(&__norn_data_start),
         .kind = .norn_image,
     };
     norn_image.appendChild(data);
@@ -137,8 +139,8 @@ fn populateKernelMap(allocator: Allocator) Allocator.Error!void {
     const rodata = try allocator.create(MemoryResource);
     rodata.* = .{
         .name = "Kernel rodata",
-        .start = mem.virt2phys(&__rodata_start),
-        .size = mem.virt2phys(&__rodata_end) - mem.virt2phys(&__rodata_start),
+        .start = mem.virt2phys(&__norn_rodata_start),
+        .size = mem.virt2phys(&__norn_rodata_end) - mem.virt2phys(&__norn_rodata_start),
         .kind = .norn_image,
     };
     norn_image.appendChild(rodata);
@@ -146,21 +148,21 @@ fn populateKernelMap(allocator: Allocator) Allocator.Error!void {
     const bss = try allocator.create(MemoryResource);
     bss.* = .{
         .name = "Kernel bss",
-        .start = mem.virt2phys(&__bss_start),
-        .size = mem.virt2phys(&__bss_end) - mem.virt2phys(&__bss_start),
+        .start = mem.virt2phys(&__norn_bss_start),
+        .size = mem.virt2phys(&__norn_bss_end) - mem.virt2phys(&__norn_bss_start),
         .kind = .norn_image,
     };
     norn_image.appendChild(bss);
 }
 
-extern const __text_start: *void;
-extern const __text_end: *void;
-extern const __rodata_start: *void;
-extern const __rodata_end: *void;
-extern const __data_start: *void;
-extern const __data_end: *void;
-extern const __bss_start: *void;
-extern const __bss_end: *void;
+extern const __norn_text_start: *void;
+extern const __norn_text_end: *void;
+extern const __norn_rodata_start: *void;
+extern const __norn_rodata_end: *void;
+extern const __norn_data_start: *void;
+extern const __norn_data_end: *void;
+extern const __norn_bss_start: *void;
+extern const __norn_bss_end: *void;
 
 /// Convert UEFI memory type to memory resource kind.
 fn mapTypeToResourceKind(mtype: surtr.MemoryType) MemoryResource.Kind {
