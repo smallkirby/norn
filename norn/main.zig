@@ -95,6 +95,9 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     norn.mem.initGeneralAllocator();
     log.info("Initialized general allocator.", .{});
 
+    // Initialize resource map.
+    try norn.mem.initializeResources(boot_info.memory_map, norn.mem.general_allocator);
+
     // Deactivate the memory map.
     // We can no longer use the memory map.
     {

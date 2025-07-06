@@ -218,6 +218,11 @@ pub fn accessOk(addr: anytype) bool {
     } else return false;
 }
 
+/// Initialize the memory resource map.
+pub fn initializeResources(map: MemoryMap, allocator: Allocator) Allocator.Error!void {
+    return resource.init(map, allocator);
+}
+
 /// Translate the given virtual address to physical address.
 ///
 /// This function just use simple calculation and does not walk page tables.
@@ -274,6 +279,7 @@ const MemoryMap = surtr.MemoryMap;
 const norn = @import("norn");
 const arch = norn.arch;
 
+const resource = @import("mem/resource.zig");
 const BootstrapAllocator = @import("mem/BootstrapAllocator.zig");
 const BuddyAllocator = @import("mem/BuddyAllocator.zig");
 const BinAllocator = @import("mem/BinAllocator.zig");

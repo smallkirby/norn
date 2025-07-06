@@ -100,12 +100,16 @@ pub const MemoryDescriptorIterator = struct {
     }
 
     pub fn next(self: *Self) ?*Md {
+        const ret = self.peek() orelse return null;
+        self.current = @ptrFromInt(@intFromPtr(self.current) + self.descriptor_size);
+        return ret;
+    }
+
+    pub fn peek(self: *Self) ?*Md {
         if (@intFromPtr(self.current) >= @intFromPtr(self.descriptors) + self.total_size) {
             return null;
         }
-        const md = self.current;
-        self.current = @ptrFromInt(@intFromPtr(self.current) + self.descriptor_size);
-        return md;
+        return self.current;
     }
 };
 

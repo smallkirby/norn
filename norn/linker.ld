@@ -4,11 +4,11 @@ KERNEL_VADDR_TEXT = 0xFFFFFFFF80100000;
 STACK_SIZE = 0x5000;
 
 PHDRS {
-    text PT_LOAD;
-    rodata PT_LOAD;
-    data PT_LOAD;
-    percpu PT_LOAD FLAGS(6);
-    bss PT_LOAD;
+    text PT_LOAD FLAGS(3);
+    rodata PT_LOAD FLAGS(4);
+    data PT_LOAD FLAGS(6);
+    percpu PT_LOAD FLAGS(4);
+    bss PT_LOAD FLAGS(6);
 
     __early_stack PT_LOAD FLAGS(6);
 }
@@ -24,27 +24,37 @@ SECTIONS {
     . = __per_cpu_end;
 
     .text ALIGN(4K) : AT (ADDR(.text) - KERNEL_VADDR_BASE) {
+        __text_start = .;
         *(.text)
         *(.ltext)
+        __text_end = .;
     } :text
 
     .rodata ALIGN(4K) : AT (ADDR(.rodata) - KERNEL_VADDR_BASE) {
+        __rodata_start = .;
+
         *(.rodata)
 
         __module_init_start = .;
         KEEP(*(.module.init))
         __module_init_end = .;
+
+        __rodata_end = .;
     } :rodata
 
     .data ALIGN(4K) : AT (ADDR(.data) - KERNEL_VADDR_BASE) {
+        __data_start = .;
         *(.data)
         *(.ldata)
+        __data_end = .;
     } :data
 
     .bss ALIGN(4K) : AT (ADDR(.bss) - KERNEL_VADDR_BASE) {
+        __bss_start = .;
         *(COMMON)
         *(.bss)
         *(.lbss)
+        __bss_end = .;
     } :bss
 
     __early_stack ALIGN(4K) (NOLOAD) : AT (ADDR(__early_stack) - KERNEL_VADDR_BASE) {
