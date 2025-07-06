@@ -45,9 +45,9 @@ pub fn log(
         .err => "[ERROR]",
     };
 
-    const scope_str = if (@tagName(scope).len <= 7) b: {
+    const scope_str = if (@tagName(scope).len <= 8) b: {
         break :b std.fmt.comptimePrint(
-            "{s: <7} | ",
+            "{s: <8}| ",
             .{@tagName(scope)},
         );
     } else b: {
