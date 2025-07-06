@@ -54,8 +54,6 @@ pub const MemoryMap = extern struct {
     ///
     /// This function does not free the old buffers.
     pub fn deepCopy(self: *MemoryMap, allocator: Allocator) (Allocator.Error || error{InvalidData})!void {
-        const num_descriptors = self.map_size / self.descriptor_size;
-
         const buffer = try allocator.alloc(u8, self.buffer_size);
         errdefer allocator.free(buffer);
         if (buffer.len != self.buffer_size) {
@@ -63,7 +61,12 @@ pub const MemoryMap = extern struct {
         }
 
         const new_descriptors: [*]uefi.tables.MemoryDescriptor = @alignCast(@ptrCast(buffer.ptr));
-        @memcpy(new_descriptors[0..num_descriptors], self.descriptors[0..num_descriptors]);
+        const new_descriptors_bytes: [*]u8 = @ptrCast(new_descriptors);
+        const descriptors_bytes: [*]u8 = @ptrCast(self.descriptors);
+        @memcpy(
+            new_descriptors_bytes[0..self.map_size],
+            descriptors_bytes[0..self.map_size],
+        );
 
         self.descriptors = new_descriptors;
     }
