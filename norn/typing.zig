@@ -142,6 +142,50 @@ pub fn InlineDoublyLinkedList(comptime T: type, comptime field: []const u8) type
             return list.len == 0;
         }
 
+        /// Insert a new node in the list in sorted order.
+        ///
+        /// Caller must ensure that the list is sorted before calling this function.
+        ///
+        /// `O(n)` time complexity as a nature of linked lists.
+        pub fn insertSorted(self: *Self, new: *T, comptime compareFn: fn (*T, *T) std.math.Order) void {
+            var current: ?*T = self.first;
+            while (current) |node| {
+                if (compareFn(node, new) == .gt) {
+                    self.insertBefore(node, new);
+                    return;
+                }
+                current = head(node).next;
+            }
+
+            self.append(new);
+        }
+
+        /// Check if the list is sorted.
+        ///
+        /// `O(n)` time complexity as a nature of linked lists.
+        pub fn isSorted(self: *const Self, comptime compareFn: fn (*T, *T) std.math.Order) bool {
+            if (self.len <= 1) return true;
+
+            var current: ?*T = self.first;
+            while (current) |node| {
+                const next = head(node).next orelse return true;
+                if (compareFn(node, next) != .lt) return false;
+                current = next;
+            }
+            return true;
+        }
+
+        /// Find the first node in the list that has the specified field value.
+        ///
+        /// `O(n)` time complexity.
+        pub fn findFirst(self: *const Self, comptime field_name: []const u8, value: anytype) ?*T {
+            var current: ?*T = self.first;
+            while (current) |node| : (current = head(node).next) {
+                if (@field(node, field_name) == value) return current;
+            }
+            return null;
+        }
+
         inline fn head(node: *T) *Head {
             return &@field(node, field);
         }
@@ -283,3 +327,9 @@ test "InlineDoublyLinkedList" {
     try testing.expectEqual(null, list.pop());
     try testing.expectEqual(null, list.popFirst());
 }
+
+// =============================================================
+// Imports
+// =============================================================
+
+const std = @import("std");
