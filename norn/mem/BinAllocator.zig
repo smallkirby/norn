@@ -157,8 +157,16 @@ fn resize(_: *anyopaque, _: []u8, _: Alignment, _: usize, _: usize) bool {
     @panic("BinAllocator does not support resizing");
 }
 
-fn remap(_: *anyopaque, _: []u8, _: Alignment, _: usize, _: usize) ?[*]u8 {
-    @panic("BinAllocator does not support remapping");
+fn remap(ctx: *anyopaque, slice: []u8, alignment: Alignment, new_len: usize, _: usize) ?[*]u8 {
+    const self: *Self = @alignCast(@ptrCast(ctx));
+
+    if (slice.len == new_len) return slice.ptr;
+
+    const new_region = allocate(self, new_len, alignment, 0) orelse return null;
+    @memcpy(new_region[0..slice.len], slice);
+    free(self, slice, alignment, 0);
+
+    return new_region;
 }
 
 // ========================================
