@@ -3,6 +3,7 @@
 //! The operating system written from scratch in Zig.
 
 pub const acpi = @import("acpi.zig");
+pub const algorithm = @import("algorithm.zig");
 pub const arch = @import("arch.zig");
 pub const bits = @import("bits.zig");
 pub const device = @import("device.zig");
