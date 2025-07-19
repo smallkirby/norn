@@ -29,13 +29,13 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
         /// This node is intrusively embedded in the type `T` as the field `node_field`.
         pub const Node = struct {
             /// Parent node.
-            parent: ?*Node = null,
+            _parent: ?*Node = null,
             /// Color of this node.
-            color: Color = .red,
+            _color: Color = .red,
             /// Left child node.
-            left: ?*Node = null,
+            _left: ?*Node = null,
             /// Right child node.
-            right: ?*Node = null,
+            _right: ?*Node = null,
 
             /// New node with initial values.
             pub const init = Node{};
@@ -49,7 +49,7 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
             pub fn max(self: *Node) *Node {
                 var current: *Node = self;
                 while (true) {
-                    if (current.right) |right| {
+                    if (current._right) |right| {
                         current = right;
                     } else {
                         break;
@@ -62,7 +62,7 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
             pub fn min(self: *Node) *Node {
                 var current: *Node = self;
                 while (true) {
-                    if (current.left) |left| {
+                    if (current._left) |left| {
                         current = left;
                     } else {
                         break;
@@ -90,16 +90,16 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
             while (x) |node| {
                 y = node;
                 x = switch (cmp(new_node.container(), node.container())) {
-                    .lt => node.left,
-                    else => node.right,
+                    .lt => node._left,
+                    else => node._right,
                 };
             }
-            new_node.parent = y;
+            new_node._parent = y;
 
             if (y) |node| {
                 switch (cmp(new_node.container(), node.container())) {
-                    .lt => node.left = new_node,
-                    else => node.right = new_node,
+                    .lt => node._left = new_node,
+                    else => node._right = new_node,
                 }
             } else {
                 self.root = new_node;
@@ -111,26 +111,26 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
         fn insertFixup(self: *Self, new: *Node) void {
             var current = new;
 
-            while (current.parent) |p| {
+            while (current._parent) |p| {
                 var parent = p;
-                if (parent.color == .black) break;
-                const grandparent = parent.parent.?; // Grandparent is guaranteed to exist since it is red.
+                if (parent._color == .black) break;
+                const grandparent = parent._parent.?; // Grandparent is guaranteed to exist since it is red.
 
-                if (parent == grandparent.left) {
+                if (parent == grandparent._left) {
                     // When the parent is a left child of the grandparent.
 
-                    const uncle = grandparent.right;
-                    if (uncle != null and uncle.?.color == .red) {
+                    const uncle = grandparent._right;
+                    if (uncle != null and uncle.?._color == .red) {
                         // Case 1: Uncle is red.
                         // Change colors of parent, uncle, and grandparent.
                         // Then, restart from grandparent.
                         const u = uncle.?;
-                        parent.color = .black;
-                        u.color = .black;
-                        grandparent.color = .red;
+                        parent._color = .black;
+                        u._color = .black;
+                        grandparent._color = .red;
                         current = grandparent;
                     } else {
-                        if (current == parent.right) {
+                        if (current == parent._right) {
                             // Case 2: current node is a right child.
                             // Rotate left around parent.
                             self.rotateLeft(parent);
@@ -141,34 +141,34 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
                         // Case 3: current node is a left child.
                         // Rotate right around grandparent.
                         self.rotateRight(grandparent);
-                        parent.color = .black;
-                        grandparent.color = .red;
+                        parent._color = .black;
+                        grandparent._color = .red;
                     }
                 } else {
                     // When the parent is a right child of the grandparent.
 
-                    const uncle = grandparent.left;
-                    if (uncle != null and uncle.?.color == .red) {
+                    const uncle = grandparent._left;
+                    if (uncle != null and uncle.?._color == .red) {
                         const u = uncle.?;
-                        parent.color = .black;
-                        u.color = .black;
-                        grandparent.color = .red;
+                        parent._color = .black;
+                        u._color = .black;
+                        grandparent._color = .red;
                         current = grandparent;
                     } else {
-                        if (current == parent.left) {
+                        if (current == parent._left) {
                             self.rotateRight(parent);
                             const tmp = current;
                             current = parent;
                             parent = tmp;
                         }
                         self.rotateLeft(grandparent);
-                        parent.color = .black;
-                        grandparent.color = .red;
+                        parent._color = .black;
+                        grandparent._color = .red;
                     }
                 }
             }
 
-            self.root.?.color = .black; // Ensure the root is always black.
+            self.root.?._color = .black; // Ensure the root is always black.
         }
 
         /// Delete the element u and replace it with v.
@@ -177,22 +177,22 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
         ///
         /// u and its subtree can no longer be reached from the root after this operation.
         fn transplant(self: *Self, u: *Node, v: ?*Node) void {
-            if (u.left != null and u.right != null) {
+            if (u._left != null and u._right != null) {
                 @panic("Invalid call to transplant: u has two children");
             }
 
-            if (u.parent) |parent| {
-                if (u == parent.left) {
-                    parent.left = v;
+            if (u._parent) |parent| {
+                if (u == parent._left) {
+                    parent._left = v;
                 } else {
-                    parent.right = v;
+                    parent._right = v;
                 }
             } else {
                 self.root = v;
             }
 
             if (v) |node| {
-                node.parent = u.parent;
+                node._parent = u._parent;
             }
         }
 
@@ -200,49 +200,49 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
         pub fn delete(self: *Self, t: *T) void {
             const node = getRbNode(t);
 
-            var color = node.color;
+            var color = node._color;
             var fixup_target: ?*Node = undefined;
             var fixup_parent: ?*Node = undefined;
 
-            if (node.left == null) {
-                fixup_target = node.right;
-                fixup_parent = node.parent;
-                self.transplant(node, node.right);
-            } else if (node.right == null) {
-                fixup_target = node.left;
-                fixup_parent = node.parent;
-                self.transplant(node, node.left);
+            if (node._left == null) {
+                fixup_target = node._right;
+                fixup_parent = node._parent;
+                self.transplant(node, node._right);
+            } else if (node._right == null) {
+                fixup_target = node._left;
+                fixup_parent = node._parent;
+                self.transplant(node, node._left);
             } else {
                 // node has two children.
 
-                const next = node.right.?.min(); // Next does not have a left child.
-                fixup_target = next.right;
-                color = next.color;
+                const next = node._right.?.min(); // Next does not have a left child.
+                fixup_target = next._right;
+                color = next._color;
 
-                if (next.parent == node) {
+                if (next._parent == node) {
                     // Next is the direct right child of node.
-                    fixup_parent = node.parent;
-                    next.left = node.left;
-                    next.left.?.parent = next;
-                    next.parent = node.parent;
-                    next.color = node.color;
+                    fixup_parent = node._parent;
+                    next._left = node._left;
+                    next._left.?._parent = next;
+                    next._parent = node._parent;
+                    next._color = node._color;
                 } else {
                     // Next is not the direct right child of node.
-                    fixup_parent = next.parent;
-                    self.transplant(next, next.right);
-                    next.right = node.right;
-                    next.right.?.parent = next;
-                    next.left = node.left;
-                    next.left.?.parent = next;
-                    next.parent = node.parent;
-                    next.color = node.color;
+                    fixup_parent = next._parent;
+                    self.transplant(next, next._right);
+                    next._right = node._right;
+                    next._right.?._parent = next;
+                    next._left = node._left;
+                    next._left.?._parent = next;
+                    next._parent = node._parent;
+                    next._color = node._color;
                 }
 
-                if (node.parent) |p| {
-                    if (node == p.left) {
-                        p.left = next;
+                if (node._parent) |p| {
+                    if (node == p._left) {
+                        p._left = next;
                     } else {
-                        p.right = next;
+                        p._right = next;
                     }
                 } else {
                     self.root = next;
@@ -261,48 +261,48 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
             while (tp) |parent| {
                 if (getColor(x) == .red) break;
 
-                if (x == parent.left) {
-                    const sibling = parent.right.?; // When x is a black, sibling must exist (not to violate the requirements 5).
+                if (x == parent._left) {
+                    const sibling = parent._right.?; // When x is a black, sibling must exist (not to violate the requirements 5).
 
-                    if (sibling.color == .red) {
-                        sibling.color = .black;
-                        parent.color = .red;
+                    if (sibling._color == .red) {
+                        sibling._color = .black;
+                        parent._color = .red;
                         self.rotateLeft(parent);
-                    } else if (getColor(sibling.left) == .black and getColor(sibling.right) == .black) {
-                        sibling.color = .red;
+                    } else if (getColor(sibling._left) == .black and getColor(sibling._right) == .black) {
+                        sibling._color = .red;
 
                         x = parent;
-                        tp = parent.parent;
-                    } else if (getColor(sibling.left) == .red and getColor(sibling.right) == .black) {
-                        sibling.left.?.color = .black;
-                        sibling.color = .red;
+                        tp = parent._parent;
+                    } else if (getColor(sibling._left) == .red and getColor(sibling._right) == .black) {
+                        sibling._left.?._color = .black;
+                        sibling._color = .red;
                         self.rotateRight(sibling);
-                    } else if (getColor(sibling.right) == .red) {
-                        sibling.color = parent.color;
-                        parent.color = .black;
+                    } else if (getColor(sibling._right) == .red) {
+                        sibling._color = parent._color;
+                        parent._color = .black;
                         self.rotateLeft(parent);
 
                         break;
                     }
                 } else {
-                    const sibling = parent.left.?; // When x is a black, sibling must exist (not to violate the requirements 5).
+                    const sibling = parent._left.?; // When x is a black, sibling must exist (not to violate the requirements 5).
 
-                    if (sibling.color == .red) {
-                        sibling.color = .black;
-                        parent.color = .red;
+                    if (sibling._color == .red) {
+                        sibling._color = .black;
+                        parent._color = .red;
                         self.rotateRight(parent);
-                    } else if (getColor(sibling.left) == .black and getColor(sibling.right) == .black) {
-                        sibling.color = .red;
+                    } else if (getColor(sibling._left) == .black and getColor(sibling._right) == .black) {
+                        sibling._color = .red;
 
                         x = parent;
-                        tp = parent.parent;
-                    } else if (getColor(sibling.right) == .red and getColor(sibling.left) == .black) {
-                        sibling.right.?.color = .black;
-                        sibling.color = .red;
+                        tp = parent._parent;
+                    } else if (getColor(sibling._right) == .red and getColor(sibling._left) == .black) {
+                        sibling._right.?._color = .black;
+                        sibling._color = .red;
                         self.rotateLeft(sibling);
-                    } else if (getColor(sibling.left) == .red) {
-                        sibling.color = parent.color;
-                        parent.color = .black;
+                    } else if (getColor(sibling._left) == .red) {
+                        sibling._color = parent._color;
+                        parent._color = .black;
                         self.rotateRight(parent);
 
                         break;
@@ -311,7 +311,7 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
             }
 
             if (x) |node| {
-                node.color = .black; // Ensure the node is black.
+                node._color = .black; // Ensure the node is black.
             }
         }
 
@@ -331,10 +331,10 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
                     },
                     .lt => {
                         result = node;
-                        current = node.left;
+                        current = node._left;
                     },
                     .gt => {
-                        current = node.right;
+                        current = node._right;
                     },
                 }
             }
@@ -353,49 +353,49 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
         }
 
         fn rotateLeft(self: *Self, x: *Node) void {
-            const y = x.right.?;
+            const y = x._right.?;
 
-            x.right = y.left;
-            if (y.left) |l| l.parent = x;
+            x._right = y._left;
+            if (y._left) |l| l._parent = x;
 
-            y.parent = x.parent;
-            if (x.parent) |p| {
-                if (x == p.left) {
-                    p.left = y;
+            y._parent = x._parent;
+            if (x._parent) |p| {
+                if (x == p._left) {
+                    p._left = y;
                 } else {
-                    p.right = y;
+                    p._right = y;
                 }
             } else {
                 self.root = y;
             }
 
-            y.left = x;
-            x.parent = y;
+            y._left = x;
+            x._parent = y;
         }
 
         fn rotateRight(self: *Self, x: *Node) void {
-            const y = x.left.?;
+            const y = x._left.?;
 
-            x.left = y.right;
-            if (y.right) |r| r.parent = x;
+            x._left = y._right;
+            if (y._right) |r| r._parent = x;
 
-            y.parent = x.parent;
-            if (x.parent) |p| {
-                if (x == p.right) {
-                    p.right = y;
+            y._parent = x._parent;
+            if (x._parent) |p| {
+                if (x == p._right) {
+                    p._right = y;
                 } else {
-                    p.left = y;
+                    p._left = y;
                 }
             } else {
                 self.root = y;
             }
 
-            y.right = x;
-            x.parent = y;
+            y._right = x;
+            x._parent = y;
         }
 
         inline fn getColor(node: ?*Node) Color {
-            return if (node) |n| n.color else .black;
+            return if (node) |n| n._color else .black;
         }
     };
 }
@@ -407,75 +407,75 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
 const testing = std.testing;
 
 fn testCompare(a: *const TestStruct, b: *const TestStruct) std.math.Order {
-    if (a.a < b.a) return .lt;
-    if (a.a > b.a) return .gt;
+    if (a.value < b.value) return .lt;
+    if (a.value > b.value) return .gt;
     return .eq;
 }
 
 fn testCompareByKey(key: u32, t: *const TestStruct) std.math.Order {
-    if (key < t.a) return .lt;
-    if (key > t.a) return .gt;
+    if (key < t.value) return .lt;
+    if (key > t.value) return .gt;
     return .eq;
 }
 
 const TestRbTree = RbTree(TestStruct, "rb", testCompare, testCompareByKey);
 const TestStruct = struct {
-    a: u32,
+    value: u32,
     rb: TestRbTree.Node,
 };
 
 fn testCompareWithOneCmp(a: *const TestStructWithOneCmp, b: *const TestStructWithOneCmp) std.math.Order {
-    if (a.a < b.a) return .lt;
-    if (a.a > b.a) return .gt;
+    if (a.value < b.value) return .lt;
+    if (a.value > b.value) return .gt;
     return .eq;
 }
 
 const TestRbTreeWithOneCmp = RbTree(TestStructWithOneCmp, "rb", testCompareWithOneCmp, null);
 const TestStructWithOneCmp = struct {
-    a: u32,
+    value: u32,
     rb: TestRbTreeWithOneCmp.Node,
 };
 
 test "RbTree - basic tests" {
     var s1 = TestStruct{
-        .a = 1,
+        .value = 1,
         .rb = .init,
     };
     var s2 = TestStruct{
-        .a = 2,
+        .value = 2,
         .rb = .init,
     };
     var s3 = TestStruct{
-        .a = 3,
+        .value = 3,
         .rb = .init,
     };
     var s4 = TestStruct{
-        .a = 4,
+        .value = 4,
         .rb = .init,
     };
     var s5 = TestStruct{
-        .a = 5,
+        .value = 5,
         .rb = .init,
     };
 
     var sw1 = TestStructWithOneCmp{
-        .a = 1,
+        .value = 1,
         .rb = .init,
     };
     var sw2 = TestStructWithOneCmp{
-        .a = 2,
+        .value = 2,
         .rb = .init,
     };
     var sw3 = TestStructWithOneCmp{
-        .a = 3,
+        .value = 3,
         .rb = .init,
     };
     var sw4 = TestStructWithOneCmp{
-        .a = 4,
+        .value = 4,
         .rb = .init,
     };
     var sw5 = TestStructWithOneCmp{
-        .a = 5,
+        .value = 5,
         .rb = .init,
     };
 
@@ -495,8 +495,8 @@ test "RbTree - basic tests" {
         tree.insert(&s2);
         tree.insert(&s3);
         try testing.expectEqual(&s2.rb, tree.root);
-        try testing.expectEqual(&s1.rb, tree.root.?.left);
-        try testing.expectEqual(&s3.rb, tree.root.?.right);
+        try testing.expectEqual(&s1.rb, tree.root.?._left);
+        try testing.expectEqual(&s3.rb, tree.root.?._right);
         try verifyRules(tree);
     }
     //   2
@@ -508,8 +508,8 @@ test "RbTree - basic tests" {
         tree.insert(&s1);
         tree.insert(&s2);
         try testing.expectEqual(&s2.rb, tree.root);
-        try testing.expectEqual(&s1.rb, tree.root.?.left);
-        try testing.expectEqual(&s3.rb, tree.root.?.right);
+        try testing.expectEqual(&s1.rb, tree.root.?._left);
+        try testing.expectEqual(&s3.rb, tree.root.?._right);
         try verifyRules(tree);
     }
     //   2
@@ -525,10 +525,10 @@ test "RbTree - basic tests" {
         tree.insert(&s3);
         tree.insert(&s5);
         try testing.expectEqual(&s2.rb, tree.root);
-        try testing.expectEqual(&s1.rb, tree.root.?.left);
-        try testing.expectEqual(&s4.rb, tree.root.?.right);
-        try testing.expectEqual(&s3.rb, tree.root.?.right.?.left);
-        try testing.expectEqual(&s5.rb, tree.root.?.right.?.right);
+        try testing.expectEqual(&s1.rb, tree.root.?._left);
+        try testing.expectEqual(&s4.rb, tree.root.?._right);
+        try testing.expectEqual(&s3.rb, tree.root.?._right.?._left);
+        try testing.expectEqual(&s5.rb, tree.root.?._right.?._right);
         try verifyRules(tree);
     }
     //     4
@@ -544,10 +544,10 @@ test "RbTree - basic tests" {
         tree.insert(&s2);
         tree.insert(&s1);
         try testing.expectEqual(&s4.rb, tree.root);
-        try testing.expectEqual(&s2.rb, tree.root.?.left);
-        try testing.expectEqual(&s1.rb, tree.root.?.left.?.left);
-        try testing.expectEqual(&s3.rb, tree.root.?.left.?.right);
-        try testing.expectEqual(&s5.rb, tree.root.?.right);
+        try testing.expectEqual(&s2.rb, tree.root.?._left);
+        try testing.expectEqual(&s1.rb, tree.root.?._left.?._left);
+        try testing.expectEqual(&s3.rb, tree.root.?._left.?._right);
+        try testing.expectEqual(&s5.rb, tree.root.?._right);
         try verifyRules(tree);
     }
 
@@ -590,10 +590,10 @@ test "RbTree - basic tests" {
         tree.insert(&sw2);
         tree.insert(&sw1);
         try testing.expectEqual(&sw4.rb, tree.root);
-        try testing.expectEqual(&sw2.rb, tree.root.?.left);
-        try testing.expectEqual(&sw1.rb, tree.root.?.left.?.left);
-        try testing.expectEqual(&sw3.rb, tree.root.?.left.?.right);
-        try testing.expectEqual(&sw5.rb, tree.root.?.right);
+        try testing.expectEqual(&sw2.rb, tree.root.?._left);
+        try testing.expectEqual(&sw1.rb, tree.root.?._left.?._left);
+        try testing.expectEqual(&sw3.rb, tree.root.?._left.?._right);
+        try testing.expectEqual(&sw5.rb, tree.root.?._right);
     }
 }
 
@@ -601,7 +601,7 @@ test "RbTree - additional tests" {
     var elms: [10]TestStruct = undefined;
     for (0..10) |i| {
         elms[i] = TestStruct{
-            .a = @intCast(i),
+            .value = @intCast(i),
             .rb = .init,
         };
     }
@@ -622,9 +622,9 @@ test "RbTree - additional tests" {
         var tree = TestRbTree{};
         tree.insert(&elms[1]);
         try testing.expectEqual(&elms[1].rb, tree.root);
-        try testing.expectEqual(null, tree.root.?.left);
-        try testing.expectEqual(null, tree.root.?.right);
-        try testing.expectEqual(.black, tree.root.?.color);
+        try testing.expectEqual(null, tree.root.?._left);
+        try testing.expectEqual(null, tree.root.?._right);
+        try testing.expectEqual(.black, tree.root.?._color);
         try testing.expectEqual(&elms[1].rb, tree.lowerBound(@as(u32, 1)));
         try testing.expectEqual(&elms[1].rb, tree.lowerBound(@as(u32, 0)));
         try verifyRules(tree);
@@ -640,9 +640,9 @@ test "RbTree - additional tests" {
         tree.insert(&elms[1]);
         tree.insert(&elms[2]);
         try testing.expectEqual(&elms[1].rb, tree.root);
-        try testing.expectEqual(&elms[2].rb, tree.root.?.right);
-        try testing.expectEqual(.black, tree.root.?.color);
-        try testing.expectEqual(.red, tree.root.?.right.?.color);
+        try testing.expectEqual(&elms[2].rb, tree.root.?._right);
+        try testing.expectEqual(.black, tree.root.?._color);
+        try testing.expectEqual(.red, tree.root.?._right.?._color);
         try verifyRules(tree);
     }
     //   2
@@ -653,9 +653,9 @@ test "RbTree - additional tests" {
         tree.insert(&elms[2]);
         tree.insert(&elms[1]);
         try testing.expectEqual(&elms[2].rb, tree.root);
-        try testing.expectEqual(&elms[1].rb, tree.root.?.left);
-        try testing.expectEqual(.black, tree.root.?.color);
-        try testing.expectEqual(.red, tree.root.?.left.?.color);
+        try testing.expectEqual(&elms[1].rb, tree.root.?._left);
+        try testing.expectEqual(.black, tree.root.?._color);
+        try testing.expectEqual(.red, tree.root.?._left.?._color);
         try verifyRules(tree);
     }
 
@@ -675,7 +675,7 @@ test "RbTree - additional tests" {
             tree.insert(&elms[i]);
         }
         // Verify root is always black
-        try testing.expectEqual(.black, tree.root.?.color);
+        try testing.expectEqual(.black, tree.root.?._color);
         // Verify all elements are in tree by checking lowerBound
         for (1..8) |i| {
             try testing.expectEqual(&elms[i].rb, tree.lowerBound(@as(u32, @intCast(i))));
@@ -683,12 +683,12 @@ test "RbTree - additional tests" {
 
         // Verify tree structure
         try testing.expectEqual(&elms[2].rb, tree.root);
-        try testing.expectEqual(&elms[1].rb, tree.root.?.left);
-        try testing.expectEqual(&elms[4].rb, tree.root.?.right);
-        try testing.expectEqual(&elms[3].rb, tree.root.?.right.?.left);
-        try testing.expectEqual(&elms[6].rb, tree.root.?.right.?.right);
-        try testing.expectEqual(&elms[5].rb, tree.root.?.right.?.right.?.left);
-        try testing.expectEqual(&elms[7].rb, tree.root.?.right.?.right.?.right);
+        try testing.expectEqual(&elms[1].rb, tree.root.?._left);
+        try testing.expectEqual(&elms[4].rb, tree.root.?._right);
+        try testing.expectEqual(&elms[3].rb, tree.root.?._right.?._left);
+        try testing.expectEqual(&elms[6].rb, tree.root.?._right.?._right);
+        try testing.expectEqual(&elms[5].rb, tree.root.?._right.?._right.?._left);
+        try testing.expectEqual(&elms[7].rb, tree.root.?._right.?._right.?._right);
         try verifyRules(tree);
     }
 
@@ -710,7 +710,7 @@ test "RbTree - additional tests" {
             tree.insert(&elms[i]);
         }
         // Verify root is always black
-        try testing.expectEqual(.black, tree.root.?.color);
+        try testing.expectEqual(.black, tree.root.?._color);
         // Verify all elements are in tree by checking lowerBound
         for (1..8) |j| {
             try testing.expectEqual(&elms[j].rb, tree.lowerBound(@as(u32, @intCast(j))));
@@ -718,12 +718,12 @@ test "RbTree - additional tests" {
 
         // Verify tree structure
         try testing.expectEqual(&elms[6].rb, tree.root);
-        try testing.expectEqual(&elms[4].rb, tree.root.?.left);
-        try testing.expectEqual(&elms[7].rb, tree.root.?.right);
-        try testing.expectEqual(&elms[2].rb, tree.root.?.left.?.left);
-        try testing.expectEqual(&elms[5].rb, tree.root.?.left.?.right);
-        try testing.expectEqual(&elms[1].rb, tree.root.?.left.?.left.?.left);
-        try testing.expectEqual(&elms[3].rb, tree.root.?.left.?.left.?.right);
+        try testing.expectEqual(&elms[4].rb, tree.root.?._left);
+        try testing.expectEqual(&elms[7].rb, tree.root.?._right);
+        try testing.expectEqual(&elms[2].rb, tree.root.?._left.?._left);
+        try testing.expectEqual(&elms[5].rb, tree.root.?._left.?._right);
+        try testing.expectEqual(&elms[1].rb, tree.root.?._left.?._left.?._left);
+        try testing.expectEqual(&elms[3].rb, tree.root.?._left.?._left.?._right);
         try verifyRules(tree);
     }
 
@@ -740,15 +740,15 @@ test "RbTree - additional tests" {
         for (order) |idx| {
             tree.insert(&elms[idx]);
         }
-        try testing.expectEqual(.black, tree.root.?.color);
+        try testing.expectEqual(.black, tree.root.?._color);
 
         try testing.expectEqual(&elms[4].rb, tree.root);
-        try testing.expectEqual(&elms[2].rb, tree.root.?.left);
-        try testing.expectEqual(&elms[6].rb, tree.root.?.right);
-        try testing.expectEqual(&elms[1].rb, tree.root.?.left.?.left);
-        try testing.expectEqual(&elms[3].rb, tree.root.?.left.?.right);
-        try testing.expectEqual(&elms[5].rb, tree.root.?.right.?.left);
-        try testing.expectEqual(&elms[7].rb, tree.root.?.right.?.right);
+        try testing.expectEqual(&elms[2].rb, tree.root.?._left);
+        try testing.expectEqual(&elms[6].rb, tree.root.?._right);
+        try testing.expectEqual(&elms[1].rb, tree.root.?._left.?._left);
+        try testing.expectEqual(&elms[3].rb, tree.root.?._left.?._right);
+        try testing.expectEqual(&elms[5].rb, tree.root.?._right.?._left);
+        try testing.expectEqual(&elms[7].rb, tree.root.?._right.?._right);
         try verifyRules(tree);
     }
 
@@ -798,9 +798,9 @@ test "RbTree - additional tests" {
         tree.insert(&elms[3]);
 
         // Check parent relationships
-        try testing.expectEqual(null, tree.root.?.parent);
-        try testing.expectEqual(tree.root, tree.root.?.left.?.parent);
-        try testing.expectEqual(tree.root, tree.root.?.right.?.parent);
+        try testing.expectEqual(null, tree.root.?._parent);
+        try testing.expectEqual(tree.root, tree.root.?._left.?._parent);
+        try testing.expectEqual(tree.root, tree.root.?._right.?._parent);
 
         try verifyRules(tree);
     }
@@ -809,26 +809,26 @@ test "RbTree - additional tests" {
     // Node initialization tests
     {
         const node = TestRbTree.Node.init;
-        try testing.expectEqual(null, node.parent);
-        try testing.expectEqual(.red, node.color);
-        try testing.expectEqual(null, node.left);
-        try testing.expectEqual(null, node.right);
+        try testing.expectEqual(null, node._parent);
+        try testing.expectEqual(.red, node._color);
+        try testing.expectEqual(null, node._left);
+        try testing.expectEqual(null, node._right);
     }
 
     // =============================================================
     // Duplicate value handling tests
     {
         var tree = TestRbTree{};
-        var dup1 = TestStruct{ .a = 5, .rb = .init };
-        var dup2 = TestStruct{ .a = 5, .rb = .init };
+        var dup1 = TestStruct{ .value = 5, .rb = .init };
+        var dup2 = TestStruct{ .value = 5, .rb = .init };
 
         tree.insert(&dup1);
         tree.insert(&dup2);
 
         // Both should be in tree (since they are different objects)
-        try testing.expectEqual(.black, tree.root.?.color);
+        try testing.expectEqual(.black, tree.root.?._color);
         // One should be root, other should be child
-        try testing.expect(tree.root.?.left != null or tree.root.?.right != null);
+        try testing.expect(tree.root.?._left != null or tree.root.?._right != null);
     }
 }
 
@@ -836,7 +836,7 @@ test "RbTree - Basic Delete" {
     var elms: [10]TestStruct = undefined;
     for (0..10) |i| {
         elms[i] = TestStruct{
-            .a = @intCast(i),
+            .value = @intCast(i),
             .rb = .init,
         };
     }
@@ -864,11 +864,11 @@ test "RbTree - Basic Delete" {
         {
             try verifyRules(tree);
             try testing.expectEqual(&elms[5].rb, tree.root);
-            try testing.expectEqual(&elms[2].rb, tree.root.?.left);
-            try testing.expectEqual(&elms[6].rb, tree.root.?.right);
-            try testing.expectEqual(&elms[1].rb, tree.root.?.left.?.left);
-            try testing.expectEqual(&elms[3].rb, tree.root.?.left.?.right);
-            try testing.expectEqual(&elms[7].rb, tree.root.?.right.?.right);
+            try testing.expectEqual(&elms[2].rb, tree.root.?._left);
+            try testing.expectEqual(&elms[6].rb, tree.root.?._right);
+            try testing.expectEqual(&elms[1].rb, tree.root.?._left.?._left);
+            try testing.expectEqual(&elms[3].rb, tree.root.?._left.?._right);
+            try testing.expectEqual(&elms[7].rb, tree.root.?._right.?._right);
         }
 
         //       5
@@ -880,10 +880,10 @@ test "RbTree - Basic Delete" {
         {
             try verifyRules(tree);
             try testing.expectEqual(&elms[5].rb, tree.root);
-            try testing.expectEqual(&elms[2].rb, tree.root.?.left);
-            try testing.expectEqual(&elms[6].rb, tree.root.?.right);
-            try testing.expectEqual(&elms[1].rb, tree.root.?.left.?.left);
-            try testing.expectEqual(&elms[3].rb, tree.root.?.left.?.right);
+            try testing.expectEqual(&elms[2].rb, tree.root.?._left);
+            try testing.expectEqual(&elms[6].rb, tree.root.?._right);
+            try testing.expectEqual(&elms[1].rb, tree.root.?._left.?._left);
+            try testing.expectEqual(&elms[3].rb, tree.root.?._left.?._right);
         }
 
         tree.delete(&elms[2]);
@@ -895,9 +895,9 @@ test "RbTree - Basic Delete" {
         {
             try verifyRules(tree);
             try testing.expectEqual(&elms[5].rb, tree.root);
-            try testing.expectEqual(&elms[3].rb, tree.root.?.left);
-            try testing.expectEqual(&elms[6].rb, tree.root.?.right);
-            try testing.expectEqual(&elms[1].rb, tree.root.?.left.?.left);
+            try testing.expectEqual(&elms[3].rb, tree.root.?._left);
+            try testing.expectEqual(&elms[6].rb, tree.root.?._right);
+            try testing.expectEqual(&elms[1].rb, tree.root.?._left.?._left);
         }
 
         //       5
@@ -907,8 +907,8 @@ test "RbTree - Basic Delete" {
         {
             try verifyRules(tree);
             try testing.expectEqual(&elms[5].rb, tree.root);
-            try testing.expectEqual(&elms[1].rb, tree.root.?.left);
-            try testing.expectEqual(&elms[6].rb, tree.root.?.right);
+            try testing.expectEqual(&elms[1].rb, tree.root.?._left);
+            try testing.expectEqual(&elms[6].rb, tree.root.?._right);
         }
 
         //       5
@@ -918,8 +918,8 @@ test "RbTree - Basic Delete" {
         {
             try verifyRules(tree);
             try testing.expectEqual(&elms[5].rb, tree.root);
-            try testing.expectEqual(null, tree.root.?.left);
-            try testing.expectEqual(&elms[6].rb, tree.root.?.right);
+            try testing.expectEqual(null, tree.root.?._left);
+            try testing.expectEqual(&elms[6].rb, tree.root.?._right);
         }
 
         //       6
@@ -927,8 +927,8 @@ test "RbTree - Basic Delete" {
         {
             try verifyRules(tree);
             try testing.expectEqual(&elms[6].rb, tree.root);
-            try testing.expectEqual(null, tree.root.?.left);
-            try testing.expectEqual(null, tree.root.?.right);
+            try testing.expectEqual(null, tree.root.?._left);
+            try testing.expectEqual(null, tree.root.?._right);
         }
 
         tree.delete(&elms[6]);
@@ -943,7 +943,7 @@ test "RbTree - Additional Delete" {
     var elms: [10]TestStruct = undefined;
     for (0..10) |i| {
         elms[i] = TestStruct{
-            .a = @intCast(i),
+            .value = @intCast(i),
             .rb = .init,
         };
     }
@@ -1094,8 +1094,8 @@ fn verifyRules(tree: TestRbTree) !void {
             for (nodes.items) |leaf| {
                 var depth: usize = 0;
                 var parent: *TestRbTree.Node = leaf;
-                while (parent != node) : (parent = parent.parent.?) {
-                    if (parent.color == .black) {
+                while (parent != node) : (parent = parent._parent.?) {
+                    if (parent._color == .black) {
                         depth += 1;
                     }
                 }
@@ -1107,31 +1107,33 @@ fn verifyRules(tree: TestRbTree) !void {
                 }
             }
 
-            if (node.?.left) |left| try verifyBlackDepth(left);
-            if (node.?.right) |right| try verifyBlackDepth(right);
+            if (node.?._left) |left| try verifyBlackDepth(left);
+            if (node.?._right) |right| try verifyBlackDepth(right);
         }
 
         fn collectAllLeaves(node: ?*TestRbTree.Node, nodes: *std.ArrayList(*TestRbTree.Node)) void {
             if (node == null) return;
             const n = node.?;
 
-            if (n.left == null and n.right == null) {
+            if (n._left == null and n._right == null) {
                 nodes.append(n) catch unreachable;
             } else {
-                collectAllLeaves(n.left, nodes);
-                collectAllLeaves(n.right, nodes);
+                collectAllLeaves(n._left, nodes);
+                collectAllLeaves(n._right, nodes);
             }
         }
 
         /// Helper function to test parent-child links in the tree
         fn testLinks(node: ?*TestRbTree.Node) !void {
             if (node) |n| {
-                if (n.left) |left| {
-                    try testing.expectEqual(n, left.parent);
+                if (n._left) |left| {
+                    try testing.expectEqual(n, left._parent);
+                    try testing.expect(left.container().value <= n.container().value);
                     try testLinks(left);
                 }
-                if (n.right) |right| {
-                    try testing.expectEqual(n, right.parent);
+                if (n._right) |right| {
+                    try testing.expectEqual(n, right._parent);
+                    try testing.expect(n.container().value <= right.container().value);
                     try testLinks(right);
                 }
             } else {
@@ -1144,23 +1146,23 @@ fn verifyRules(tree: TestRbTree) !void {
             if (node == null) return;
 
             const n = node.?;
-            if (n.color == .red) {
-                if (n.left) |left| {
-                    try testing.expectEqual(.black, left.color);
+            if (n._color == .red) {
+                if (n._left) |left| {
+                    try testing.expectEqual(.black, left._color);
                 }
-                if (n.right) |right| {
-                    try testing.expectEqual(.black, right.color);
+                if (n._right) |right| {
+                    try testing.expectEqual(.black, right._color);
                 }
             }
 
-            try testVerifyNoRedRedParentChild(n.left);
-            try testVerifyNoRedRedParentChild(n.right);
+            try testVerifyNoRedRedParentChild(n._left);
+            try testVerifyNoRedRedParentChild(n._right);
         }
     };
 
     if (tree.root) |root| {
-        try testing.expectEqual(.black, root.color);
-        try testing.expectEqual(null, root.parent);
+        try testing.expectEqual(.black, root._color);
+        try testing.expectEqual(null, root._parent);
     }
     try S.testLinks(tree.root);
     try S.testVerifyNoRedRedParentChild(tree.root);
@@ -1172,15 +1174,15 @@ fn debugPrintTree(node: ?*TestRbTree.Node) void {
 
     const n = node.?;
     std.debug.print("Node: {d}({s}) -> {?}({s}), {?}({s})\n", .{
-        n.container().a,
-        @tagName(n.color),
-        if (n.left) |l| l.container().a else null,
-        if (n.left) |l| @tagName(l.color) else "null",
-        if (n.right) |r| r.container().a else null,
-        if (n.right) |r| @tagName(r.color) else "null",
+        n.container().value,
+        @tagName(n._color),
+        if (n._left) |l| l.container().value else null,
+        if (n._left) |l| @tagName(l._color) else "null",
+        if (n._right) |r| r.container().value else null,
+        if (n._right) |r| @tagName(r._color) else "null",
     });
-    if (n.left) |left| debugPrintTree(left);
-    if (n.right) |right| debugPrintTree(right);
+    if (n._left) |left| debugPrintTree(left);
+    if (n._right) |right| debugPrintTree(right);
 }
 
 // =============================================================
@@ -1213,8 +1215,8 @@ test "RbTree - string type tests" {
     tree.insert(&charlie);
 
     try testing.expectEqual(&bob.rb, tree.root);
-    try testing.expectEqual(&alice.rb, tree.root.?.left);
-    try testing.expectEqual(&charlie.rb, tree.root.?.right);
+    try testing.expectEqual(&alice.rb, tree.root.?._left);
+    try testing.expectEqual(&charlie.rb, tree.root.?._right);
 
     // Test lowerBound with strings
     try testing.expectEqual(&alice.rb, tree.lowerBound("alice"));
