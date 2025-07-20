@@ -35,6 +35,7 @@ SECTIONS {
 
         *(.rodata)
 
+        . = ALIGN(0x10);
         __module_init_start = .;
         KEEP(*(.module.init))
         __module_init_end = .;
