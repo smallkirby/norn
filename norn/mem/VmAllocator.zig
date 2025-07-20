@@ -186,6 +186,7 @@ const VmArea = struct {
         while (vmtree_iter.next()) |node| {
             const vmstruct = node.container();
             try arch.mem.unmap(tbl, vmstruct.virt, vmstruct.size);
+            try page_allocator.freePagesRaw(mem.phys2virt(vmstruct.phys), 1);
             allocator.destroy(vmstruct);
         }
     }
