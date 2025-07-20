@@ -33,6 +33,15 @@ pub fn inl(port: u16) u32 {
     );
 }
 
+pub fn invlpg(addr: norn.mem.Virt) void {
+    asm volatile (
+        \\invlpg %[addr]
+        :
+        : [addr] "m" (addr),
+        : "memory"
+    );
+}
+
 pub inline fn lgdt(gdtr: u64) void {
     asm volatile (
         \\lgdt (%[gdtr])

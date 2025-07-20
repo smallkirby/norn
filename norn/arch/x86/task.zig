@@ -38,19 +38,11 @@ pub fn setupNewTask(task: *Thread, ip: u64, args: ?*anyopaque) TaskError!void {
     task.mm.pgtbl = try arch.mem.createPageTables();
 
     // Init kernel stack.
-    const stack = try mem.vm_allocator.allocate(kernel_stack_size + mem.size_4kib);
-    errdefer mem.vm_allocator.free(stack);
+    const stack = try mem.vm_allocator.virtualAlloc(kernel_stack_size, .before);
+    errdefer mem.vm_allocator.virtualFree(stack);
     const stack_ptr = stack.ptr + stack.len;
     task.kernel_stack = stack;
     task.kernel_stack_ptr = stack_ptr;
-
-    // Set a guard page for the kernel stack.
-    try arch.mem.changeAttribute(
-        arch.mem.getRootTable(),
-        @intFromPtr(stack.ptr),
-        mem.size_4kib,
-        .read_only,
-    );
 
     // Init TSS.
     const tss = try mem.general_allocator.create(TaskStateSegment);

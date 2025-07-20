@@ -9,6 +9,8 @@ pub const PageAllocator = @import("mem/PageAllocator.zig");
 pub const MemError = error{
     /// Out of memory.
     OutOfMemory,
+    /// Virtual memory allocation failed.
+    OutOfVirtualMemory,
     /// The specified region is invalid.
     InvalidRegion,
 };
@@ -84,17 +86,27 @@ pub const page_mask_2mib: u64 = size_2mib - 1;
 pub const page_mask_1gib: u64 = size_1gib - 1;
 
 /// Base virtual address of direct mapping.
+///
 /// The virtual address starting from the address is directly mapped to the physical address at 0x0.
+///
+/// This region is always mapped.
 pub const direct_map_base = 0xFFFF_8880_0000_0000;
 /// Size in bytes of the direct mapping region.
 pub const direct_map_size = 512 * gib;
+
 /// Base virtual address of vmemory area.
+///
 /// Incontiguous physical pages are mapped to this region.
+/// This region is mapped to physical pages on demand.
 pub const vmem_base = 0xFFFF_9000_0000_0000;
 /// Size in bytes of the vmemory area.
 pub const vmem_size = 512 * gib;
+
 /// The base virtual address of the kernel.
+///
 /// The virtual address starting from the address is directly mapped to the physical address at 0x0.
+///
+/// This region is always mapped.
 pub const kernel_base = 0xFFFF_FFFF_8000_0000;
 
 comptime {

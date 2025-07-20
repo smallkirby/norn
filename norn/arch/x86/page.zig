@@ -229,6 +229,43 @@ pub fn map(cr3: Virt, vaddr: Virt, paddr: Virt, size: usize, attr: Attribute) Pa
     }
 }
 
+/// Unmap the virtual address [vaddr, vaddr + size).
+///
+/// This function uses only 4KiB pages.
+///
+/// If the pages are not mapped, return an error.
+pub fn unmap(cr3: Virt, vaddr: Virt, size: usize) PageError!void {
+    if ((vaddr & page_mask_4k) != 0) return PageError.InvalidAddress;
+    if ((size & page_mask_4k) != 0) return PageError.InvalidAddress;
+    const cr3_phys = virt2phys(cr3);
+
+    var i: usize = 0;
+    while (i < size) : (i += size_4k) {
+        const cur_vaddr = vaddr + i;
+
+        const lv4ent = getLv4Entry(cur_vaddr, cr3_phys);
+        if (!lv4ent.present) return PageError.NotMapped;
+        if (lv4ent.ps) return PageError.NotMapped;
+
+        const lv3ent = getLv3Entry(cur_vaddr, lv4ent.address());
+        if (!lv3ent.present) return PageError.NotMapped;
+        if (lv3ent.ps) return PageError.NotMapped;
+
+        const lv2ent = getLv2Entry(cur_vaddr, lv3ent.address());
+        if (!lv2ent.present) return PageError.NotMapped;
+        if (lv2ent.ps) return PageError.NotMapped;
+
+        const lv1ent = getLv1Entry(cur_vaddr, lv2ent.address());
+        if (!lv1ent.present) return PageError.NotMapped;
+
+        // Clear the entry.
+        lv1ent.present = false;
+
+        // Flush TLB.
+        am.invlpg(cur_vaddr);
+    }
+}
+
 /// Translate the given virtual address to physical address by walking page tables.
 ///
 /// CR3 of the current CPU is used as the root of the page table.
@@ -395,6 +432,7 @@ pub const boot = struct {
                 .rw = true,
                 .us = false,
                 .ps = false,
+                .xd = true,
                 .phys = @truncate(@intFromPtr(lv3tbl) >> page_shift_4k),
             };
         }

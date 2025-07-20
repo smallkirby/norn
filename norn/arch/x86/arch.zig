@@ -239,6 +239,11 @@ pub const mem = struct {
         return pg.map(cr3, vaddr, paddr, size, attr);
     }
 
+    /// Unmaps a virtual address.
+    pub fn unmap(cr3: Virt, vaddr: Virt, size: usize) ArchError!void {
+        return pg.unmap(cr3, vaddr, size);
+    }
+
     /// Set the root table (CR3).
     pub inline fn setPagetable(cr3: Virt) void {
         am.writeCr3(norn.mem.virt2phys(cr3));
