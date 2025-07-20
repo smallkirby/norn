@@ -315,6 +315,28 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
             }
         }
 
+        /// Find the node with the given key.
+        pub fn find(self: *Self, key: anytype) ?*Node {
+            if (@typeInfo(@TypeOf(cmpByKey)) == .null) {
+                @compileError("cmpByKey must be provided for find()");
+            }
+
+            var current = self.root;
+            while (current) |node| {
+                switch (cmpByKey(key, node.container())) {
+                    .eq => return node,
+                    .lt => current = node._left,
+                    .gt => current = node._right,
+                }
+            }
+            return null;
+        }
+
+        /// Check if the tree contains a node with the given key.
+        pub fn contains(self: *Self, key: anytype) bool {
+            return self.find(key) != null;
+        }
+
         /// Find the node with the smallest key that is greater than or equal to the given key.
         pub fn lowerBound(self: *Self, key: anytype) ?*Node {
             if (@typeInfo(@TypeOf(cmpByKey)) == .null) {
@@ -397,6 +419,58 @@ pub fn RbTree(T: type, node_field: []const u8, comptime cmp: anytype, comptime c
         inline fn getColor(node: ?*Node) Color {
             return if (node) |n| n._color else .black;
         }
+
+        /// RB tree iterator.
+        const Iterator = struct {
+            root: ?*Node,
+            current: ?*Node,
+            saved_next: ?*Node,
+
+            /// Initialize the iterator with the given root node.
+            pub fn init(root: ?*Node) Iterator {
+                const current = if (root) |r| r.min() else null;
+                const saved_next = if (current) |c| successor(c) else null;
+                return .{
+                    .root = root,
+                    .current = current,
+                    .saved_next = saved_next,
+                };
+            }
+
+            /// Get the next node if available.
+            pub fn next(self: *Iterator) ?*Node {
+                if (self.current) |x| {
+                    const ret = x;
+                    self.current = self.saved_next;
+                    self.saved_next = if (self.current) |c| successor(c) else null;
+                    return ret;
+                } else {
+                    return null;
+                }
+            }
+
+            /// Get the minimum node that is greater than or equal to the current node.
+            fn successor(x: *Node) ?*Node {
+                if (x._right) |r| {
+                    return r.min();
+                }
+
+                var cur = x;
+                var pre = cur._parent;
+                while (pre) |p| {
+                    if (cur == p._left) return p;
+                    cur = p;
+                    pre = p._parent;
+                } else {
+                    return null;
+                }
+            }
+        };
+
+        /// Get an iterator for the tree.
+        pub fn iterator(self: *Self) Iterator {
+            return Iterator.init(self.root);
+        }
     };
 }
 
@@ -418,7 +492,12 @@ fn testCompareByKey(key: u32, t: *const TestStruct) std.math.Order {
     return .eq;
 }
 
-const TestRbTree = RbTree(TestStruct, "rb", testCompare, testCompareByKey);
+const TestRbTree = RbTree(
+    TestStruct,
+    "rb",
+    testCompare,
+    testCompareByKey,
+);
 const TestStruct = struct {
     value: u32,
     rb: TestRbTree.Node,
@@ -430,7 +509,12 @@ fn testCompareWithOneCmp(a: *const TestStructWithOneCmp, b: *const TestStructWit
     return .eq;
 }
 
-const TestRbTreeWithOneCmp = RbTree(TestStructWithOneCmp, "rb", testCompareWithOneCmp, null);
+const TestRbTreeWithOneCmp = RbTree(
+    TestStructWithOneCmp,
+    "rb",
+    testCompareWithOneCmp,
+    null,
+);
 const TestStructWithOneCmp = struct {
     value: u32,
     rb: TestRbTreeWithOneCmp.Node,
@@ -1075,6 +1159,66 @@ test "RbTree - Additional Delete" {
         try verifyRules(tree);
 
         try testing.expectEqual(null, tree.root);
+    }
+}
+
+test "RbTree - Iterator" {
+    var elms: [10]TestStruct = undefined;
+    for (0..10) |i| {
+        elms[i] = TestStruct{
+            .value = @intCast(i),
+            .rb = .init,
+        };
+    }
+
+    // =============================================================
+    {
+        var tree = TestRbTree{};
+        for (0..10) |i| {
+            tree.insert(&elms[i]);
+        }
+        try verifyRules(tree);
+
+        var iter = tree.iterator();
+        var count: usize = 0;
+        while (iter.next()) |node| {
+            try testing.expectEqual(count, node.container().value);
+            count += 1;
+        }
+        try testing.expectEqual(10, count);
+    }
+
+    // =============================================================
+    // Iterator with empty tree
+    {
+        var tree = TestRbTree{};
+        var iter = tree.iterator();
+        try testing.expectEqual(null, iter.next());
+    }
+
+    // =============================================================
+    // Iterate while deleting
+    {
+        var tree = TestRbTree{};
+        for (0..10) |i| {
+            tree.insert(&elms[i]);
+        }
+        try verifyRules(tree);
+
+        var iter = tree.iterator();
+        var count: usize = 0;
+        while (iter.next()) |node| {
+            try testing.expectEqual(count, node.container().value);
+            count += 1;
+
+            node.* = .{
+                ._color = .red,
+                ._parent = null,
+                ._left = null,
+                ._right = null,
+            };
+        }
+        try testing.expectEqual(10, count);
     }
 }
 
