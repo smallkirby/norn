@@ -1,5 +1,14 @@
 //! This module provides a map of physical memory resources in the system.
 
+pub const ResourceError = error{
+    /// Resource not available.
+    NotAvailable,
+    /// Invalid argument.
+    InvalidArgument,
+    /// Memory allocation failed.
+    OutOfMemory,
+};
+
 const ResourceList = InlineDoublyLinkedList(MemoryResource, "list_head");
 
 /// List of memory resources.
@@ -39,6 +48,8 @@ pub const MemoryResource = struct {
         norn_image,
         /// ACPI tables.
         acpi_tables,
+        /// PCI device.
+        pci,
 
         pub fn toString(self: Kind) []const u8 {
             return switch (self) {
@@ -47,6 +58,7 @@ pub const MemoryResource = struct {
                 .system_ram => "System RAM",
                 .norn_image => "Norn Image",
                 .acpi_tables => "ACPI Tables",
+                .pci => "PCI",
             };
         }
     };
@@ -153,6 +165,46 @@ fn populateKernelMap(allocator: Allocator) Allocator.Error!void {
         .kind = .norn_image,
     };
     norn_image.appendChild(bss);
+}
+
+/// Request a physical memory range as a resource.
+pub fn requestResource(
+    name: []const u8,
+    start: Phys,
+    size: usize,
+    kind: MemoryResource.Kind,
+    allocator: Allocator,
+) ResourceError!void {
+    if (start % mem.size_4kib != 0) {
+        return ResourceError.InvalidArgument;
+    }
+    if (start % mem.size_4kib != 0) {
+        return ResourceError.InvalidArgument;
+    }
+    const end = start + size;
+
+    var current = resources.first;
+    while (current) |res| : (current = res.list_head.next) {
+        if (res.start < end and start < res.start + res.size) {
+            return ResourceError.NotAvailable;
+        }
+    }
+
+    const resource = try allocator.create(MemoryResource);
+    resource.* = .{
+        .name = name,
+        .start = start,
+        .size = size,
+        .kind = kind,
+    };
+    resources.insertSorted(resource, compareResources);
+
+    log.debug("Resource created: {s}: 0x{X:0>12}-0x{X:0>12} ({s})", .{
+        name,
+        start,
+        start + size,
+        kind.toString(),
+    });
 }
 
 extern const __norn_text_start: *void;

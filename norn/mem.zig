@@ -2,6 +2,8 @@
 // Types Definitions
 // =============================================================
 
+pub const resource = @import("mem/resource.zig");
+
 /// Allocator interface to manage pages.
 pub const PageAllocator = @import("mem/PageAllocator.zig");
 
@@ -13,7 +15,7 @@ pub const MemError = error{
     OutOfVirtualMemory,
     /// The specified region is invalid.
     InvalidRegion,
-};
+} || resource.ResourceError;
 
 /// Memory zone.
 pub const Zone = enum(u8) {
@@ -40,6 +42,33 @@ pub const Zone = enum(u8) {
             }
         }
         @panic("Zone is not exhaustive.");
+    }
+};
+
+/// Virtual address mapped to MMIO.
+///
+/// Read and write operations are ensured to be ordered.
+pub const IoAddr = packed struct(u64) {
+    _virt: Virt,
+
+    pub fn read8(self: IoAddr) u8 {
+        return arch.read8(self);
+    }
+
+    pub fn read16(self: IoAddr) u16 {
+        return arch.read16(self);
+    }
+
+    pub fn read32(self: IoAddr) u32 {
+        return arch.read32(self);
+    }
+
+    pub fn read64(self: IoAddr) u64 {
+        return arch.read64(self);
+    }
+
+    pub inline fn add(self: IoAddr, offset: usize) IoAddr {
+        return IoAddr{ ._virt = self._virt + offset };
     }
 };
 
@@ -230,11 +259,6 @@ pub fn accessOk(addr: anytype) bool {
     } else return false;
 }
 
-/// Initialize the memory resource map.
-pub fn initializeResources(map: MemoryMap, allocator: Allocator) Allocator.Error!void {
-    return resource.init(map, allocator);
-}
-
 /// Translate the given virtual address to physical address.
 ///
 /// This function just use simple calculation and does not walk page tables.
@@ -291,7 +315,6 @@ const MemoryMap = surtr.MemoryMap;
 const norn = @import("norn");
 const arch = norn.arch;
 
-const resource = @import("mem/resource.zig");
 const BootstrapAllocator = @import("mem/BootstrapAllocator.zig");
 const BuddyAllocator = @import("mem/BuddyAllocator.zig");
 const BinAllocator = @import("mem/BinAllocator.zig");

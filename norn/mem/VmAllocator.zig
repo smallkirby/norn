@@ -308,6 +308,79 @@ pub fn virtualFree(self: *VmAllocator, ptr: []u8) void {
     VmArea.freeVrange(self, vmarea);
 }
 
+/// Maps the given physical address to a virtual address.
+///
+/// Caller must reserve the physical address range beforehand.
+pub fn iomap(self: *VmAllocator, phys: Phys, size: usize) Error!IoAddr {
+    const ie = self._lock.lockDisableIrq();
+    defer self._lock.unlockRestoreIrq(ie);
+
+    norn.rtt.expectEqual(0, size % mem.size_4kib);
+    norn.rtt.expectEqual(0, phys % mem.size_4kib);
+    const num_pages = size / mem.size_4kib;
+
+    // Allocate a virtual memory range.
+    const vmarea_node = try VmArea.allocateVrange(
+        self,
+        size,
+        mem.size_4kib,
+        .none,
+    );
+    errdefer VmArea.freeVrange(self, vmarea_node);
+
+    // Map the physical address to the allocated virtual memory range.
+    const tbl = arch.mem.getRootTable();
+    var vmtree = VmStruct.Tree{};
+    errdefer {
+        var vmtree_iter = vmtree.iterator();
+        while (vmtree_iter.next()) |node| {
+            const vmstruct = node.container();
+            arch.mem.unmap(tbl, vmstruct.virt, vmstruct.size) catch |err| {
+                log.err("Failed to unmap virtual address 0x{X}: {s}", .{ vmstruct.virt, @errorName(err) });
+            };
+            allocator.destroy(node);
+        }
+    }
+
+    var i: usize = 0;
+    while (i < num_pages) : (i += 1) {
+        const virt = vmarea_node.start + i * mem.size_4kib;
+        const phys_page = phys + i * mem.size_4kib;
+
+        arch.mem.map(
+            tbl,
+            virt,
+            phys_page,
+            mem.size_4kib,
+            .read_write,
+        ) catch return Error.OutOfVirtualMemory;
+
+        const vmstruct = try allocator.create(VmStruct);
+        errdefer allocator.destroy(vmstruct);
+        vmstruct.* = .{
+            .virt = virt,
+            .phys = phys_page,
+            .size = mem.size_4kib,
+            .area = vmarea_node,
+            .rbnode = .{},
+        };
+        vmtree.insert(vmstruct);
+    }
+
+    vmarea_node.vmtree = vmtree;
+    vmarea_node._status = .mapped;
+
+    return .{ ._virt = vmarea_node.start };
+}
+
+/// Unmap the given virtual address.
+pub fn iounmap(self: *VmAllocator, addr: IoAddr) void {
+    _ = self;
+    _ = addr;
+
+    norn.unimplemented("iounmap");
+}
+
 // =============================================================
 // Imports
 // =============================================================
@@ -320,6 +393,7 @@ const algorithm = norn.algorithm;
 const arch = norn.arch;
 const mem = norn.mem;
 const util = norn.util;
+const IoAddr = mem.IoAddr;
 const Phys = mem.Phys;
 const Virt = mem.Virt;
 

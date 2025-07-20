@@ -91,6 +91,46 @@ pub inline fn in(T: type, port: u16) T {
     };
 }
 
+/// Read a byte from a MMIO address.
+pub fn read8(addr: IoAddr) u8 {
+    return asm volatile (
+        \\mov (%[addr]), %[result]
+        : [result] "=r" (-> u8),
+        : [addr] "r" (addr._virt),
+        : "memory"
+    );
+}
+
+/// Read a word from a MMIO address.
+pub fn read16(addr: IoAddr) u16 {
+    return asm volatile (
+        \\mov (%[addr]), %[result]
+        : [result] "=r" (-> u16),
+        : [addr] "r" (addr._virt),
+        : "memory"
+    );
+}
+
+/// Read a dword from a MMIO address.
+pub fn read32(addr: IoAddr) u32 {
+    return asm volatile (
+        \\mov (%[addr]), %[result]
+        : [result] "=r" (-> u32),
+        : [addr] "r" (addr._virt),
+        : "memory"
+    );
+}
+
+/// Read a qword from a MMIO address.
+pub fn read64(addr: IoAddr) u64 {
+    return asm volatile (
+        \\mov (%[addr]), %[result]
+        : [result] "=r" (-> u64),
+        : [addr] "r" (addr._virt),
+        : "memory"
+    );
+}
+
 /// Initialize boot-time GDT.
 pub fn initEarlyGdt() void {
     return gdt.init();
@@ -270,6 +310,7 @@ const norn = @import("norn");
 const bits = norn.bits;
 const interrupt = norn.interrupt;
 const PageAllocator = norn.mem.PageAllocator;
+const IoAddr = norn.mem.IoAddr;
 const Phys = norn.mem.Phys;
 const Virt = norn.mem.Virt;
 
