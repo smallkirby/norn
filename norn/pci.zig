@@ -5,7 +5,14 @@ pub const PciError = error{
     NotFound,
     /// Operation not supported.
     NotSupported,
+    /// Memory allocation failed.
+    OutOfMemory,
 };
+
+/// Type for a list of PCI devices.
+const DeviceList = std.ArrayList(*Device);
+/// List of devices.
+var devices: DeviceList = undefined;
 
 /// Data type for function number.
 const FunctionNumber = u3;
@@ -397,7 +404,7 @@ const Header = struct {
 };
 
 /// Identify the generic function of the device.
-const ClassCode = packed struct(u24) {
+pub const ClassCode = packed struct(u24) {
     /// Register-level programming interface.
     interface: u8,
     /// Specific device type.
@@ -526,7 +533,7 @@ const Bar = packed struct(u32) {
     };
 
     /// Specialize the BAR to a specific type based on the data.
-    fn specialize(self: Bar) Union {
+    pub fn specialize(self: Bar) Union {
         return switch (@as(u1, @truncate(self._data))) {
             0 => .{ .mmio = @bitCast(self._data) },
             1 => .{ .pio = @bitCast(self._data) },
@@ -535,7 +542,7 @@ const Bar = packed struct(u32) {
 };
 
 /// PCI device.
-const Device = struct {
+pub const Device = struct {
     const Self = @This();
 
     /// Bus number of the device.
@@ -545,15 +552,19 @@ const Device = struct {
     /// Function number of the device.
     function: FunctionNumber,
 
+    /// Class code.
+    class: ClassCode,
     /// Configuration space.
     config: ConfigurationSpace,
 
     /// Create a new PCI device.
     pub fn new(bus: BusNumber, device: DeviceNumber, function: FunctionNumber) PciError!Self {
+        const config = ConfigurationSpaceAny.new(bus, device, function);
         return .{
             .bus = bus,
             .device = device,
             .function = function,
+            .class = config.read(.class_code),
             .config = try ConfigurationSpace.specialize(bus, device, function),
         };
     }
@@ -580,6 +591,68 @@ const Device = struct {
         }
     }
 };
+
+/// Initialize the PCI subsystem.
+pub fn init(allocator: Allocator) PciError!void {
+    // Initialize the device list.
+    devices = DeviceList.init(allocator);
+
+    // Register all PCI devices.
+    try registerAllDevices(allocator);
+}
+
+/// Enumerate all PCI devices and register them.
+fn registerAllDevices(allocator: Allocator) PciError!void {
+    const S = struct {
+        fn enumerateBus(bus: BusNumber, alc: Allocator) PciError!void {
+            for (0..std.math.maxInt(DeviceNumber)) |i| {
+                try enumerateDevice(bus, @intCast(i), alc);
+            }
+        }
+
+        fn enumerateDevice(bus: BusNumber, device: DeviceNumber, alc: Allocator) PciError!void {
+            const dev = ConfigurationSpaceAny.new(bus, device, 0);
+            if (!dev.isValid()) return;
+
+            try registerFunction(bus, device, 0, alc);
+
+            if (!dev.isSingleFunction()) {
+                for (1..std.math.maxInt(FunctionNumber)) |function| {
+                    const func = ConfigurationSpaceAny.new(
+                        bus,
+                        device,
+                        @intCast(function),
+                    );
+                    if (!func.isValid()) continue;
+
+                    try registerFunction(bus, device, @intCast(function), alc);
+                }
+            }
+        }
+
+        fn registerFunction(bus: BusNumber, device: DeviceNumber, function: FunctionNumber, alc: Allocator) PciError!void {
+            const pci_device = try alc.create(Device);
+            errdefer alc.destroy(pci_device);
+
+            pci_device.* = try Device.new(bus, device, function);
+
+            try devices.append(pci_device);
+        }
+    };
+
+    try S.enumerateBus(0, allocator);
+}
+
+/// Find a registered PCI device by its class code.
+pub fn findDevice(class: ClassCode) ?*Device {
+    for (devices.items) |dev| {
+        if (dev.class == class) {
+            return dev;
+        }
+    } else {
+        return null;
+    }
+}
 
 // =============================================================
 // Debug

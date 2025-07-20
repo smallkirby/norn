@@ -203,7 +203,12 @@ fn nornThread(initramfs: surtr.InitramfsInfo) !void {
     try norn.timer.init();
 
     // PCI
+    try norn.pci.init(norn.mem.general_allocator);
     norn.pci.debugPrintAllDevices();
+    const pci_usb = norn.pci.findDevice(norn.drivers.usb.class) orelse {
+        @panic("USB device not found.");
+    };
+    try norn.drivers.usb.init(pci_usb, norn.mem.general_allocator);
 
     // Start the scheduler.
     // This function never returns.
