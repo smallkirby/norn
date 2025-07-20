@@ -3,7 +3,6 @@
 //! The operating system written from scratch in Zig.
 
 pub const acpi = @import("acpi.zig");
-pub const algorithm = @import("algorithm.zig");
 pub const arch = @import("arch.zig");
 pub const bits = @import("bits.zig");
 pub const device = @import("device.zig");
@@ -33,6 +32,7 @@ pub const is_runtime_test = option.is_runtime_test;
 /// Whether the module is built for `zig build test`.
 pub const is_test = @import("builtin").is_test;
 pub const LogFn = klog.LogFn;
+pub const RbTree = @import("RbTree.zig").RbTree;
 pub const Serial = @import("Serial.zig");
 pub const SpinLock = @import("SpinLock.zig");
 

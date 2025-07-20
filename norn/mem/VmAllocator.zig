@@ -35,7 +35,7 @@ const VmArea = struct {
     _status: Status = .not_mapped,
 
     /// RB tree of VmArea.
-    const Tree = algorithm.RbTree(
+    const Tree = norn.RbTree(
         @This(),
         "rbnode",
         compareVmArea,
@@ -224,7 +224,7 @@ const VmStruct = struct {
     rbnode: Tree.Node,
 
     /// Rb tree of VmStruct.
-    const Tree = algorithm.RbTree(
+    const Tree = norn.RbTree(
         VmStruct,
         "rbnode",
         compareVmStruct,
