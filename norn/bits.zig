@@ -108,6 +108,72 @@ pub inline fn unset(T: type, val: T, comptime nth: anytype) T {
     return val & ~tobit(T, nth);
 }
 
+/// Embed a `value` into `n` at the specified `offset`.
+///
+/// - `n`: The original integer.
+/// - `value`: The value to embed. Can be any type whose size is the power of two and smaller than or equal to 8 bytes.
+/// - `offset`: The bit offset to embed the value.
+pub fn embed(n: anytype, value: anytype, comptime offset: usize) @TypeOf(n) {
+    const size_n = @bitSizeOf(@TypeOf(n));
+    const size_value = @bitSizeOf(@TypeOf(value));
+
+    if (size_value + offset > size_n) {
+        @compileError(std.fmt.comptimePrint(
+            "embed: offset out of range: {s}, {s}, {d}",
+            .{ @typeName(@TypeOf(n)), @typeName(@TypeOf(value)), offset },
+        ));
+    }
+
+    const N = @TypeOf(n);
+    const V = @TypeOf(value);
+    const RepV = RepInt(V);
+
+    var result: N = n;
+    const rep_value: RepV = @bitCast(value);
+
+    result &= ~@as(N, std.math.maxInt(RepV) << offset);
+    result |= @as(N, rep_value) << offset;
+    return result;
+}
+
+/// Extract a value of type `T`  from `value` at the specified `offset`.
+///
+/// - `T`: The type of the value to extract.
+/// - `value`: The value to extract from. Can be any type whose size is the power of two and smaller than or equal to 8 bytes.
+/// - `offset`: The bit offset to extract the value.
+pub fn extract(T: type, value: anytype, comptime offset: usize) T {
+    const size_T = @bitSizeOf(T);
+    const size_value = @bitSizeOf(@TypeOf(value));
+
+    if (size_T + offset > size_value) {
+        @compileError(std.fmt.comptimePrint(
+            "embed: offset out of range: {s}, {s}, {d}",
+            .{ @typeName(T), @typeName(@TypeOf(value)), offset },
+        ));
+    }
+
+    const RepV = RepInt(@TypeOf(value));
+    const RepT = RepInt(T);
+
+    const rep_value: RepV = @bitCast(value);
+    const t: RepT = @truncate(rep_value >> offset);
+    return @bitCast(t);
+}
+
+/// Get the representative integer type.
+fn RepInt(T: type) type {
+    return switch (@sizeOf(T)) {
+        1 => u8,
+        2 => u16,
+        4 => u32,
+        8 => u64,
+        else => @compileError(std.fmt.comptimePrint(
+            "Invalid argument to RepInt: {s}",
+            .{@typeName(T)},
+        )),
+    };
+}
+
 // =============================================================
 // Tests
 // =============================================================
