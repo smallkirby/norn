@@ -126,14 +126,15 @@ pub fn embed(n: anytype, value: anytype, comptime offset: usize) @TypeOf(n) {
 
     const N = @TypeOf(n);
     const V = @TypeOf(value);
+    const RepN = RepInt(N);
     const RepV = RepInt(V);
 
-    var result: N = n;
+    var result: RepN = @bitCast(n);
     const rep_value: RepV = @bitCast(value);
 
-    result &= ~@as(N, std.math.maxInt(RepV) << offset);
-    result |= @as(N, rep_value) << offset;
-    return result;
+    result &= ~@as(RepN, std.math.maxInt(RepV) << offset);
+    result |= @as(RepN, rep_value) << offset;
+    return @bitCast(result);
 }
 
 /// Extract a value of type `T`  from `value` at the specified `offset`.
@@ -147,7 +148,7 @@ pub fn extract(T: type, value: anytype, comptime offset: usize) T {
 
     if (size_T + offset > size_value) {
         @compileError(std.fmt.comptimePrint(
-            "embed: offset out of range: {s}, {s}, {d}",
+            "extract: offset out of range: {s}, {s}, {d}",
             .{ @typeName(T), @typeName(@TypeOf(value)), offset },
         ));
     }
@@ -221,6 +222,61 @@ test "unset" {
     try testing.expectEqual(0b0000_0000, unset(u8, 0b0000_0001, 0));
     try testing.expectEqual(0b0000_0000, unset(u8, 0b0001_0000, 4));
     try testing.expectEqual(0b0000_0000, unset(u8, 0b1000_0000, 7));
+}
+
+test "embed" {
+    const S = packed struct(u64) {
+        a: u8,
+        b: u8,
+        c: u16,
+        d: u32,
+    };
+    const s = S{ .a = 0x12, .b = 0x21, .c = 0x3456, .d = 0x789ABCDE };
+
+    try testing.expectEqual(
+        S{ .a = 0xFF, .b = 0x21, .c = 0x3456, .d = 0x789ABCDE },
+        embed(s, @as(u8, 0xFF), 0),
+    );
+    try testing.expectEqual(
+        S{ .a = 0x12, .b = 0xFF, .c = 0x3456, .d = 0x789ABCDE },
+        embed(s, @as(u8, 0xFF), 8),
+    );
+    try testing.expectEqual(
+        S{ .a = 0x12, .b = 0x21, .c = 0xFF, .d = 0x789ABCDE },
+        embed(s, @as(u16, 0xFF), 16),
+    );
+    try testing.expectEqual(
+        S{ .a = 0x12, .b = 0x21, .c = 0x3456, .d = 0xFFFFFFFF },
+        embed(s, @as(u32, 0xFFFFFFFF), 32),
+    );
+
+    try testing.expectEqual(
+        S{ .a = 0x12, .b = 0x21, .c = 0x3456, .d = 0x789A_FFFF },
+        embed(s, @as(u16, 0xFFFF), 32),
+    );
+    try testing.expectEqual(
+        S{ .a = 0x12, .b = 0x21, .c = 0x3456, .d = 0xFFFF_BCDE },
+        embed(s, @as(u16, 0xFFFF), 48),
+    );
+    try testing.expectEqual(
+        S{ .a = 0x12, .b = 0xFF, .c = 0xEEDD, .d = 0x789ABCCC },
+        embed(s, @as(u32, 0xCCEEDDFF), 8),
+    );
+}
+
+test "extract" {
+    const S = packed struct(u64) {
+        a: u8,
+        b: u8,
+        c: u16,
+        d: u32,
+    };
+    const s = S{ .a = 0x12, .b = 0x21, .c = 0x3456, .d = 0x789ABCDE };
+
+    try testing.expectEqual(@as(u8, 0x12), extract(u8, s, 0));
+    try testing.expectEqual(@as(u8, 0x21), extract(u8, s, 8));
+    try testing.expectEqual(@as(u16, 0x3456), extract(u16, s, 16));
+    try testing.expectEqual(@as(u32, 0x789ABCDE), extract(u32, s, 32));
 }
 
 // =============================================================

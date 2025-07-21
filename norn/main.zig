@@ -202,6 +202,11 @@ fn nornThread(initramfs: surtr.InitramfsInfo) !void {
     log.info("Starting scheduler...", .{});
     try norn.timer.init();
 
+    // Misc runtime tests.
+    if (norn.is_runtime_test) {
+        norn.mmio.performRtt();
+    }
+
     // PCI
     try norn.pci.init(norn.mem.general_allocator);
     norn.pci.debugPrintAllDevices();
