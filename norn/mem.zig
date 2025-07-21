@@ -67,6 +67,22 @@ pub const IoAddr = packed struct(u64) {
         return arch.read64(self);
     }
 
+    pub fn write8(self: IoAddr, value: u8) void {
+        arch.write8(self, value);
+    }
+
+    pub fn write16(self: IoAddr, value: u16) void {
+        arch.write16(self, value);
+    }
+
+    pub fn write32(self: IoAddr, value: u32) void {
+        arch.write32(self, value);
+    }
+
+    pub fn write64(self: IoAddr, value: u64) void {
+        arch.write64(self, value);
+    }
+
     pub inline fn add(self: IoAddr, offset: usize) IoAddr {
         return IoAddr{ ._virt = self._virt + offset };
     }

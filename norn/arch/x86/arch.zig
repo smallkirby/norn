@@ -131,6 +131,50 @@ pub fn read64(addr: IoAddr) u64 {
     );
 }
 
+/// Write a byte to a MMIO address.
+pub fn write8(addr: IoAddr, value: u8) void {
+    asm volatile (
+        \\mov %[value], (%[addr])
+        :
+        : [value] "r" (value),
+          [addr] "r" (addr._virt),
+        : "memory"
+    );
+}
+
+/// Write a word to a MMIO address.
+pub fn write16(addr: IoAddr, value: u16) void {
+    asm volatile (
+        \\mov %[value], (%[addr])
+        :
+        : [value] "r" (value),
+          [addr] "r" (addr._virt),
+        : "memory"
+    );
+}
+
+/// Write a dword to a MMIO address.
+pub fn write32(addr: IoAddr, value: u32) void {
+    asm volatile (
+        \\mov %[value], (%[addr])
+        :
+        : [value] "r" (value),
+          [addr] "r" (addr._virt),
+        : "memory"
+    );
+}
+
+/// Write a qword to a MMIO address.
+pub fn write64(addr: IoAddr, value: u64) void {
+    asm volatile (
+        \\mov %[value], (%[addr])
+        :
+        : [value] "r" (value),
+          [addr] "r" (addr._virt),
+        : "memory"
+    );
+}
+
 /// Initialize boot-time GDT.
 pub fn initEarlyGdt() void {
     return gdt.init();

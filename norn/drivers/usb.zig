@@ -16,6 +16,7 @@ var xhc: Xhc = undefined;
 /// Initialize USB driver.
 pub fn init(pci_device: *pci.Device, allocator: Allocator) UsbError!void {
     xhc = try Xhc.new(pci_device, allocator);
+    try xhc.reset();
 }
 
 // =============================================================
