@@ -13,6 +13,11 @@ operational_regs: Register(OperationalRegisters, .dword),
 /// Runtime registers.
 runtime_regs: Register(RuntimeRegisters, .dword),
 
+/// Command Ring.
+command_ring: ring.Ring = undefined,
+/// Event Ring.
+event_ring: ring.EventRing = undefined,
+
 /// Instantiate a new xHC from the given PCI device.
 pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
     if (pci_device.class != usb.class) {
@@ -54,10 +59,17 @@ pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
     const rts_off = capability_regs.read(.rtsoff) & ~@as(u64, 0b11111);
     const runtime_regs = @FieldType(Self, "runtime_regs").new(iobase.add(rts_off));
 
-    log.debug("xHC MMIO base         @ 0x{X:0>16}", .{iobase._virt});
-    log.debug("Capability Registers  @ 0x{X:0>16}", .{capability_regs._iobase._virt});
-    log.debug("Operational Registers @ 0x{X:0>16}", .{operational_regs._iobase._virt});
-    log.debug("Runtime Registers     @ 0x{X:0>16}", .{runtime_regs._iobase._virt});
+    {
+        const cap_regs = capability_regs;
+        log.debug("xHC MMIO base         @ 0x{X:0>16}", .{iobase._virt});
+        log.debug("Capability Registers  @ 0x{X:0>16}", .{capability_regs._iobase._virt});
+        log.debug("Operational Registers @ 0x{X:0>16}", .{operational_regs._iobase._virt});
+        log.debug("Runtime Registers     @ 0x{X:0>16}", .{runtime_regs._iobase._virt});
+        log.debug("xHC Capability Registers:", .{});
+        log.debug("  HCI Version : {X:0>4}", .{cap_regs.read(.hci_version)});
+        log.debug("  Max Slots   : {d}", .{cap_regs.read(.hcs_params1).maxslots});
+        log.debug("  Max Ports   : {d}", .{cap_regs.read(.hcs_params1).maxports});
+    }
 
     return .{
         .pci_device = pci_device,
@@ -87,9 +99,98 @@ pub fn reset(self: *Self) UsbError!void {
     while (self.operational_regs.read(.usbsts).cnr) {
         arch.relax();
     }
-
-    log.debug("Reset xHC completed", .{});
 }
+
+/// TODO doc
+pub fn setup(self: *Self) UsbError!void {
+    try self.initDeviceContext();
+    try self.initRings();
+}
+
+/// TODO doc
+pub fn run(self: *Self) void {
+    var usbcmd = self.operational_regs.read(.usbcmd);
+    usbcmd.rs = true;
+    self.operational_regs.write(.usbcmd, usbcmd);
+
+    while (self.operational_regs.read(.usbsts).hch) {
+        arch.relax();
+    }
+}
+
+/// Initialize device contexts.
+fn initDeviceContext(self: *Self) UsbError!void {
+    const dcbaa = try Dcbaa.init();
+    self.operational_regs.write(.dcbaap, dcbaa.dcbaap());
+}
+
+/// TODO doc
+fn initRings(self: *Self) UsbError!void {
+    const num_trbs_per_ring = mem.size_4kib / @sizeOf(Trb);
+
+    // Init Command Ring.
+    const command_ring = try ring.Ring.new(
+        num_trbs_per_ring,
+        general_allocator,
+    );
+    self.command_ring = command_ring;
+    self.operational_regs.write(
+        .crcr,
+        OperationalRegisters.CommandRingControl.new(command_ring),
+    );
+
+    // Init Event Ring.
+    const irs0 = self.operational_regs._iobase.add(RuntimeRegisters.irsOffset(0));
+    const event_ring = try ring.EventRing.new(irs0, general_allocator);
+    self.event_ring = event_ring;
+}
+
+// =============================================================
+// Data structures
+// =============================================================
+
+/// Device Context Base Address Array.
+const Dcbaa = struct {
+    /// Pointer to DCBAA.
+    _raw: *RawDcbaa,
+
+    const RawDcbaa = extern struct {
+        /// Pointers to device contexts.
+        entries: [std.math.maxInt(@FieldType(StructuralParameters1, "maxports"))]u64,
+
+        comptime {
+            norn.comptimeAssert(
+                @sizeOf(@This()) == 2040,
+                "Invalid DCBAA size: {d}",
+                .{@sizeOf(@This())},
+            );
+        }
+    };
+
+    /// Get the physical address of the DCBAA.
+    pub fn dcbaap(self: *const Dcbaa) Phys {
+        return mem.virt2phys(self._raw);
+    }
+
+    /// Initialize DCBAA at the given memory.
+    pub fn init() mem.MemError!Dcbaa {
+        const page = try page_allocator.allocPages(1, .normal);
+        const raw: *RawDcbaa = @ptrCast(page.ptr);
+        const storage: [*]u8 = @ptrCast(raw);
+
+        @memset(storage[0..@sizeOf(RawDcbaa)], 0);
+
+        return .{
+            ._raw = raw,
+        };
+    }
+
+    /// Deinitialize DCBAA.
+    pub fn deinit(self: *Dcbaa) void {
+        const ptr: [*]const u8 = @ptrCast(self._raw);
+        page_allocator.freePages(ptr[0..mem.size_4kib]);
+    }
+};
 
 // =============================================================
 // Registers
@@ -134,13 +235,42 @@ const OperationalRegisters = packed struct {
     /// Device Notification Control.
     dnctrl: u32,
     /// Command Ring Control,
-    crcr: u64,
+    crcr: CommandRingControl,
     /// Reserved.
     _reserved2: u128,
     /// Device Context Base Address Array Pointer.
     dcbaap: u64,
     /// Configure.
     config: ConfigureRegister,
+
+    const CommandRingControl = packed struct(u64) {
+        /// Ring Cycle State.
+        /// Indicates the xHC Consumer Cycle State (CCS).
+        /// Write is ignored if CRR is set.
+        rcs: u1,
+        /// Command Stop.
+        /// Writing 1 shall stop the operation of the Command Ring after the completion of the currently executing command.
+        cs: bool,
+        /// Command Abort.
+        /// Writing 1 shall immediately terminate the currently executing command.
+        ca: bool,
+        /// Command Ring Running. (read-only)
+        crr: bool,
+        /// Reserved.
+        _reserved1: u2 = 0,
+        /// Pointer to the Command Ring.
+        command_ring: u58,
+
+        pub fn new(command_ring: ring.Ring) CommandRingControl {
+            return .{
+                .rcs = command_ring.pcs,
+                .cs = false,
+                .ca = false,
+                .crr = false,
+                .command_ring = @intCast(mem.virt2phys(command_ring.trbs.ptr) >> 6),
+            };
+        }
+    };
 };
 
 const PortRegisterSet = packed struct(u128) {
@@ -305,6 +435,19 @@ const RuntimeRegisters = packed struct(u256) {
     mfindex: u32,
     /// Reserved.
     _reserved: u224,
+
+    /// Get the offset in bytes of Interrupter Register Set at the given index.
+    pub fn irsOffset(comptime index: usize) usize {
+        comptime {
+            norn.comptimeAssert(
+                index < 1024,
+                "Invalid Interrupter Register Set index: {d}",
+                .{index},
+            );
+        }
+
+        return @sizeOf(RuntimeRegisters) + (index * @sizeOf(regs.InterrupterRegisterSet));
+    }
 };
 
 /// xHC Doorbell Register.
@@ -337,46 +480,6 @@ const CapabilityParameters1 = packed struct(u32) {
     xecp: u16,
 };
 
-/// Interrupt Register Set in the xHC's Runtime Registers.
-///
-/// An Interrupter manages events and their notification to the host.
-/// Multiple interrupters can be used to distribute the load of event processing.
-/// But we use only one interrupter (primaly interrupter) in this implementation.
-const InterrupterRegisterSet = packed struct(u256) {
-    /// Interrupter Management Register.
-    iman: InterrupterManagementRegister,
-    /// Interrupter Moderation Register.
-    imod: InterrupterModerationRegister,
-
-    /// Event Ring Segment Table Size Register.
-    erstsz: u32,
-    /// Reserved.
-    _reserved: u32,
-    /// Event Ring Segment Table Base Address Register.
-    erstba: u64,
-    /// Event Ring Dequeue Pointer Register.
-    /// 4 LSBs are used as DESI and EHB.
-    erdp: u64,
-};
-
-/// Interrupter Management Register (IMAN) that allows system software to enable, disable, and detect xHC interrupts.
-const InterrupterManagementRegister = packed struct(u32) {
-    /// Interrupt Pending (IP)
-    ip: bool,
-    /// Interrupt Enable (IE)
-    ie: bool,
-    /// Reserved.
-    _reserved: u30,
-};
-
-/// Interrupter Moderation Register (IMOD) that controls the moderation feature of an Interrupter.
-const InterrupterModerationRegister = packed struct(u32) {
-    /// Interrupter Moderation Interval, in 250ns increments (IMODI).
-    imodi: u16,
-    /// Reserved.
-    _reserved: u16,
-};
-
 // =============================================================
 // Imports
 // =============================================================
@@ -384,6 +487,10 @@ const InterrupterModerationRegister = packed struct(u32) {
 const std = @import("std");
 const log = std.log.scoped(.usb);
 const Allocator = std.mem.Allocator;
+
+const trbs = @import("trbs.zig");
+const regs = @import("regs.zig");
+const ring = @import("ring.zig");
 
 const norn = @import("norn");
 const arch = norn.arch;
@@ -393,3 +500,7 @@ const pci = norn.pci;
 const usb = norn.drivers.usb;
 const Phys = mem.Phys;
 const Register = norn.mmio.Register;
+const Trb = trbs.Trb;
+
+const general_allocator = norn.mem.general_allocator;
+const page_allocator = norn.mem.page_allocator;
