@@ -105,6 +105,7 @@ pub fn reset(self: *Self) UsbError!void {
 pub fn setup(self: *Self) UsbError!void {
     try self.initDeviceContext();
     try self.initRings();
+    try self.initPorts();
 }
 
 /// TODO doc
@@ -143,6 +144,29 @@ fn initRings(self: *Self) UsbError!void {
     const irs0 = self.operational_regs._iobase.add(RuntimeRegisters.irsOffset(0));
     const event_ring = try ring.EventRing.new(irs0, general_allocator);
     self.event_ring = event_ring;
+}
+
+/// TODO doc
+fn initPorts(self: *Self) UsbError!void {
+    const max_ports = self.capability_regs.read(.hcs_params1).maxports;
+
+    for (0..max_ports) |n| {
+        const prs = PortRegisterSet.getAt(self.operational_regs._iobase, n);
+        var portsc = prs.read(.portsc);
+        if (!portsc.ccs) {
+            continue;
+        }
+        log.debug("Port {d} is connected.", .{n});
+
+        portsc.pr = true;
+        portsc.csc = true;
+        prs.write(.portsc, portsc);
+
+        while (prs.read(.portsc).pr) {
+            arch.relax();
+        }
+        log.debug("Port {d} reset completed.", .{n});
+    }
 }
 
 // =============================================================
@@ -273,7 +297,13 @@ const OperationalRegisters = packed struct {
     };
 };
 
+/// Set of registers associated with a USB port.
 const PortRegisterSet = packed struct(u128) {
+    /// MMIO register type.
+    const RegisterType = Register(PortRegisterSet, .dword);
+    /// Offset from the Operational Registers base.
+    const address_base = 0x400;
+
     /// Port Status and Control.
     portsc: PortStatusControlRegister,
     /// Port Power Management Status and Control.
@@ -282,13 +312,27 @@ const PortRegisterSet = packed struct(u128) {
     portli: u32,
     /// Port Hardware LPM Control.
     porthlpmc: u32,
+
+    /// Get the Port Register Set of the given port number.
+    inline fn getAt(
+        operational_base: mem.IoAddr,
+        port_number: usize,
+    ) RegisterType {
+        return RegisterType.new(operational_base.add(address_base + port_number * 0x10));
+    }
 };
 
 /// PORTSC.
 ///
 /// Can be used to determine how many ports need to be serviced.
 const PortStatusControlRegister = packed struct(u32) {
+    /// MMIO register type.
+    const RegisterType = Register(PortStatusControlRegister, .dword);
+    /// Offset from the Port Register Set base.
+    const address_base = 0x0;
+
     /// Current Connect Status.
+    /// If true, the port is connected to a device.
     ccs: bool,
     /// Port Enabled/Disabled.
     ped: bool,
@@ -498,6 +542,7 @@ const bits = norn.bits;
 const mem = norn.mem;
 const pci = norn.pci;
 const usb = norn.drivers.usb;
+const IoAddr = mem.IoAddr;
 const Phys = mem.Phys;
 const Register = norn.mmio.Register;
 const Trb = trbs.Trb;

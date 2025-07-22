@@ -76,17 +76,15 @@ fn ConfigurationSpaceGenerator(layout: ?Header.Layout) type {
         }
 
         /// Read a value from the PCI configuration space at the given offset.
+        ///
+        /// TODO: Use mmio.Register.
         pub fn readAt(self: Self, T: type, offset: RegisterOffset) T {
             const access_offset = util.rounddown(offset, access_width);
             const offset_diff = offset - access_offset;
 
-            var raw_data: [@sizeOf(T) + access_width]u8 = undefined;
-            comptime var remain: usize = @sizeOf(T);
+            var raw_data: [util.roundup(@sizeOf(T), access_width) + access_width]u8 = undefined;
             comptime var i: RegisterOffset = 0;
-            inline while (remain > 0) : ({
-                remain -|= access_width;
-                i += 1;
-            }) {
+            inline while (i < raw_data.len / access_width) : (i += 1) {
                 const current_offset = access_offset + i * access_width;
                 setConfigAddress(.{
                     .register = current_offset,
@@ -118,6 +116,8 @@ fn ConfigurationSpaceGenerator(layout: ?Header.Layout) type {
         }
 
         /// TODO: doc
+        ///
+        /// TODO: Use mmio.Register
         pub fn write(self: Self, comptime field: HeaderType.FieldEnum, value: HeaderType.typeOf(field)) void {
             // Since all writes must be 32-bit aligned, we need to write the whole DWORD.
             const exact_offset = HeaderType.offsetOf(field);
@@ -558,6 +558,56 @@ const Bar = packed struct(u32) {
             1 => .{ .pio = @bitCast(self._data) },
         };
     }
+};
+
+/// Capability ID.
+const CapabilityId = enum(u8) {
+    /// MSI
+    msi = 5,
+    /// MSI-X
+    msix = 17,
+
+    _,
+};
+
+/// Entries of capability list.
+///
+/// The structure is type-specific.
+const CapabilityHeader = packed struct(u16) {
+    /// Capability ID.
+    id: CapabilityId,
+    /// Offset from the configuration space to the next capability.
+    next: RegisterOffset,
+
+    // Type-specific data follows...
+
+    /// Iterator for capabilities list.
+    const Iterator = struct {
+        /// Configuration space of the device.
+        _config: ConfigurationSpace,
+        /// Offset to the current capability.
+        /// 0 means the iterator is at the end.
+        _current: RegisterOffset,
+
+        fn new(config: ConfigurationSpace) PciError!Iterator {
+            const cap_pointer = switch (config) {
+                inline .standard, .bridge => |c| c.read(.cap_pointer),
+                else => return PciError.NotSupported,
+            };
+            return .{
+                ._config = config,
+                ._current = cap_pointer,
+            };
+        }
+
+        fn next(self: *Iterator) ?CapabilityHeader {
+            if (self._current == 0) return null;
+
+            const cap = self._config.readAt(CapabilityHeader, self._current);
+            self._current = cap.next;
+            return cap;
+        }
+    };
 };
 
 /// PCI device.
