@@ -60,6 +60,8 @@ fn ConfigurationSpaceGenerator(layout: ?Header.Layout) type {
         const config_data = 0xCFC;
         /// Alignment for register offsets to ensure 32-bit access.
         const register_align = @as(RegisterOffset, 0b11);
+        /// Access width in bytes.
+        const access_width = @sizeOf(u32);
 
         /// Invalid Vendor ID.
         const invalid_vendor_id: VendorId = 0xFFFF;
@@ -73,35 +75,46 @@ fn ConfigurationSpaceGenerator(layout: ?Header.Layout) type {
             };
         }
 
+        /// Read a value from the PCI configuration space at the given offset.
+        pub fn readAt(self: Self, T: type, offset: RegisterOffset) T {
+            const access_offset = util.rounddown(offset, access_width);
+            const offset_diff = offset - access_offset;
+
+            var raw_data: [@sizeOf(T) + access_width]u8 = undefined;
+            comptime var remain: usize = @sizeOf(T);
+            comptime var i: RegisterOffset = 0;
+            inline while (remain > 0) : ({
+                remain -|= access_width;
+                i += 1;
+            }) {
+                const current_offset = access_offset + i * access_width;
+                setConfigAddress(.{
+                    .register = current_offset,
+                    .function = self._function,
+                    .device = self._device,
+                    .bus = self._bus,
+                });
+
+                const value = arch.in(u32, config_data);
+                const raw_data_offset = i * access_width;
+                @memcpy(
+                    raw_data[raw_data_offset .. raw_data_offset + access_width],
+                    std.mem.asBytes(&value)[0..],
+                );
+            }
+
+            return std.mem.bytesToValue(
+                T,
+                raw_data[offset_diff .. offset_diff + @sizeOf(T)],
+            );
+        }
+
         /// Read a value of the given field from the PCI configuration space.
         ///
         /// This function uses a configuration space access mechanism #1 (PIO access).
         /// This function is responsible for correctly aligning an access offset and a size.
         pub fn read(self: Self, comptime field: HeaderType.FieldEnum) HeaderType.typeOf(field) {
-            // Since all reads must be 32-bit aligned, we need to read the whole DWORD.
-            const exact_offset = HeaderType.offsetOf(field);
-            const aligned_offset = exact_offset & ~register_align;
-            const T = HeaderType.typeOf(field);
-
-            // Configure CONFIG_ADDRESS register.
-            setConfigAddress(.{
-                .register = aligned_offset,
-                .function = self._function,
-                .device = self._device,
-                .bus = self._bus,
-            });
-
-            // Read a value and extract the required bits.
-            const result = arch.in(u32, config_data);
-            const shifted_result = result >> ((exact_offset - aligned_offset) * 8);
-            const truncated_result = switch (@bitSizeOf(T)) {
-                8 => @as(u8, @truncate(shifted_result)),
-                16 => @as(u16, @truncate(shifted_result)),
-                24 => @as(u24, @truncate(shifted_result)),
-                32 => @as(u32, @truncate(shifted_result)),
-                else => @compileError("Unsupported type size for PCI configuration space read"),
-            };
-            return @bitCast(truncated_result);
+            return self.readAt(HeaderType.typeOf(field), HeaderType.offsetOf(field));
         }
 
         /// TODO: doc
@@ -172,6 +185,12 @@ const ConfigurationSpace = union(Header.Layout) {
     standard: ConfigurationSpace0,
     bridge: ConfigurationSpace1,
     cardbus_bridge: ConfigurationSpaceAny,
+
+    pub fn readAt(self: ConfigurationSpace, T: type, offset: RegisterOffset) T {
+        return switch (self) {
+            inline else => |c| c.readAt(T, offset),
+        };
+    }
 
     /// Read the configuration space to instantiate the appropriate configuration space reader/writer.
     fn specialize(bus: BusNumber, device: DeviceNumber, function: FunctionNumber) PciError!ConfigurationSpace {
@@ -755,3 +774,4 @@ const Allocator = std.mem.Allocator;
 const norn = @import("norn");
 const arch = norn.arch;
 const rtt = norn.rtt;
+const util = norn.util;

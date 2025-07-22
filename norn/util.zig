@@ -1,13 +1,19 @@
 //! This file provides a miscellaneous utilities.
 
 /// Round up the value to the given alignment.
-pub inline fn roundup(value: usize, alignment: usize) usize {
-    return (value + alignment - 1) & ~(alignment - 1);
+///
+/// If the type of `value` is a comptime integer, it's regarded as `usize`.
+pub inline fn roundup(value: anytype, alignment: @TypeOf(value)) @TypeOf(value) {
+    const T = if (@typeInfo(@TypeOf(value)) == .comptime_int) usize else @TypeOf(value);
+    return (value + alignment - 1) & ~@as(T, alignment - 1);
 }
 
 /// Round down the value to the given alignment.
-pub inline fn rounddown(value: usize, alignment: usize) usize {
-    return value & ~(alignment - 1);
+///
+/// If the type of `value` is a comptime integer, it's regarded as `usize`.
+pub inline fn rounddown(value: anytype, alignment: @TypeOf(value)) @TypeOf(value) {
+    const T = if (@typeInfo(@TypeOf(value)) == .comptime_int) usize else @TypeOf(value);
+    return value & ~@as(T, alignment - 1);
 }
 
 /// Returns true if the lhs pointer is larger than or equal to the rhs pointer.
