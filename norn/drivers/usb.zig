@@ -25,6 +25,9 @@ pub fn init(pci_device: *pci.Device, allocator: Allocator) UsbError!void {
 
     xhc.run();
     log.debug("xHC has started running.", .{});
+
+    try xhc.registerDevices(allocator);
+    log.debug("{d} devices registered.", .{xhc.getNumberOfDevices()});
 }
 
 // =============================================================

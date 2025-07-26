@@ -2,6 +2,9 @@ const UsbError = usb.UsbError;
 
 const Self = @This();
 
+/// Type of list of USB devices.
+const DeviceList = ArrayList(*Device);
+
 /// xHC PCI device.
 pci_device: *pci.Device,
 /// I/O base address of the xHC.
@@ -17,6 +20,9 @@ runtime_regs: Register(RuntimeRegisters, .dword),
 command_ring: ring.Ring = undefined,
 /// Event Ring.
 event_ring: ring.EventRing = undefined,
+
+/// USB devices connected to the xHC.
+devices: DeviceList,
 
 /// Instantiate a new xHC from the given PCI device.
 pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
@@ -77,6 +83,8 @@ pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
         .capability_regs = capability_regs,
         .operational_regs = operational_regs,
         .runtime_regs = runtime_regs,
+
+        .devices = DeviceList.init(allocator),
     };
 }
 
@@ -101,14 +109,13 @@ pub fn reset(self: *Self) UsbError!void {
     }
 }
 
-/// TODO doc
+/// Setup necessary internal structures.
 pub fn setup(self: *Self) UsbError!void {
     try self.initDeviceContext();
     try self.initRings();
-    try self.initPorts();
 }
 
-/// TODO doc
+/// Start running the xHC.
 pub fn run(self: *Self) void {
     var usbcmd = self.operational_regs.read(.usbcmd);
     usbcmd.rs = true;
@@ -146,27 +153,32 @@ fn initRings(self: *Self) UsbError!void {
     self.event_ring = event_ring;
 }
 
-/// TODO doc
-fn initPorts(self: *Self) UsbError!void {
+/// Scan all ports and register connected devices.
+pub fn registerDevices(self: *Self, allocator: Allocator) UsbError!void {
     const max_ports = self.capability_regs.read(.hcs_params1).maxports;
 
+    // Scan all ports.
     for (0..max_ports) |n| {
-        const prs = PortRegisterSet.getAt(self.operational_regs._iobase, n);
-        var portsc = prs.read(.portsc);
+        const prs = regs.PortRegisterSet.getAt(self.operational_regs._iobase, n);
+        const portsc = prs.read(.portsc);
         if (!portsc.ccs) {
             continue;
         }
-        log.debug("Port {d} is connected.", .{n});
 
-        portsc.pr = true;
-        portsc.csc = true;
-        prs.write(.portsc, portsc);
+        const device = try allocator.create(Device);
+        defer allocator.destroy(device);
+        device.* = Device.new(n, prs);
 
-        while (prs.read(.portsc).pr) {
-            arch.relax();
-        }
+        try device.resetPort();
         log.debug("Port {d} reset completed.", .{n});
+
+        try self.devices.append(device);
     }
+}
+
+/// Get the number of connected devices.
+pub fn getNumberOfDevices(self: *Self) usize {
+    return self.devices.items.len;
 }
 
 // =============================================================
@@ -295,102 +307,6 @@ const OperationalRegisters = packed struct {
             };
         }
     };
-};
-
-/// Set of registers associated with a USB port.
-const PortRegisterSet = packed struct(u128) {
-    /// MMIO register type.
-    const RegisterType = Register(PortRegisterSet, .dword);
-    /// Offset from the Operational Registers base.
-    const address_base = 0x400;
-
-    /// Port Status and Control.
-    portsc: PortStatusControlRegister,
-    /// Port Power Management Status and Control.
-    portpmsc: u32,
-    /// Port Link Info.
-    portli: u32,
-    /// Port Hardware LPM Control.
-    porthlpmc: u32,
-
-    /// Get the Port Register Set of the given port number.
-    inline fn getAt(
-        operational_base: mem.IoAddr,
-        port_number: usize,
-    ) RegisterType {
-        return RegisterType.new(operational_base.add(address_base + port_number * 0x10));
-    }
-};
-
-/// PORTSC.
-///
-/// Can be used to determine how many ports need to be serviced.
-const PortStatusControlRegister = packed struct(u32) {
-    /// MMIO register type.
-    const RegisterType = Register(PortStatusControlRegister, .dword);
-    /// Offset from the Port Register Set base.
-    const address_base = 0x0;
-
-    /// Current Connect Status.
-    /// If true, the port is connected to a device.
-    ccs: bool,
-    /// Port Enabled/Disabled.
-    ped: bool,
-    /// Reserved.
-    _reserved1: u1,
-    /// Over-current Active.
-    oca: bool,
-    /// Port Reset.
-    pr: bool,
-    /// Port Link State.
-    pls: u4,
-    /// Port Power.
-    pp: bool,
-    /// Port Speed.
-    speed: PortSpeed,
-    /// Port Indicator Control.
-    pic: u2,
-    /// Port Link State Write Strobe.
-    lws: bool,
-    /// Connect Status Change.
-    /// This bit is RW1CS (Sticky-Write-1-to-clear status).
-    /// Writing 1 to this bit clears the status, and 0 has no effect.
-    csc: bool,
-    /// Port Enabled/Disabled Change.
-    pec: bool,
-    /// Warm Port Reset Change.
-    wrc: bool,
-    /// Over-current Change.
-    occ: bool,
-    /// Port Reset Change.
-    prc: bool,
-    /// Port Link State Change.
-    plc: bool,
-    /// Port Config Error Change.
-    cec: bool,
-    /// Cold Attach Status.
-    cas: bool,
-    /// Wake on Connect Enable.
-    wce: bool,
-    /// Wake on Disconnect Enable.
-    wde: bool,
-    /// Wake on Over-current Enable.
-    woe: bool,
-    /// Reserved.
-    _reserved2: u2,
-    /// Device Removable.
-    dr: bool,
-    /// Warm Port Reset.
-    wpr: bool,
-};
-
-const PortSpeed = enum(u4) {
-    invalid = 0,
-    full = 1,
-    low = 2,
-    high = 3,
-    super = 4,
-    super_plus = 5,
 };
 
 /// USB Command Register. (USBCMD)
@@ -531,10 +447,12 @@ const CapabilityParameters1 = packed struct(u32) {
 const std = @import("std");
 const log = std.log.scoped(.usb);
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 
 const trbs = @import("trbs.zig");
 const regs = @import("regs.zig");
 const ring = @import("ring.zig");
+const Device = @import("Device.zig");
 
 const norn = @import("norn");
 const arch = norn.arch;
