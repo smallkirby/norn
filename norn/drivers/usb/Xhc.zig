@@ -113,6 +113,7 @@ pub fn reset(self: *Self) UsbError!void {
 pub fn setup(self: *Self) UsbError!void {
     try self.initDeviceContext();
     try self.initRings();
+    try self.enableInterrupt();
 }
 
 /// Start running the xHC.
@@ -151,6 +152,24 @@ fn initRings(self: *Self) UsbError!void {
     const irs0 = self.operational_regs._iobase.add(RuntimeRegisters.irsOffset(0));
     const event_ring = try ring.EventRing.new(irs0, general_allocator);
     self.event_ring = event_ring;
+}
+
+/// Enable the xHC interrupt.
+fn enableInterrupt(self: *Self) UsbError!void {
+    const irs0 = RuntimeRegisters.getIrsAt(self.operational_regs._iobase, 0);
+
+    var imod = irs0.read(.imod);
+    imod.imodi = 4000; // 250 * 4000 ns == 1ms
+    irs0.write(.imod, imod);
+
+    var iman = irs0.read(.iman);
+    iman.ie = true; // Enable interrupt
+    iman.ip = true; // Clear Interrupt pending
+    irs0.write(.iman, iman);
+
+    var usbcmd = self.operational_regs.read(.usbcmd);
+    usbcmd.inte = true; // Enable interrupt
+    self.operational_regs.write(.usbcmd, usbcmd);
 }
 
 /// Scan all ports and register connected devices.
@@ -407,6 +426,13 @@ const RuntimeRegisters = packed struct(u256) {
         }
 
         return @sizeOf(RuntimeRegisters) + (index * @sizeOf(regs.InterrupterRegisterSet));
+    }
+
+    /// Get the Interrupter Register Set at the given index.
+    pub fn getIrsAt(operational_base: IoAddr, comptime index: usize) regs.InterrupterRegisterSet.RegisterType {
+        return regs.InterrupterRegisterSet.get(
+            operational_base.add(irsOffset(index)),
+        );
     }
 };
 

@@ -2,6 +2,8 @@
 ///
 /// An Interrupter manages events and their notification to the host.
 pub const InterrupterRegisterSet = packed struct(u256) {
+    pub const RegisterType = Register(InterrupterRegisterSet, .dword);
+
     /// Interrupter Management Register.
     iman: InterrupterManagementRegister,
     /// Interrupter Moderation Register.
@@ -16,11 +18,16 @@ pub const InterrupterRegisterSet = packed struct(u256) {
     /// Event Ring Dequeue Pointer Register.
     /// 4 LSBs are used as DESI and EHB.
     erdp: u64,
+
+    /// Create a reader / writer for the Interrupter Register Set.
+    pub inline fn get(addr: IoAddr) RegisterType {
+        return RegisterType.new(addr);
+    }
 };
 
 /// Interrupter Management Register (IMAN) that allows system software to enable, disable, and detect xHC interrupts.
 pub const InterrupterManagementRegister = packed struct(u32) {
-    /// Interrupt Pending (IP)
+    /// Interrupt Pending (IP). RW1C.
     ip: bool,
     /// Interrupt Enable (IE)
     ie: bool,

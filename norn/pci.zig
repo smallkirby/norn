@@ -76,8 +76,6 @@ fn ConfigurationSpaceGenerator(layout: ?Header.Layout) type {
         }
 
         /// Read a value from the PCI configuration space at the given offset.
-        ///
-        /// TODO: Use mmio.Register.
         pub fn readAt(self: Self, T: type, offset: RegisterOffset) T {
             const access_offset = util.rounddown(offset, access_width);
             const offset_diff = offset - access_offset;
@@ -115,9 +113,55 @@ fn ConfigurationSpaceGenerator(layout: ?Header.Layout) type {
             return self.readAt(HeaderType.typeOf(field), HeaderType.offsetOf(field));
         }
 
-        /// TODO: doc
+        /// Write a value to the PCI configuration space at the given offset.
+        pub fn writeAt(self: Self, value: anytype, offset: RegisterOffset) void {
+            const T = @TypeOf(value);
+
+            const data = std.mem.asBytes(&value);
+            var data_offset: RegisterOffset = 0;
+            var remain: usize = @sizeOf(T);
+            while (remain > 0) {
+                const current_offset = offset + data_offset;
+                const access_offset = util.rounddown(current_offset, access_width);
+                const offset_diff = current_offset - access_offset;
+                const data_size = @min(remain, access_width - offset_diff);
+                var current_data: [4]u8 = undefined;
+
+                setConfigAddress(.{
+                    .register = access_offset,
+                    .function = self._function,
+                    .device = self._device,
+                    .bus = self._bus,
+                });
+
+                if (offset_diff != 0 or remain < access_width) {
+                    const data_read = arch.in(u32, config_data);
+                    @memcpy(
+                        current_data[0..access_width],
+                        std.mem.asBytes(&data_read)[0..access_width],
+                    );
+                }
+                @memcpy(
+                    current_data[offset_diff .. offset_diff + data_size],
+                    data[data_offset .. data_offset + data_size],
+                );
+                arch.out(
+                    u32,
+                    @as(u32, @bitCast(current_data)),
+                    config_data,
+                );
+
+                data_offset += data_size;
+                remain -= data_size;
+            }
+        }
+
+        /// Write a value to the given field of the PCI configuration space.
         ///
-        /// TODO: Use mmio.Register
+        /// This function uses a configuration space access mechanism #1 (PIO access).
+        /// This function is responsible for correctly aligning an access offset and a size.
+        ///
+        /// TODO: Use writeAt().
         pub fn write(self: Self, comptime field: HeaderType.FieldEnum, value: HeaderType.typeOf(field)) void {
             // Since all writes must be 32-bit aligned, we need to write the whole DWORD.
             const exact_offset = HeaderType.offsetOf(field);
@@ -190,6 +234,12 @@ const ConfigurationSpace = union(Header.Layout) {
         return switch (self) {
             inline else => |c| c.readAt(T, offset),
         };
+    }
+
+    pub fn writeAt(self: ConfigurationSpace, value: anytype, offset: RegisterOffset) void {
+        switch (self) {
+            inline else => |c| c.writeAt(value, offset),
+        }
     }
 
     /// Read the configuration space to instantiate the appropriate configuration space reader/writer.
@@ -600,12 +650,21 @@ const CapabilityHeader = packed struct(u16) {
             };
         }
 
+        fn poke(self: *const Iterator) ?CapabilityHeader {
+            if (self._current == 0) return null;
+            return self._config.readAt(CapabilityHeader, self._current);
+        }
+
         fn next(self: *Iterator) ?CapabilityHeader {
             if (self._current == 0) return null;
 
             const cap = self._config.readAt(CapabilityHeader, self._current);
             self._current = cap.next;
             return cap;
+        }
+
+        fn current(self: *const Iterator) RegisterOffset {
+            return self._current;
         }
     };
 };
@@ -659,6 +718,69 @@ pub const Device = struct {
             },
         }
     }
+
+    /// Setup MSI.
+    pub fn initMsi(self: *Self, dest: u8, vector: u8) PciError!void {
+        var cap_iter = try CapabilityHeader.Iterator.new(self.config);
+        const msi_offset = blk: {
+            while (cap_iter.poke()) |cap| : (_ = cap_iter.next()) {
+                if (cap.id == .msi) {
+                    break :blk cap_iter.current();
+                }
+            } else {
+                return PciError.NotFound;
+            }
+        };
+
+        // Enable MSI.
+        const control_offset = msi_offset + @offsetOf(MsiCapability, "control");
+        var control = self.config.readAt(MsiCapability.MessageControl, control_offset);
+        norn.rtt.expectEqual(0, control._reserved);
+        if (!control.address64_capable) {
+            log.err("Expected 64-bit MSI address capability, but the device does not support it.", .{});
+            return PciError.NotSupported;
+        }
+
+        control.enable = true;
+        control.multi_enable = 0;
+        self.config.writeAt(control, control_offset);
+
+        // Set address and data.
+        const addr_offset = msi_offset + @offsetOf(MsiCapability, "addr");
+        const data_offset = msi_offset + @offsetOf(MsiCapability, "data");
+        const addr = arch.msi.Address.new(dest);
+        const data = arch.msi.Data.new(vector);
+        self.config.writeAt(addr, addr_offset);
+        self.config.writeAt(data, data_offset);
+    }
+};
+
+const MsiCapability = packed struct {
+    /// Capability list header.
+    header: CapabilityHeader,
+    /// Message control.
+    control: MessageControl,
+    /// Message address register.
+    addr: arch.msi.Address,
+    /// Reserved.
+    _reserved: u32 = 0,
+    /// Message data register.
+    data: arch.msi.Data,
+
+    const MessageControl = packed struct(u16) {
+        /// MSI Enable.
+        enable: bool,
+        /// Number of vectors that the device requests. Read-only.
+        multi_capable: u3,
+        /// Number of vectors to enable.
+        multi_enable: u3,
+        /// 64 bit address capable. Read-only.
+        address64_capable: bool,
+        /// Per-vector mask is supported. Read-only.
+        per_vector_capable: bool,
+        /// Reserved.
+        _reserved: u7 = 0,
+    };
 };
 
 /// Initialize the PCI subsystem.

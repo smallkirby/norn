@@ -1,3 +1,4 @@
+pub const msi = @import("msi.zig");
 pub const mp = @import("mp.zig");
 pub const task = @import("task.zig");
 
@@ -243,7 +244,7 @@ pub fn setFs(base: u64) void {
 }
 
 /// Set the interrupt handler.
-pub fn setInterruptHandler(vector: u8, handler: interrupt.Handler) ArchError!void {
+pub fn setInterruptHandler(vector: u8, handler: interrupt.Handler) error{AlreadyRegistered}!void {
     return intr.setHandler(vector, handler);
 }
 

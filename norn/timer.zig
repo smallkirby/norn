@@ -24,8 +24,6 @@ pub fn init() TimerError!void {
     tsc_freq_khz = try calibrateTsc();
     log.info("TSC frequency: {d} KHz", .{tsc_freq_khz});
 
-    norn.rtt.expect(!arch.isIrqEnabled());
-
     // Initialize the jiffies counter.
     jiffies = 0;
 

@@ -2,6 +2,8 @@
 pub const VectorTable = enum(u8) {
     /// Timer interrupt.
     timer = 0x20,
+    /// xHC interrupt.
+    usb = 0x21,
     /// Spurious interrupt.
     spurious = 0xFF,
 };
