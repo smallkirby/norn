@@ -160,6 +160,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 /// and the initial task is launched.
 fn nornThread(initramfs: surtr.InitramfsInfo) !void {
     norn.rtt.expectEqual(false, norn.arch.isIrqEnabled());
+    norn.arch.enableIrq();
 
     // Initialize filesystem.
     try norn.fs.init();
@@ -217,6 +218,7 @@ fn nornThread(initramfs: surtr.InitramfsInfo) !void {
 
     // Start the scheduler.
     // This function never returns.
+    norn.sched.unlock();
     norn.sched.schedule();
 
     // Unreachable.

@@ -17,6 +17,8 @@ var runq: *ThreadList linksection(pcpu.section) = undefined;
 var current_task: *Thread linksection(pcpu.section) = undefined;
 /// Whether the scheduler is initialized for this CPU.
 var is_initialized: bool linksection(pcpu.section) = false;
+/// True once main thread first called `schedule()` function.
+var unlocked: bool linksection(pcpu.section) = false;
 
 /// Initialize the scheduler for this CPU.
 ///
@@ -47,10 +49,21 @@ pub fn runInitialKernelThread() noreturn {
     norn.arch.task.initialSwitchTo(init);
 }
 
+/// Allow the timer interrupt to schedule the next task.
+pub fn unlock() void {
+    norn.rtt.expect(!pcpu.get(&unlocked));
+    pcpu.set(&unlocked, true);
+}
+
 /// Schedule the next task.
 pub fn schedule() void {
     _ = arch.disableIrq();
     arch.getLocalApic().eoi();
+
+    if (!pcpu.get(&unlocked)) {
+        @branchHint(.unlikely);
+        return;
+    }
 
     const rq: *ThreadList = getRunQueue();
     const cur: *Thread = getCurrentTask();
