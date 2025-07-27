@@ -151,6 +151,17 @@ const PortSpeed = enum(u4) {
     high = 3,
     super = 4,
     super_plus = 5,
+
+    pub fn maxPacketSize(self: PortSpeed) u16 {
+        return switch (self) {
+            .invalid => 0,
+            .full => 8,
+            .low => 8,
+            .high => 64,
+            .super => 512,
+            .super_plus => 512,
+        };
+    }
 };
 
 /// Doorbell Register (DB).

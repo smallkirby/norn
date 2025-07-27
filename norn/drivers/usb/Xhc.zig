@@ -23,6 +23,12 @@ command_ring: ring.Ring = undefined,
 /// Event Ring.
 event_ring: ring.EventRing = undefined,
 
+/// DCBAA.
+///
+/// Device Context pointed to by DCBAA entry is owned by the xHC.
+/// Software must not modify them.
+dcbaa: Dcbaa,
+
 /// USB devices connected to the xHC.
 devices: DeviceList,
 
@@ -84,6 +90,10 @@ pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
         norn.rtt.expectEqual(0x0100, cap_regs.read(.hci_version));
     }
 
+    // Init DCBAA.
+    const dcbaa = try Dcbaa.init();
+    operational_regs.write(.dcbaap, dcbaa.dcbaap());
+
     return .{
         .pci_device = pci_device,
         .iobase = iobase,
@@ -91,6 +101,8 @@ pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
         .operational_regs = operational_regs,
         .runtime_regs = runtime_regs,
         .doorbells = doorbells,
+
+        .dcbaa = dcbaa,
 
         .devices = DeviceList.init(allocator),
     };
@@ -101,9 +113,21 @@ pub fn reset(self: *Self) UsbError!void {
     // Check if xHC is halted.
     norn.rtt.expect(self.operational_regs.read(.usbsts).hch);
 
-    // Start reset.
+    // Stop xHC.
     var command = self.operational_regs.read(.usbcmd);
-    command.rs = true;
+    command.inte = false;
+    command.hsee = false;
+    command.ewe = false;
+    self.operational_regs.write(.usbcmd, command);
+
+    // Wait until the xHC stops.
+    while (!self.operational_regs.read(.usbsts).hch) {
+        arch.relax();
+    }
+
+    // Reset xHC.
+    command = self.operational_regs.read(.usbcmd);
+    command.hc_rst = true;
     self.operational_regs.write(.usbcmd, command);
 
     // Wait until the reset is complete.
@@ -119,7 +143,6 @@ pub fn reset(self: *Self) UsbError!void {
 
 /// Setup necessary internal structures.
 pub fn setup(self: *Self) UsbError!void {
-    try self.initDeviceContext();
     try self.initRings();
     try self.enableInterrupt();
 
@@ -145,13 +168,7 @@ pub fn run(self: *Self) void {
     }
 }
 
-/// Initialize device contexts.
-fn initDeviceContext(self: *Self) UsbError!void {
-    const dcbaa = try Dcbaa.init();
-    self.operational_regs.write(.dcbaap, dcbaa.dcbaap());
-}
-
-/// TODO doc
+/// Initialize Command Ring and Event Ring.
 fn initRings(self: *Self) UsbError!void {
     const num_trbs_per_ring = mem.size_4kib / @sizeOf(Trb);
 
@@ -205,7 +222,7 @@ pub fn registerDevices(self: *Self, allocator: Allocator) UsbError!void {
 
         const device = try allocator.create(Device);
         errdefer allocator.destroy(device);
-        device.* = Device.new(self, n, prs);
+        device.* = Device.new(self, @intCast(n), prs);
 
         try self.devices.append(device);
         errdefer _ = self.devices.pop();
@@ -235,6 +252,11 @@ inline fn getIrsAt(self: *const Self, comptime index: usize) regs.InterrupterReg
 /// Get the port number from the port index.
 inline fn portNumber(index: usb.PortIndex) usb.PortNumber {
     return index + 1;
+}
+
+/// TODO doc
+pub fn setDeviceContext(self: *Self, slot: u8, region: *anyopaque) void {
+    self.dcbaa.set(slot, @intFromPtr(region));
 }
 
 /// Find a device by its port index.
@@ -282,6 +304,7 @@ pub fn handleEvent(self: *Self) UsbError!void {
 fn handleCommandCompletion(self: *Self, event: *const volatile trbs.CommandCompletionTrb) UsbError!void {
     const command_trb = event.commandTrb();
     const command_type = command_trb.type;
+    const slot_id = event.slot_id;
 
     switch (command_type) {
         // Slot ID is assigned.
@@ -290,12 +313,23 @@ fn handleCommandCompletion(self: *Self, event: *const volatile trbs.CommandCompl
                 log.err("Enable Slot Command completed, but no device is waiting for it.", .{});
                 return UsbError.NotFound;
             };
-            log.debug(
-                "Port#{d}: Enable Slot Command completed with code {d}.",
-                .{ portNumber(device.port_index), event.code },
-            );
+            log.debug("Port#{d}, Slot#{d}: Enable Slot Command completed.", .{ portNumber(device.port_index), slot_id });
+            norn.rtt.expectEqual(1, event.code);
+
+            try device.assignAddress(slot_id);
         },
-        else => log.err("Unhandled command completion type: {d}", .{@intFromEnum(command_type)}),
+
+        // Address is assigned.
+        .address_device => {
+            log.debug("Slot#{d}: Address Device Command completed.", .{slot_id});
+            norn.rtt.expectEqual(1, event.code);
+            log.err("TODO: Address Device Command: implement the handler", .{});
+        },
+
+        // Unhandled command completions.
+        else => {
+            log.err("Unhandled command completion type: {d}", .{@intFromEnum(command_type)});
+        },
     }
 }
 
@@ -305,7 +339,8 @@ fn handlePortStatusChange(self: *Self, event: *const volatile trbs.PortStatusCha
         log.warn("Port#{d} is not registered, but its status has changed.", .{event.port});
         return UsbError.NotFound;
     };
-    log.debug("Port#{d}: Status changed (code={d}).", .{ event.port, event.code });
+    log.debug("Port#{d}: Status changed.", .{event.port});
+    norn.rtt.expectEqual(1, event.code);
 
     var enable_slot = trbs.EnableSlotTrb{ .cycle = undefined };
     self.command_ring.push(Trb.from(&enable_slot));
@@ -323,7 +358,7 @@ const Dcbaa = struct {
 
     const RawDcbaa = extern struct {
         /// Pointers to device contexts.
-        entries: [std.math.maxInt(@FieldType(StructuralParameters1, "maxports"))]u64,
+        entries: [std.math.maxInt(@FieldType(StructuralParameters1, "maxports"))]Phys,
 
         comptime {
             norn.comptimeAssert(
@@ -356,6 +391,17 @@ const Dcbaa = struct {
     pub fn deinit(self: *Dcbaa) void {
         const ptr: [*]const u8 = @ptrCast(self._raw);
         page_allocator.freePages(ptr[0..mem.size_4kib]);
+    }
+
+    /// Set the Device Context for the given slot index.
+    pub fn set(self: *Dcbaa, slot: u8, context: Virt) void {
+        self._raw.entries[slot] = mem.virt2phys(context);
+    }
+
+    /// Get the pointer to the Device Context of the given slot index.
+    pub fn at(self: *const Dcbaa, slot: u8) ?Virt {
+        const ret = self._raw.entries[slot];
+        return if (ret == 0) null else mem.phys2virt(ret);
     }
 };
 
@@ -560,11 +606,11 @@ const DoorBellArray = struct {
     }
 
     /// Get the DB Register at the given index.
-    fn at(self: *const DoorBellArray, index: usize) RegisterType {
+    pub fn at(self: *const DoorBellArray, index: usize) RegisterType {
         return RegisterType.new(self._base.add(index * @sizeOf(regs.DoorBell)));
     }
 
-    fn notify(self: *const DoorBellArray, target: u8) void {
+    pub fn notify(self: *const DoorBellArray, target: u8) void {
         const db = self.at(target);
         db.set(regs.DoorBell{ .target = target });
     }
@@ -611,6 +657,7 @@ const mem = norn.mem;
 const pci = norn.pci;
 const usb = norn.drivers.usb;
 const IoAddr = mem.IoAddr;
+const Virt = mem.Virt;
 const Phys = mem.Phys;
 const Register = norn.mmio.Register;
 const Trb = trbs.Trb;

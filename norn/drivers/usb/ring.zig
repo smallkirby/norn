@@ -55,6 +55,12 @@ pub const Ring = struct {
         self.pcs +%= 1;
         self.index = 0;
     }
+
+    /// Deinitialize the Ring and free the backing memory.
+    pub fn deinit(self: *Ring, allocator: Allocator) void {
+        allocator.free(self.trbs);
+        self.trbs = undefined;
+    }
 };
 
 /// Event Ring that is used by the xHC to pass command completion and async events to software.
@@ -108,8 +114,9 @@ pub const EventRing = struct {
         }
 
         // Set the Event Ring Segment Table.
-        self.interrupter.write(.erstba, mem.virt2phys(self.erst.ptr));
+        // ERSTBA must be set after ERSTSZ.
         self.interrupter.write(.erstsz, @as(u32, @intCast(self.erst.len)));
+        self.interrupter.write(.erstba, mem.virt2phys(self.erst.ptr));
         var erdp = self.interrupter.read(.erdp);
         erdp.set(mem.virt2phys(self.trbs.ptr));
         self.interrupter.write(.erdp, erdp);

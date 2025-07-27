@@ -292,6 +292,44 @@ pub const EnableSlotTrb = packed struct(u128) {
     _reserved5: u11 = 0,
 };
 
+/// Address Device Command TRB.
+///
+/// Causes the xHC to select an address for the USB device.
+pub const AddressDeviceTrb = packed struct(u128) {
+    /// Reserved.
+    _reserved1: u4 = 0,
+    /// Input Context Pointer.
+    /// High 60-bit address of the Input Context data structure.
+    context: u60,
+
+    /// Reserved.
+    _reserved2: u32 = 0,
+
+    /// Cycle bit.
+    cycle: u1,
+    /// Reserved.
+    _reserved3: u8 = 0,
+    /// Block Set Address Request.
+    /// If set to false, the command generates a USB SET_ADDRESS request.
+    bsr: bool = false,
+    /// TRB type.
+    type: TrbType = .address_device,
+    /// Reserved.
+    _reserved4: u8 = 0,
+    /// Target Slot ID.
+    slot: u8,
+
+    pub fn from(slot: u8, dc: *const anyopaque) AddressDeviceTrb {
+        norn.rtt.expectEqual(0, mem.virt2phys(dc) & 0xF);
+
+        return AddressDeviceTrb{
+            .context = @intCast(mem.virt2phys(dc) >> 4),
+            .cycle = undefined,
+            .slot = slot,
+        };
+    }
+};
+
 /// Command Completion Event TRB.
 pub const CommandCompletionTrb = packed struct(u128) {
     /// Reserved.
@@ -361,6 +399,8 @@ pub const TrbType = enum(u6) {
     noop = 8,
     /// Enable Slot Command TRB.
     enable_slot = 9,
+    /// Address Device Command TRB.
+    address_device = 11,
     /// Command Completion Event TRB.
     command_completion = 33,
     /// Port Status Change Event TRB.
