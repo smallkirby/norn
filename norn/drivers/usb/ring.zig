@@ -99,15 +99,34 @@ pub const EventRing = struct {
         };
     }
 
+    /// Initialize and set the Event Ring to the primary interrupter.
+    pub fn init(self: *EventRing) void {
+        // Initialize ERST entries.
+        norn.rtt.expectEqual(self.erst.len, self.trbs.len / num_trbs_per_segment);
+        for (self.erst, 0..) |*erst_entry, i| {
+            erst_entry.* = ErstEntry.from(self.trbs[i * num_trbs_per_segment .. (i + 1) * num_trbs_per_segment]);
+        }
+
+        // Set the Event Ring Segment Table.
+        self.interrupter.write(.erstba, mem.virt2phys(self.erst.ptr));
+        self.interrupter.write(.erstsz, @as(u32, @intCast(self.erst.len)));
+        var erdp = self.interrupter.read(.erdp);
+        erdp.set(mem.virt2phys(self.trbs.ptr));
+        self.interrupter.write(.erdp, erdp);
+
+        // Set the PCS to 1.
+        self.pcs = 1;
+    }
+
     /// Check if more than one event is queued in the Event Ring.
-    pub fn hasEvent(self: *EventRing) bool {
+    pub fn hasEvent(self: *const EventRing) bool {
         return self.front().cycle == self.pcs;
     }
 
     /// Get the TRB pointed to by the Interrupter's dequeue pointer.
-    pub fn front(self: *EventRing) *volatile Trb {
+    pub fn front(self: *const EventRing) *volatile Trb {
         const erdp = self.interrupter.read(.erdp);
-        return @ptrFromInt(erdp & ~@as(u64, 0b1111));
+        return @ptrFromInt(mem.phys2virt(erdp.addr()));
     }
 
     /// Pop the front TRB.
@@ -138,7 +157,14 @@ pub const ErstEntry = packed struct(u128) {
     /// Number of TRBs in the Event Ring Segment.
     size: u16,
     /// Reserved.
-    _reserved: u48,
+    _reserved: u48 = 0,
+
+    pub fn from(ring: []volatile Trb) ErstEntry {
+        return .{
+            .ring_segment_base_addr = mem.virt2phys(ring.ptr),
+            .size = @intCast(ring.len),
+        };
+    }
 };
 
 // =============================================================

@@ -32,6 +32,7 @@ pub fn init(pci_device: *pci.Device, allocator: Allocator) UsbError!void {
     try pci_device.initMsi(lapic_id, @intFromEnum(VectorTable.usb));
     log.debug("Initialized MSI for core#{d}.", .{lapic_id});
 
+    // Setup the controller.
     xhc = try Xhc.new(pci_device, allocator);
     try xhc.reset();
     log.debug("Reset xHC completed.", .{});
@@ -39,8 +40,10 @@ pub fn init(pci_device: *pci.Device, allocator: Allocator) UsbError!void {
     try xhc.setup();
     log.debug("xHC setup completed.", .{});
 
+    // Start the xHC.
     xhc.run();
     log.debug("xHC has started running.", .{});
+    norn.rtt.expect(!xhc.hasEvent());
 
     try xhc.registerDevices(allocator);
     log.info("{d} devices registered.", .{xhc.getNumberOfDevices()});

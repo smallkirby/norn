@@ -16,8 +16,24 @@ pub const InterrupterRegisterSet = packed struct(u256) {
     /// Event Ring Segment Table Base Address Register.
     erstba: u64,
     /// Event Ring Dequeue Pointer Register.
-    /// 4 LSBs are used as DESI and EHB.
-    erdp: u64,
+    erdp: Erdp,
+
+    pub const Erdp = packed struct(u64) {
+        /// Dequeue ERST Segment Index. May be used by xHC.
+        desi: u3,
+        /// EHB. RW1C.
+        ehb: u1,
+        /// High 60 bits of current Event Ring Dequeue Pointer.
+        erdp: u60,
+
+        pub inline fn addr(self: Erdp) Phys {
+            return @as(u64, self.erdp) << 4;
+        }
+
+        pub inline fn set(self: *Erdp, ptr: Phys) void {
+            self.erdp = @intCast(ptr >> 4);
+        }
+    };
 
     /// Create a reader / writer for the Interrupter Register Set.
     pub inline fn get(addr: IoAddr) RegisterType {
@@ -144,5 +160,6 @@ const PortSpeed = enum(u4) {
 // =============================================================
 
 const norn = @import("norn");
+const Phys = norn.mem.Phys;
 const Register = norn.mmio.Register;
 const IoAddr = norn.mem.IoAddr;

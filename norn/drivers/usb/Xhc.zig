@@ -75,6 +75,8 @@ pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
         log.debug("  HCI Version : {X:0>4}", .{cap_regs.read(.hci_version)});
         log.debug("  Max Slots   : {d}", .{cap_regs.read(.hcs_params1).maxslots});
         log.debug("  Max Ports   : {d}", .{cap_regs.read(.hcs_params1).maxports});
+
+        norn.rtt.expectEqual(0x0100, cap_regs.read(.hci_version));
     }
 
     return .{
@@ -114,6 +116,16 @@ pub fn setup(self: *Self) UsbError!void {
     try self.initDeviceContext();
     try self.initRings();
     try self.enableInterrupt();
+
+    {
+        const irs0 = self.getIrsAt(0);
+        log.debug("xHC Primary Interrupter Register Set:", .{});
+        log.debug("  ERSTSZ: 0x{X}", .{irs0.read(.erstsz)});
+        log.debug("  ERSTBA: 0x{X}", .{irs0.read(.erstba)});
+        log.debug("  ERDP  : 0x{X}", .{@as(u64, @bitCast(irs0.read(.erdp)))});
+
+        norn.rtt.expectEqual(0, irs0.read(.erdp).addr() % mem.size_4kib);
+    }
 }
 
 /// Start running the xHC.
@@ -149,14 +161,15 @@ fn initRings(self: *Self) UsbError!void {
     );
 
     // Init Event Ring.
-    const irs0 = self.operational_regs._iobase.add(RuntimeRegisters.irsOffset(0));
-    const event_ring = try ring.EventRing.new(irs0, general_allocator);
+    const irs0 = self.getIrsAt(0);
+    const event_ring = try ring.EventRing.new(irs0._iobase, general_allocator);
     self.event_ring = event_ring;
+    self.event_ring.init();
 }
 
 /// Enable the xHC interrupt.
 fn enableInterrupt(self: *Self) UsbError!void {
-    const irs0 = RuntimeRegisters.getIrsAt(self.operational_regs._iobase, 0);
+    const irs0 = self.getIrsAt(0);
 
     var imod = irs0.read(.imod);
     imod.imodi = 4000; // 250 * 4000 ns == 1ms
@@ -198,6 +211,19 @@ pub fn registerDevices(self: *Self, allocator: Allocator) UsbError!void {
 /// Get the number of connected devices.
 pub fn getNumberOfDevices(self: *Self) usize {
     return self.devices.items.len;
+}
+
+/// Check if there is an event in the event ring.
+pub fn hasEvent(self: *const Self) bool {
+    return self.event_ring.hasEvent();
+}
+
+/// Get IRS of the given index.
+inline fn getIrsAt(self: *const Self, comptime index: usize) regs.InterrupterRegisterSet.RegisterType {
+    return RuntimeRegisters.getIrsAt(
+        self.runtime_regs._iobase,
+        index,
+    );
 }
 
 // =============================================================
@@ -429,9 +455,9 @@ const RuntimeRegisters = packed struct(u256) {
     }
 
     /// Get the Interrupter Register Set at the given index.
-    pub fn getIrsAt(operational_base: IoAddr, comptime index: usize) regs.InterrupterRegisterSet.RegisterType {
+    pub fn getIrsAt(runtime_base: IoAddr, comptime index: usize) regs.InterrupterRegisterSet.RegisterType {
         return regs.InterrupterRegisterSet.get(
-            operational_base.add(irsOffset(index)),
+            runtime_base.add(irsOffset(index)),
         );
     }
 };
