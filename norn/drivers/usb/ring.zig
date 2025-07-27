@@ -120,30 +120,31 @@ pub const EventRing = struct {
 
     /// Check if more than one event is queued in the Event Ring.
     pub fn hasEvent(self: *const EventRing) bool {
-        return self.front().cycle == self.pcs;
+        return self.poke().cycle == self.pcs;
     }
 
     /// Get the TRB pointed to by the Interrupter's dequeue pointer.
-    pub fn front(self: *const EventRing) *volatile Trb {
+    pub fn poke(self: *const EventRing) *volatile Trb {
         const erdp = self.interrupter.read(.erdp);
         return @ptrFromInt(mem.phys2virt(erdp.addr()));
     }
 
-    /// Pop the front TRB.
-    pub fn pop(self: *EventRing) void {
-        // Intcement ERDP
-        const erdp = self.interrupter.read(.erdp);
-        var p: *volatile Trb = @ptrFromInt((erdp & ~@as(u64, 0b1111)) + @sizeOf(Trb));
-        const begin: *volatile Trb = @ptrFromInt(self.erst[0].ring_segment_base_addr);
-        const end: *volatile Trb = @ptrFromInt(self.erst[0].ring_segment_base_addr + self.erst[0].size * @sizeOf(Trb));
-        if (p == end) {
-            p = begin;
-            self.pcs +%= 1;
+    /// Get the event TRB if it exists and increment the dequeue pointer.
+    pub fn next(self: *EventRing) ?*volatile Trb {
+        var erdp = self.interrupter.read(.erdp);
+        const trb: *volatile Trb = @ptrFromInt(mem.phys2virt(erdp.addr()));
+        if (trb.cycle != self.pcs) {
+            return null;
         }
 
-        // Set ERDP
-        self.interrupter.erdp =
-            (@intFromPtr(p) & ~@as(u64, 0b1111)) | (self.interrupter.erdp & @as(u64, 0b1111));
+        var next_trb: *volatile Trb = @ptrFromInt(@intFromPtr(trb) + @sizeOf(Trb));
+        if (util.ptrGt(trb, &self.trbs[self.trbs.len - 1])) {
+            next_trb = &self.trbs[0];
+        }
+        erdp.set(mem.virt2phys(next_trb));
+        self.interrupter.write(.erdp, erdp);
+
+        return trb;
     }
 };
 
@@ -177,6 +178,7 @@ const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const mem = norn.mem;
+const util = norn.util;
 const IoAddr = mem.IoAddr;
 const Register = norn.mmio.Register;
 

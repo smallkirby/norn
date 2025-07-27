@@ -51,7 +51,9 @@ pub fn init(pci_device: *pci.Device, allocator: Allocator) UsbError!void {
 
 /// Interrupt handler for xHC.
 fn interruptHandler(_: *norn.interrupt.Context) void {
-    log.err("TODO: xHC interrupt is not implemented yet.", .{});
+    xhc.handleEvent() catch |err| {
+        log.err("Failed to handle xHC event: {s}", .{@errorName(err)});
+    };
 }
 
 // =============================================================

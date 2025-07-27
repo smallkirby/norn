@@ -202,8 +202,6 @@ pub fn registerDevices(self: *Self, allocator: Allocator) UsbError!void {
         device.* = Device.new(n, prs);
 
         try device.resetPort();
-        log.debug("Port {d} reset completed.", .{n});
-
         try self.devices.append(device);
     }
 }
@@ -224,6 +222,31 @@ inline fn getIrsAt(self: *const Self, comptime index: usize) regs.InterrupterReg
         self.runtime_regs._iobase,
         index,
     );
+}
+
+/// Get the port number from the port index.
+inline fn portNumber(index: usize) usize {
+    return index + 1;
+}
+
+// =============================================================
+// Event handlers
+// =============================================================
+
+/// Handles pending events in the event ring.
+pub fn handleEvent(self: *Self) UsbError!void {
+    while (self.event_ring.next()) |event| {
+        switch (event.type) {
+            .port_status_change => self.handlePortStatusChange(@ptrCast(event)),
+            else => log.err("Unhandled event type: {d}", .{@intFromEnum(event.type)}),
+        }
+    }
+}
+
+/// Handle Port Status Change Event.
+fn handlePortStatusChange(self: *Self, event: *const volatile trbs.PortStatusChange) void {
+    _ = self;
+    log.debug("Port#{d} status changed (code={d}).", .{ event.port, event.code });
 }
 
 // =============================================================
