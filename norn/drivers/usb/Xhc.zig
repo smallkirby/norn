@@ -15,6 +15,8 @@ capability_regs: Register(CapabilityRegisters, .dword),
 operational_regs: Register(OperationalRegisters, .dword),
 /// Runtime registers.
 runtime_regs: Register(RuntimeRegisters, .dword),
+/// Doorbell Registers array.
+doorbells: DoorBellArray,
 
 /// Command Ring.
 command_ring: ring.Ring = undefined,
@@ -64,6 +66,8 @@ pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
     const operational_regs = @FieldType(Self, "operational_regs").new(iobase.add(capability_regs.read(.cap_length)));
     const rts_off = capability_regs.read(.rtsoff) & ~@as(u64, 0b11111);
     const runtime_regs = @FieldType(Self, "runtime_regs").new(iobase.add(rts_off));
+    const db_base = iobase.add(capability_regs.read(.dboff));
+    const doorbells = DoorBellArray.new(db_base);
 
     {
         const cap_regs = capability_regs;
@@ -71,6 +75,7 @@ pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
         log.debug("Capability Registers  @ 0x{X:0>16}", .{capability_regs._iobase._virt});
         log.debug("Operational Registers @ 0x{X:0>16}", .{operational_regs._iobase._virt});
         log.debug("Runtime Registers     @ 0x{X:0>16}", .{runtime_regs._iobase._virt});
+        log.debug("Doorbells             @ 0x{X:0>16}", .{db_base._virt});
         log.debug("xHC Capability Registers:", .{});
         log.debug("  HCI Version : {X:0>4}", .{cap_regs.read(.hci_version)});
         log.debug("  Max Slots   : {d}", .{cap_regs.read(.hcs_params1).maxslots});
@@ -85,6 +90,7 @@ pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
         .capability_regs = capability_regs,
         .operational_regs = operational_regs,
         .runtime_regs = runtime_regs,
+        .doorbells = doorbells,
 
         .devices = DeviceList.init(allocator),
     };
@@ -198,11 +204,13 @@ pub fn registerDevices(self: *Self, allocator: Allocator) UsbError!void {
         }
 
         const device = try allocator.create(Device);
-        defer allocator.destroy(device);
-        device.* = Device.new(n, prs);
+        errdefer allocator.destroy(device);
+        device.* = Device.new(self, n, prs);
+
+        try self.devices.append(device);
+        errdefer _ = self.devices.pop();
 
         try device.resetPort();
-        try self.devices.append(device);
     }
 }
 
@@ -225,8 +233,30 @@ inline fn getIrsAt(self: *const Self, comptime index: usize) regs.InterrupterReg
 }
 
 /// Get the port number from the port index.
-inline fn portNumber(index: usize) usize {
+inline fn portNumber(index: usb.PortIndex) usb.PortNumber {
     return index + 1;
+}
+
+/// Find a device by its port index.
+fn findDeviceByPort(self: *const Self, port_number: usb.PortNumber) ?*Device {
+    for (self.devices.items) |device| {
+        if (portNumber(device.port_index) == port_number) {
+            return device;
+        }
+    }
+    return null;
+}
+
+/// Find a device by its state.
+///
+/// If multiple devices are in the same state, the first one found is returned.
+fn findDeviceByState(self: *const Self, state: Device.State) ?*Device {
+    for (self.devices.items) |device| {
+        if (device.state == state) {
+            return device;
+        }
+    }
+    return null;
 }
 
 // =============================================================
@@ -234,19 +264,52 @@ inline fn portNumber(index: usize) usize {
 // =============================================================
 
 /// Handles pending events in the event ring.
+///
+/// This dispatches the event to the appropriate handler based on the event type.
 pub fn handleEvent(self: *Self) UsbError!void {
     while (self.event_ring.next()) |event| {
         switch (event.type) {
-            .port_status_change => self.handlePortStatusChange(@ptrCast(event)),
+            .port_status_change => try self.handlePortStatusChange(@ptrCast(event)),
+            .command_completion => try self.handleCommandCompletion(@ptrCast(event)),
             else => log.err("Unhandled event type: {d}", .{@intFromEnum(event.type)}),
         }
     }
 }
 
+/// Handles Command Completion Event.
+///
+/// This dispatches the command completion event to the appropriate handler based on the command type.
+fn handleCommandCompletion(self: *Self, event: *const volatile trbs.CommandCompletionTrb) UsbError!void {
+    const command_trb = event.commandTrb();
+    const command_type = command_trb.type;
+
+    switch (command_type) {
+        // Slot ID is assigned.
+        .enable_slot => {
+            const device = self.findDeviceByState(.waiting_slot) orelse {
+                log.err("Enable Slot Command completed, but no device is waiting for it.", .{});
+                return UsbError.NotFound;
+            };
+            log.debug(
+                "Port#{d}: Enable Slot Command completed with code {d}.",
+                .{ portNumber(device.port_index), event.code },
+            );
+        },
+        else => log.err("Unhandled command completion type: {d}", .{@intFromEnum(command_type)}),
+    }
+}
+
 /// Handle Port Status Change Event.
-fn handlePortStatusChange(self: *Self, event: *const volatile trbs.PortStatusChange) void {
-    _ = self;
-    log.debug("Port#{d} status changed (code={d}).", .{ event.port, event.code });
+fn handlePortStatusChange(self: *Self, event: *const volatile trbs.PortStatusChange) UsbError!void {
+    _ = self.findDeviceByPort(event.port) orelse {
+        log.warn("Port#{d} is not registered, but its status has changed.", .{event.port});
+        return UsbError.NotFound;
+    };
+    log.debug("Port#{d}: Status changed (code={d}).", .{ event.port, event.code });
+
+    var enable_slot = trbs.EnableSlotTrb{ .cycle = undefined };
+    self.command_ring.push(Trb.from(&enable_slot));
+    self.doorbells.notify(0); // To xHC.
 }
 
 // =============================================================
@@ -485,14 +548,26 @@ const RuntimeRegisters = packed struct(u256) {
     }
 };
 
-/// xHC Doorbell Register.
-const DoorbellRegister = packed struct(u32) {
-    /// Doorbell Target.
-    db_target: u8,
-    /// Reserved.
-    _reserved: u8 = 0,
-    /// Doorbell Stream ID.
-    db_stream_id: u16,
+/// Array of DB Registers.
+const DoorBellArray = struct {
+    const RegisterType = Register(regs.DoorBell, .dword);
+
+    /// Base address of DB registers array.
+    _base: IoAddr,
+
+    fn new(base: IoAddr) DoorBellArray {
+        return .{ ._base = base };
+    }
+
+    /// Get the DB Register at the given index.
+    fn at(self: *const DoorBellArray, index: usize) RegisterType {
+        return RegisterType.new(self._base.add(index * @sizeOf(regs.DoorBell)));
+    }
+
+    fn notify(self: *const DoorBellArray, target: u8) void {
+        const db = self.at(target);
+        db.set(regs.DoorBell{ .target = target });
+    }
 };
 
 /// HCSPARAMS1

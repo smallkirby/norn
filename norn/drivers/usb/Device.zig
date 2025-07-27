@@ -1,14 +1,32 @@
 const Self = @This();
 
-/// Port number.
-port_number: usize,
+/// State.
+state: State,
+/// Port index.
+port_index: usb.PortIndex,
 /// Port Register Set.
 prs: PortRegisterSet.RegisterType,
+/// Host Controller.
+xhc: *Xhc,
+
+/// Device state.
+pub const State = enum {
+    /// Port is connected.
+    initialized,
+    /// Waiting for the Slot ID to be assigned.
+    waiting_slot,
+};
 
 /// Create a new USB device.
-pub fn new(port_number: usize, prs: PortRegisterSet.RegisterType) Self {
+pub fn new(
+    xhc: *Xhc,
+    port_index: usb.PortIndex,
+    prs: PortRegisterSet.RegisterType,
+) Self {
     return .{
-        .port_number = port_number,
+        .state = .initialized,
+        .xhc = xhc,
+        .port_index = port_index,
         .prs = prs,
     };
 }
@@ -17,6 +35,8 @@ pub fn new(port_number: usize, prs: PortRegisterSet.RegisterType) Self {
 ///
 /// Blocks until the port reset is completed.
 pub fn resetPort(self: *Self) UsbError!void {
+    self.state = .waiting_slot;
+
     var portsc = self.prs.read(.portsc);
     portsc.pr = true;
     portsc.csc = true;
@@ -40,3 +60,4 @@ const UsbError = usb.UsbError;
 
 const regs = @import("regs.zig");
 const PortRegisterSet = regs.PortRegisterSet;
+const Xhc = @import("Xhc.zig");

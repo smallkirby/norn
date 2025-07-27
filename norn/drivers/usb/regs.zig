@@ -89,9 +89,7 @@ const PortStatusControlRegister = packed struct(u32) {
     pic: u2,
     /// Port Link State Write Strobe.
     lws: bool,
-    /// Connect Status Change.
-    /// This bit is RW1CS (Sticky-Write-1-to-clear status).
-    /// Writing 1 to this bit clears the status, and 0 has no effect.
+    /// Connect Status Change. RW1CS.
     csc: bool,
     /// Port Enabled/Disabled Change.
     pec: bool,
@@ -153,6 +151,28 @@ const PortSpeed = enum(u4) {
     high = 3,
     super = 4,
     super_plus = 5,
+};
+
+/// Doorbell Register (DB).
+//
+/// xHC presents an array of up to 256 32-bit registers in MMIO space and are indexed by Device Slot ID.
+//
+/// Doobell 0 is dedicated to the Host Controller.
+//
+/// Doobell 1-255 are referred to as the Device Context Doorbell.
+/// There's a 1:1 mapping of Device Context DB to Device Slots.
+//
+/// Software writes to DB to notify the xHC that there's new TRB in the Command Ring or Transfer Ring.
+/// No need to clear DBs.
+/// Returns no information on read.
+pub const DoorBell = packed struct(u32) {
+    /// DB Target.
+    /// Target of the doorbell reference.
+    target: u8,
+    /// Reserved.
+    _reserved1: u8 = 0,
+    /// DB Stream ID.
+    stream_id: u16 = 0,
 };
 
 // =============================================================

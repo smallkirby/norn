@@ -125,6 +125,11 @@ pub fn Register(comptime T: type, comptime width: Width) type {
                 writer(self._iobase.add(access_offset), new_value);
             }
         }
+
+        /// Write all fields of the MMIO register.
+        pub fn set(self: *const Self, value: T) void {
+            writer(self._iobase, @bitCast(value));
+        }
     };
 }
 

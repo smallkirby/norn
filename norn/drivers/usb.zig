@@ -12,6 +12,11 @@ pub const class = pci.ClassCode{
     .interface = 0x30,
 };
 
+/// 0-origin port index.
+pub const PortIndex = usize;
+/// 1-origin port number.
+pub const PortNumber = usize;
+
 /// Host controller instance.
 var xhc: Xhc = undefined;
 
