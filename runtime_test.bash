@@ -14,6 +14,8 @@ DEFAULT_INIT_HEYSTACK=(
   "Unhandled syscall (nr=511)"
   "[1]=0000000000000000 [2]=0000000000000001 [3]=0000000000000002"
   "[4]=0000000000000003"
+  "xHC has started running"
+  "Device enumeration completed"
 )
 # Success indicator for "/bin/busybox ls -la".
 BUSYBOX_LS_HEYSTACK=(
@@ -86,6 +88,7 @@ qemu-system-x86_64 \
   -cpu $CPU_MODEL,+$CPU_FEATURES \
   -smp $NUM_CORES \
   -device isa-debug-exit,iobase=0xF0,iosize=0x01 \
+  -d guest_errors \
   2>&1 \
 | tee "$TMPFILE"
 

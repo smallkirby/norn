@@ -247,6 +247,8 @@ pub fn build(b: *std.Build) !void {
         "-smp",
         "3",
         "-s",
+        "-d",
+        "guest_errors",
     });
     if (wait_qemu) try qemu_args.append("-S");
     if (debug_intr) {
