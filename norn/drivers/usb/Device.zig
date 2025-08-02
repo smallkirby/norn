@@ -7,10 +7,8 @@ const work_buffer_size = mem.size_4kib;
 /// Number of TRBs in a Transfer Ring.
 const num_ents_in_tr = mem.size_4kib / @sizeOf(Trb);
 
-/// List type of descriptors.
-///
-/// Note that each component has a variant size depending on the descriptor type.
-const DescriptorList = std.ArrayList(*DescriptorHeader);
+/// List type of interfaces.
+const InterfaceList = std.ArrayList(Interface);
 
 /// State.
 state: State,
@@ -20,8 +18,8 @@ tr: ring.Ring,
 device_desc: DeviceDescriptor = undefined,
 /// Configuration descriptor.
 config_desc: ConfigurationDescriptor = undefined,
-/// List of descriptors other than device and configuration descriptors.
-descriptors: DescriptorList,
+/// List of interfaces belonging to the device.
+interfaces: InterfaceList,
 
 /// Port index.
 port_index: usb.PortIndex,
@@ -47,6 +45,20 @@ pub const State = enum {
     waiting_device_desc,
     /// Waiting for the configuration descriptor.
     waiting_config_desc,
+    /// Waiting for the configuration to be set.
+    waiting_config_set,
+    /// Initialization complete.
+    complete,
+};
+
+/// Interface belonging to the device.
+pub const Interface = struct {
+    /// Interface descriptor.
+    desc: InterfaceDescriptor,
+    /// Type-erased class descriptor.
+    class: *const DescriptorHeader,
+    /// Endpoint descriptor.
+    endpoint: EndpointDescriptor,
 };
 
 /// Create a new USB device.
@@ -58,7 +70,7 @@ pub fn new(
     return .{
         .state = .initialized,
         .tr = undefined,
-        .descriptors = DescriptorList.init(general_allocator),
+        .interfaces = InterfaceList.init(mem.general_allocator),
 
         .port_index = port_index,
         .slot_id = undefined,
@@ -101,6 +113,7 @@ pub fn assignAddress(self: *Self, slot: u8) UsbError!void {
     self.xhc.setDeviceContext(slot, dc.ptr);
 
     // Create Input Context.
+    // TODO: free somewhere
     const ic_page = try mem.page_allocator.allocPages(1, .normal);
     const ic: *InputContext = @ptrCast(ic_page.ptr);
     errdefer mem.general_allocator.free(ic_page);
@@ -159,15 +172,23 @@ pub fn onAddressAssigned(self: *Self) UsbError!void {
     try self.getDeviceDescriptor();
 }
 
+/// Called when Configure Endpoint command has been completed.
+pub fn onEndpointConfigured(self: *Self) UsbError!void {
+    norn.rtt.expectEqual(.waiting_config_set, self.state);
+
+    self.state = .complete;
+}
+
 /// Handles transfer events.
 pub fn onTransferEvent(self: *Self, event: *const volatile trbs.TransferEventTrb) UsbError!void {
     const issuer: *const trbs.Trb = @ptrFromInt(mem.phys2virt(event.trb));
     switch (issuer.type) {
         .data => try self.onDataTransfer(event, @ptrCast(issuer)),
-        else => {
-            log.warn("Unhandled TRB type that generated Transfer Event: {d}", .{@intFromEnum(issuer.type)});
-            return;
-        },
+        .status => try self.onStatusTransfer(event, @ptrCast(issuer)),
+        else => log.warn(
+            "Unhandled TRB type that generated Transfer Event: {d}",
+            .{@intFromEnum(issuer.type)},
+        ),
     }
 }
 
@@ -208,7 +229,7 @@ fn getDeviceDescriptor(self: *Self) UsbError!void {
 fn getConfigurationDescriptor(self: *Self, config_index: u8) UsbError!void {
     norn.rtt.expectEqual(.waiting_config_desc, self.state);
 
-    log.debug("Requesting configuration descriptor {d} from slot#{d}.", .{ config_index, self.slot_id });
+    log.debug("Requesting configuration descriptor#{d} from slot#{d}.", .{ config_index, self.slot_id });
 
     self.clearWorkBuffer();
 
@@ -240,50 +261,151 @@ fn getConfigurationDescriptor(self: *Self, config_index: u8) UsbError!void {
 /// Parse and record the configuration descriptor.
 fn consumeConfigurationDescriptor(self: *Self, config_desc: *const ConfigurationDescriptor) UsbError!void {
     norn.rtt.expectEqual(.configuration, config_desc.type);
+    norn.rtt.expectEqual(0, self.interfaces.items.len);
     self.config_desc = config_desc.*;
 
+    const ParseState = enum {
+        interface,
+        class,
+        endpoint,
+    };
+
     // Iterate through all descriptors in the configuration descriptor.
+    //
+    // NOTE: interfaces that have multiple endpoints are not supported yet.
     var left = config_desc.total_length - config_desc.length;
     var cur: *align(1) const DescriptorHeader = @ptrFromInt(@intFromPtr(config_desc) + config_desc.length);
+    var state: ParseState = .interface;
+    var interface: Interface = undefined;
     while (left > 0) {
         norn.rtt.expect(cur.length != 0);
 
         switch (cur.type) {
-            .endpoint => {},
+            // Interface descriptor.
             .interface => {
+                norn.rtt.expectEqual(.interface, state);
                 const desc: *align(1) const InterfaceDescriptor = @alignCast(@ptrCast(cur));
-                log.debug(
-                    "Interface found: {X:0>2}:{X:0>2}:{X:0>2}",
-                    .{ desc.class, desc.subclass, desc.interface_number },
-                );
+                interface.desc = desc.*;
+                state = .class;
             },
-            .hid => log.debug("HID class found.", .{}),
+            // Class-specific descriptor.
+            .hid => {
+                norn.rtt.expectEqual(.class, state);
+                const desc_buf = try general_allocator.alloc(u8, cur.length);
+                errdefer general_allocator.free(desc_buf);
+                @memcpy(desc_buf, @as([*]const u8, @ptrCast(cur))[0..cur.length]);
+                interface.class = @alignCast(@ptrCast(desc_buf.ptr));
+                state = .endpoint;
+            },
+            // Endpoint descriptor.
+            .endpoint => {
+                norn.rtt.expectEqual(.endpoint, state);
+                const desc: *align(1) const EndpointDescriptor = @alignCast(@ptrCast(cur));
+                interface.endpoint = desc.*;
+                state = .interface;
+
+                try self.interfaces.append(interface);
+                interface = undefined;
+            },
+            // Unexpected descriptor.
+            // This includes multiple endpoint descriptors for the same interface (not supported).
             else => log.warn(
                 "Unexpected descriptor type {d} in configuration descriptor (length={d}).",
                 .{ @intFromEnum(cur.type), cur.length },
             ),
         }
 
-        // Record the descriptor.
-        const desc_buf = try general_allocator.alloc(u8, cur.length);
-        errdefer general_allocator.free(desc_buf);
-        @memcpy(desc_buf, @as([*]const u8, @ptrCast(cur))[0..cur.length]);
-        try self.descriptors.append(@alignCast(@ptrCast(desc_buf.ptr)));
-
         left -= cur.length;
         cur = @ptrFromInt(@intFromPtr(cur) + cur.length);
     }
+
+    log.debug("{d} interfaces found in configuration descriptor.", .{self.interfaces.items.len});
+}
+
+/// Issues Set Configuration device request to the device.
+fn setConfiguration(self: *Self, config: u8) UsbError!void {
+    norn.rtt.expectEqual(.waiting_config_set, self.state);
+
+    log.debug("Setting configuration#{d} for slot#{d}.", .{ config, self.slot_id });
+
+    // Setup SET_CONFIGURATION request
+    const request_type = SetupData.RequestType{
+        .recipient = .device,
+        .type = .standard,
+        .direction = .out,
+    };
+    const setup_data = SetupData{
+        .request_type = request_type,
+        .request = .set_configuration,
+        .value = config,
+        .index = 0,
+        .length = 0,
+    };
+    try self.controlTransferOut(setup_data, 0);
+}
+
+/// Issues Configure Endpoint command to notify the xHC of the endpoint configuration.
+///
+/// xHC does not know which configuration has been selected for the device.
+/// So we have to notify the selected setting to the xHC by this function.
+fn configureEndpoint(self: *Self) UsbError!void {
+    // Create and clear the Input Context.
+    const ic_page = try mem.page_allocator.allocPages(1, .normal);
+    const ic: *InputContext = @ptrCast(ic_page.ptr);
+    errdefer mem.general_allocator.free(ic_page);
+    @memset(ic_page, 0);
+    ic.control.ac.a0 = true;
+
+    // Copy slot context.
+    const dc = self.getDeviceContext();
+    ic.slot = dc.slot;
+
+    // Set Add Context Flags and configure all endpoints.
+    for (self.interfaces.items) |interface| {
+        const dci = interface.endpoint.address.dci();
+        const ep = interface.endpoint;
+        ic.control.ac.set(dci);
+
+        const epctx = ic.at(dci);
+        epctx.max_packet_size = ep.max_packet_size;
+        epctx.max_burst_size = 0;
+        epctx.dcs = 1;
+        epctx.interval = ep.interval;
+        epctx.max_pstream = 0;
+        epctx.mult = 0;
+        epctx.cerr = 3;
+        epctx.ep_type = switch (ep.address.direction) {
+            .out => switch (ep.attributes.transfer_type) {
+                .control => .control,
+                .isochronous => .isoch_out,
+                .bulk => .bulk_out,
+                .interrupt => .intr_out,
+            },
+            .in => switch (ep.attributes.transfer_type) {
+                .control => .control,
+                .isochronous => .isoch_in,
+                .bulk => .bulk_in,
+                .interrupt => .intr_in,
+            },
+        };
+    }
+
+    // Issue Configure Endpoint command.
+    var cmd = trbs.ConfigureEndpointTrb.from(self.slot_id, ic_page.ptr);
+    _ = self.xhc.command_ring.push(Trb.from(&cmd));
+    self.xhc.doorbells.notifyCommand();
 }
 
 // =============================================================
 // Transfer event handlers
 // =============================================================
 
-/// Called when a Transfer Event TRB is received for control transfer.
+/// Called when a Transfer Event TRB is received for Data TRB of control transfer.
 fn onDataTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, issuer: *const trbs.DataTrb) UsbError!void {
     const code = event.code;
 
     switch (self.state) {
+        // Device descriptor is provided.
         .waiting_device_desc => {
             if (code != .short_packet) {
                 log.warn("GET_DESCRIPTOR control transfer failed: code={s}", .{@tagName(code)});
@@ -299,6 +421,7 @@ fn onDataTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, iss
             self.state = .waiting_config_desc;
             try self.getConfigurationDescriptor(0);
         },
+        // Configuration descriptor is provided.
         .waiting_config_desc => {
             if (code != .short_packet) {
                 log.warn("GET_DESCRIPTOR (config) control transfer failed: code={s}", .{@tagName(code)});
@@ -307,9 +430,38 @@ fn onDataTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, iss
             // Buffer size specified by SetupData and Data TRB is larger than the descriptor size.
             norn.rtt.expectEqual(self.bufferPhysAddr(), issuer.data_buffer);
 
+            // Parse descriptors.
             const config_desc: *const ConfigurationDescriptor = @alignCast(@ptrCast(self.buffer.ptr));
             try self.consumeConfigurationDescriptor(config_desc);
+
+            // Select configuration.
+            self.state = .waiting_config_set;
+            try self.setConfiguration(config_desc.config_value);
         },
+        // Unexpected state.
+        else => {
+            log.warn("Unexpected transfer event for control transfer while state is {s}", .{@tagName(self.state)});
+        },
+    }
+}
+
+/// Called when a Transfer Event TRB is received for Status TRB of control transfer.
+fn onStatusTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, issuer: *const trbs.StatusTrb) UsbError!void {
+    _ = issuer;
+    const code = event.code;
+
+    switch (self.state) {
+        // Setting is selected.
+        .waiting_config_set => {
+            if (code != .success) {
+                log.warn("SET_CONFIGURATION control transfer failed: code={s}", .{@tagName(code)});
+                return;
+            }
+
+            // Notify the xHC of the selected configuration.
+            try self.configureEndpoint();
+        },
+        // Unexpected state.
         else => {
             log.warn("Unexpected transfer event for control transfer while state is {s}", .{@tagName(self.state)});
         },
@@ -321,6 +473,10 @@ fn onDataTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, iss
 // =============================================================
 
 /// Perform a control transfer in the device-to-host direction on endpoint 0 (Default Control Pipe).
+///
+/// If it requires data input, they're stored in the work buffer.
+///
+/// TODO: support transfer to other than control endpoint.
 fn controlTransferIn(self: *Self, data: SetupData) UsbError!void {
     // Setup Stage
     var setup_trb = trbs.SetupTrb{
@@ -370,6 +526,71 @@ fn controlTransferIn(self: *Self, data: SetupData) UsbError!void {
     self.xhc.doorbells.notifyEndpoint(self.slot_id, ep0_dci);
 }
 
+/// Perform a control transfer in the host-to-device direction on endpoint 0 (Default Control Pipe).
+///
+/// If it requires data output, the data is taken from the work buffer.
+/// Caller must fulfill the work buffer with the data before calling this function.
+///
+/// TODO: support transfer to other than control endpoint.
+fn controlTransferOut(self: *Self, data: SetupData, length: usize) UsbError!void {
+    // Setup Stage
+    var setup_trb = trbs.SetupTrb{
+        .request_type = @bitCast(data.request_type),
+        .request = @intFromEnum(data.request),
+        .value = data.value,
+        .index = data.index,
+        .length = data.length,
+        .cycle = undefined,
+        .ioc = false,
+        .trt = if (length == 0) .no_data else .out,
+        .idt = true,
+        .intr_target = 0, // TODO
+    };
+    _ = self.tr.push(Trb.from(&setup_trb));
+
+    // Data Stage
+    if (length != 0) {
+        var data_trb = trbs.DataTrb{
+            .data_buffer = self.bufferPhysAddr(),
+            .transfer_length = data.length,
+            .td_size = 0,
+            .cycle = undefined,
+            .ent = false,
+            .isp = false,
+            .ns = false,
+            .chain = false,
+            .ioc = true,
+            .idt = false,
+            .direction = .out,
+            .intr_target = 0, // TODO
+        };
+        _ = self.tr.push(Trb.from(&data_trb));
+    }
+
+    // Status Stage
+    var status_trb = trbs.StatusTrb{
+        .cycle = undefined,
+        .ent = false,
+        .chain = false,
+        .ioc = length == 0,
+        .direction = .out,
+        .intr_target = 0, // TODO
+    };
+    _ = self.tr.push(Trb.from(&status_trb));
+
+    // Ring the doorbell for this slot
+    const ep0_dci = calcDci(0, .in);
+    self.xhc.doorbells.notifyEndpoint(self.slot_id, ep0_dci);
+}
+
+/// Get the device context for this device.
+///
+/// Note that the region is owned by the xHC and we should not modify it directly.
+fn getDeviceContext(self: *const Self) *const DeviceContext {
+    const virt = self.xhc.getDeviceContext(self.slot_id);
+    return @ptrFromInt(virt);
+}
+
 /// Clear the work buffer.
 inline fn clearWorkBuffer(self: *Self) void {
     @memset(self.buffer, 0);
@@ -392,6 +613,89 @@ inline fn calcDci(ep: u4, direction: RequestDirection) u5 {
 /// Defines device configuration and state information that is passed to the xHC.
 const InputContext = packed struct {
     control: InputControlContext,
+    slot: SlotContext,
+    ep0: EndpointContext,
+    ep1out: EndpointContext,
+    ep1in: EndpointContext,
+    ep2out: EndpointContext,
+    ep2in: EndpointContext,
+    ep3out: EndpointContext,
+    ep3in: EndpointContext,
+    ep4out: EndpointContext,
+    ep4in: EndpointContext,
+    ep5out: EndpointContext,
+    ep5in: EndpointContext,
+    ep6out: EndpointContext,
+    ep6in: EndpointContext,
+    ep7out: EndpointContext,
+    ep7in: EndpointContext,
+    ep8out: EndpointContext,
+    ep8in: EndpointContext,
+    ep9out: EndpointContext,
+    ep9in: EndpointContext,
+    ep10out: EndpointContext,
+    ep10in: EndpointContext,
+    ep11out: EndpointContext,
+    ep11in: EndpointContext,
+    ep12out: EndpointContext,
+    ep12in: EndpointContext,
+    ep13out: EndpointContext,
+    ep13in: EndpointContext,
+    ep14out: EndpointContext,
+    ep14in: EndpointContext,
+    ep15out: EndpointContext,
+    ep15in: EndpointContext,
+
+    comptime {
+        norn.comptimeAssert(
+            @sizeOf(InputContext) == 0x420,
+            "Invalid Input Context size: 0x{X}, expected 0x420",
+            .{@sizeOf(InputContext)},
+        );
+    }
+
+    inline fn at(self: *InputContext, dci: u5) *EndpointContext {
+        return switch (dci) {
+            0 => unreachable,
+            1 => &self.ep0,
+            2 => &self.ep1out,
+            3 => &self.ep1in,
+            4 => &self.ep2out,
+            5 => &self.ep2in,
+            6 => &self.ep3out,
+            7 => &self.ep3in,
+            8 => &self.ep4out,
+            9 => &self.ep4in,
+            10 => &self.ep5out,
+            11 => &self.ep5in,
+            12 => &self.ep6out,
+            13 => &self.ep6in,
+            14 => &self.ep7out,
+            15 => &self.ep7in,
+            16 => &self.ep8out,
+            17 => &self.ep8in,
+            18 => &self.ep9out,
+            19 => &self.ep9in,
+            20 => &self.ep10out,
+            21 => &self.ep10in,
+            22 => &self.ep11out,
+            23 => &self.ep11in,
+            24 => &self.ep12out,
+            25 => &self.ep12in,
+            26 => &self.ep13out,
+            27 => &self.ep13in,
+            28 => &self.ep14out,
+            29 => &self.ep14in,
+            30 => &self.ep15out,
+            31 => &self.ep15in,
+        };
+    }
+};
+
+/// Device context.
+///
+/// This region is set to DCBAA and owned by the xHC.
+const DeviceContext = packed struct {
     slot: SlotContext,
     ep0: EndpointContext,
     ep1out: EndpointContext,
@@ -682,6 +986,43 @@ const InputControlContext = packed struct(u256) {
         a29: bool,
         a30: bool,
         a31: bool,
+
+        inline fn set(self: *AddContext, n: u5) void {
+            switch (n) {
+                0 => self.a0 = true,
+                1 => self.a1 = true,
+                2 => self.a2 = true,
+                3 => self.a3 = true,
+                4 => self.a4 = true,
+                5 => self.a5 = true,
+                6 => self.a6 = true,
+                7 => self.a7 = true,
+                8 => self.a8 = true,
+                9 => self.a9 = true,
+                10 => self.a10 = true,
+                11 => self.a11 = true,
+                12 => self.a12 = true,
+                13 => self.a13 = true,
+                14 => self.a14 = true,
+                15 => self.a15 = true,
+                16 => self.a16 = true,
+                17 => self.a17 = true,
+                18 => self.a18 = true,
+                19 => self.a19 = true,
+                20 => self.a20 = true,
+                21 => self.a21 = true,
+                22 => self.a22 = true,
+                23 => self.a23 = true,
+                24 => self.a24 = true,
+                25 => self.a25 = true,
+                26 => self.a26 = true,
+                27 => self.a27 = true,
+                28 => self.a28 = true,
+                29 => self.a29 = true,
+                30 => self.a30 = true,
+                31 => self.a31 = true,
+            }
+        }
     };
 };
 
@@ -879,13 +1220,57 @@ const EndpointDescriptor = packed struct(u56) {
     /// Descriptor type.
     type: DescriptorType = .endpoint,
     /// Endpoint address.
-    address: u8,
+    address: Address,
     /// Attributes of the endpoint.
-    attributes: u8,
+    attributes: Attribute,
     /// Maximum packet size for this endpoint.
     max_packet_size: u16,
     /// Interval for polling the endpoint (in milliseconds).
     interval: u8,
+
+    const Attribute = packed struct(u8) {
+        /// Transfer type.
+        transfer_type: TransferType,
+        /// Reserved.
+        _reserved1: u2 = 0,
+        /// Usage type.
+        usage_type: UsageType,
+        /// Reserved.
+        _reserved2: u2 = 0,
+    };
+
+    const TransferType = enum(u2) {
+        /// Control transfer.
+        control = 0,
+        /// Isochronous transfer.
+        isochronous = 1,
+        /// Bulk transfer.
+        bulk = 2,
+        /// Interrupt transfer.
+        interrupt = 3,
+    };
+
+    const UsageType = enum(u2) {
+        /// Periodic
+        periodic = 0,
+        /// Notification
+        notification = 1,
+
+        _,
+    };
+
+    const Address = packed struct(u8) {
+        /// Endpoint number.
+        ep: u4,
+        /// Reserved.
+        _reserved1: u3 = 0,
+        /// Direction. Ignored for control endpoints.
+        direction: RequestDirection,
+
+        inline fn dci(self: Address) u5 {
+            return (@as(u5, self.ep) << 1) + @as(u5, @intFromEnum(self.direction));
+        }
+    };
 };
 
 /// Descriptor specific to HID class devices.

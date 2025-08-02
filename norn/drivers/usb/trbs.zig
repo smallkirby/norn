@@ -339,6 +339,40 @@ pub const AddressDeviceTrb = packed struct(u128) {
     }
 };
 
+/// Configure Endpoint Command TRB.
+///
+/// Evaluates the bandwidth and resource requirements of the endpoints selected by the command.
+pub const ConfigureEndpointTrb = packed struct(u128) {
+    /// Address of the Input Context data structure.
+    input_context: Phys,
+
+    /// Reserved.
+    _reserved2: u32 = 0,
+
+    /// Cycle bit.
+    cycle: u1,
+    /// Reserved.
+    _reserved3: u8 = 0,
+    /// Deconfigure.
+    dc: bool = false,
+    /// TRB type.
+    type: TrbType = .configure_endpoint,
+    /// Reserved.
+    _reserved4: u8 = 0,
+    /// Target Slot ID.
+    slot: u8,
+
+    pub fn from(slot: u8, context: *const anyopaque) ConfigureEndpointTrb {
+        norn.rtt.expectEqual(0, mem.virt2phys(context) & 0xF);
+
+        return ConfigureEndpointTrb{
+            .input_context = mem.virt2phys(context),
+            .cycle = undefined,
+            .slot = slot,
+        };
+    }
+};
+
 /// Transfer Event TRB.
 ///
 /// Provides the completion status associated with a Transfer TRB.
@@ -445,6 +479,8 @@ pub const TrbType = enum(u6) {
     enable_slot = 9,
     /// Address Device Command TRB.
     address_device = 11,
+    /// Configure Endpoint Command TRB.
+    configure_endpoint = 12,
     /// Transfer Event.
     transfer_event = 32,
     /// Command Completion Event TRB.

@@ -259,6 +259,11 @@ pub fn setDeviceContext(self: *Self, slot: u8, region: *anyopaque) void {
     self.dcbaa.set(slot, @intFromPtr(region));
 }
 
+/// Get the Device Context of the given slot index.
+pub fn getDeviceContext(self: *const Self, slot: u8) Virt {
+    return self.dcbaa.at(slot).?;
+}
+
 /// Find a device by its port index.
 fn findDeviceByPort(self: *const Self, port_number: usb.PortNumber) ?*Device {
     for (self.devices.items) |device| {
@@ -355,6 +360,19 @@ fn handleCommandCompletion(self: *Self, event: *const volatile trbs.CommandCompl
             };
 
             try device.onAddressAssigned();
+        },
+
+        // Endpoint is configured.
+        .configure_endpoint => {
+            log.debug("Slot#{d}: Configure Endpoint Command completed.", .{slot_id});
+            norn.rtt.expectEqual(.success, event.code);
+
+            const device = self.findDeviceBySlot(slot_id) orelse {
+                log.err("Address Device Command completed, but no device is waiting for it.", .{});
+                return UsbError.NotFound;
+            };
+
+            try device.onEndpointConfigured();
         },
 
         // Unhandled command completions.
