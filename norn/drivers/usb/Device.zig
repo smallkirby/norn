@@ -1,9 +1,18 @@
 const Self = @This();
 
+/// Size in bytes of the work buffer used for transfers.
+///
+/// Data less than this size can be transferred without further allocations.
+const work_buffer_size = mem.size_4kib;
+/// Number of TRBs in a Transfer Ring.
+const num_ents_in_tr = mem.size_4kib / @sizeOf(Trb);
+
 /// State.
 state: State,
 /// Transfer Ring.
 tr: ring.Ring,
+/// Device descriptor.
+device_desc: DeviceDescriptor = undefined,
 
 /// Port index.
 port_index: usb.PortIndex,
@@ -14,8 +23,8 @@ prs: PortRegisterSet.RegisterType,
 /// Host Controller.
 xhc: *Xhc,
 
-/// Number of TRBs in a Transfer Ring.
-const num_ents_in_tr = mem.size_4kib / @sizeOf(Trb);
+/// Work buffer that can be used for transfers.
+buffer: []u8,
 
 /// Device state.
 pub const State = enum {
@@ -25,6 +34,10 @@ pub const State = enum {
     waiting_slot,
     /// Waiting for the address to be assigned.
     waiting_address,
+    /// Address has been assigned and device is waiting for the device descriptor.
+    waiting_device_desc,
+    /// Waiting for the configuration descriptor.
+    waiting_config_desc,
 };
 
 /// Create a new USB device.
@@ -32,7 +45,7 @@ pub fn new(
     xhc: *Xhc,
     port_index: usb.PortIndex,
     prs: PortRegisterSet.RegisterType,
-) Self {
+) UsbError!Self {
     return .{
         .state = .initialized,
         .tr = undefined,
@@ -41,6 +54,8 @@ pub fn new(
         .slot_id = undefined,
         .prs = prs,
         .xhc = xhc,
+
+        .buffer = try general_allocator.alloc(u8, work_buffer_size),
     };
 }
 
@@ -119,8 +134,161 @@ pub fn assignAddress(self: *Self, slot: u8) UsbError!void {
 
     // Request to assign the address.
     var cmd = trbs.AddressDeviceTrb.from(slot, ic_page.ptr);
-    self.xhc.command_ring.push(Trb.from(&cmd));
-    self.xhc.doorbells.notify(0);
+    _ = self.xhc.command_ring.push(Trb.from(&cmd));
+    self.xhc.doorbells.notifyCommand();
+}
+
+/// Called when the address has been successfully assigned to the device.
+pub fn onAddressAssigned(self: *Self) UsbError!void {
+    norn.rtt.expectEqual(.waiting_address, self.state);
+
+    self.state = .waiting_device_desc;
+
+    log.info("Address assigned to slot#{d}.", .{self.slot_id});
+
+    try self.getDeviceDescriptor();
+}
+
+/// Handles transfer events.
+pub fn onTransferEvent(self: *Self, event: *const volatile trbs.TransferEventTrb) UsbError!void {
+    const issuer: *const trbs.Trb = @ptrFromInt(mem.phys2virt(event.trb));
+    switch (issuer.type) {
+        .data => try self.onDataTransfer(event, @ptrCast(issuer)),
+        else => {
+            log.warn("Unhandled TRB type that generated Transfer Event: {d}", .{@intFromEnum(issuer.type)});
+            return;
+        },
+    }
+}
+
+/// Request the device descriptor from the device.
+fn getDeviceDescriptor(self: *Self) UsbError!void {
+    norn.rtt.expectEqual(.waiting_device_desc, self.state);
+
+    log.debug("Requesting device descriptor from slot#{d}.", .{self.slot_id});
+
+    self.clearWorkBuffer();
+
+    // Setup GET_DESCRIPTOR request for device descriptor
+    const Value = packed struct(u16) {
+        /// Descriptor number.
+        desc_index: u8,
+        /// Type of descriptor.
+        desc_type: DescriptorType,
+    };
+    const request_type = SetupData.RequestType{
+        .recipient = .device,
+        .type = .standard,
+        .direction = .in,
+    };
+    const setup_data = SetupData{
+        .request_type = request_type,
+        .request = .get_descriptor,
+        .value = @bitCast(Value{
+            .desc_index = 0,
+            .desc_type = .device,
+        }),
+        .index = 0,
+        .length = work_buffer_size,
+    };
+    try self.controlTransferIn(setup_data);
+}
+
+// =============================================================
+// Transfer event handlers
+// =============================================================
+
+/// Called when a Transfer Event TRB is received for control transfer.
+fn onDataTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, issuer: *const trbs.DataTrb) UsbError!void {
+    const code = event.code;
+
+    switch (self.state) {
+        .waiting_device_desc => {
+            if (code != .short_packet) {
+                log.warn("GET_DESCRIPTOR control transfer failed: code={s}", .{@tagName(code)});
+                return;
+            }
+            // Buffer size specified by SetupData and Data TRB is larger than the descriptor size.
+            norn.rtt.expectEqual(self.bufferPhysAddr(), issuer.data_buffer);
+
+            const device_desc: *const DeviceDescriptor = @alignCast(@ptrCast(self.buffer.ptr));
+            self.device_desc = device_desc.*;
+
+            log.err("Unimplemented: get configuration descriptor.", .{});
+        },
+        else => {
+            log.warn("Unexpected transfer event for control transfer while state is {s}", .{@tagName(self.state)});
+        },
+    }
+}
+
+// =============================================================
+// Utilities
+// =============================================================
+
+/// Perform a control transfer in the device-to-host direction on endpoint 0 (Default Control Pipe).
+fn controlTransferIn(self: *Self, data: SetupData) UsbError!void {
+    // Setup Stage
+    var setup_trb = trbs.SetupTrb{
+        .request_type = @bitCast(data.request_type),
+        .request = @intFromEnum(data.request),
+        .value = data.value,
+        .index = data.index,
+        .length = data.length,
+        .cycle = undefined,
+        .ioc = false,
+        .trt = .in,
+        .idt = true,
+        .intr_target = 0, // TODO
+    };
+    _ = self.tr.push(Trb.from(&setup_trb));
+
+    // Data Stage
+    var data_trb = trbs.DataTrb{
+        .data_buffer = self.bufferPhysAddr(),
+        .transfer_length = work_buffer_size,
+        .td_size = 0,
+        .cycle = undefined,
+        .ent = false,
+        .isp = false,
+        .ns = false,
+        .chain = false,
+        .ioc = true,
+        .idt = false,
+        .direction = .in,
+        .intr_target = 0, // TODO
+    };
+    _ = self.tr.push(Trb.from(&data_trb));
+
+    // Status Stage
+    var status_trb = trbs.StatusTrb{
+        .cycle = undefined,
+        .ent = false,
+        .chain = false,
+        .ioc = false,
+        .direction = .out,
+        .intr_target = 0, // TODO
+    };
+    _ = self.tr.push(Trb.from(&status_trb));
+
+    // Ring the doorbell for this slot
+    const ep0_dci = calcDci(0, .in);
+    self.xhc.doorbells.notifyEndpoint(self.slot_id, ep0_dci);
+}
+
+/// Clear the work buffer.
+inline fn clearWorkBuffer(self: *Self) void {
+    @memset(self.buffer, 0);
+}
+
+/// Get the physical address of the work buffer.
+inline fn bufferPhysAddr(self: *const Self) u64 {
+    return mem.virt2phys(self.buffer.ptr);
+}
+
+/// Calculate the Device Context Index (DCI).
+inline fn calcDci(ep: u4, direction: RequestDirection) u5 {
+    return (@as(u5, ep) << 1) + @as(u5, @intFromEnum(direction));
 }
 
 // =============================================================
@@ -423,16 +591,136 @@ const InputControlContext = packed struct(u256) {
     };
 };
 
+/// Contents of the Setup Stage TRB.
+const SetupData = packed struct(u64) {
+    /// bmRequestType.
+    ///
+    /// Identifies the characteristics of the request.
+    request_type: RequestType,
+    /// bRequest.
+    ///
+    /// Specifies the particular request.
+    request: Request,
+    /// wValue.
+    ///
+    /// Varying by request type.
+    value: u16,
+    /// wIndex.
+    ///
+    /// Varying by request type.
+    index: u16,
+    /// wLength.
+    ///
+    /// Specifies the length of the data transferred during the second stage of the control transfer.
+    length: u16,
+
+    const RequestType = packed struct(u8) {
+        recipient: Recipient,
+        type: Type,
+        direction: RequestDirection,
+    };
+
+    const Type = enum(u2) {
+        /// Standard
+        standard = 0,
+        /// Class
+        class = 1,
+        /// Vendor
+        vendor = 2,
+        /// Reserved
+        reserved = 3,
+    };
+
+    const Recipient = enum(u5) {
+        /// Device
+        device = 0,
+        /// Interface
+        interface = 1,
+        /// Endpoint
+        endpoint = 2,
+        /// Other
+        other = 3,
+        /// Vendor specific
+        vendor = 31,
+        /// Reserved.
+        _,
+    };
+
+    const Request = enum(u8) {
+        get_status = 0,
+        clear_feature = 1,
+        set_feature = 3,
+        set_address = 5,
+        get_descriptor = 6,
+        set_descriptor = 7,
+        get_configuration = 8,
+        set_configuration = 9,
+        get_interface = 10,
+        set_interface = 11,
+        synch_frame = 12,
+        _,
+    };
+};
+
+const RequestDirection = enum(u1) {
+    /// Host-to-device.
+    out = 0,
+    /// Device-to-host.
+    in = 1,
+};
+
+/// List of Descriptor Types.
+const DescriptorType = enum(u8) {
+    device = 1,
+    configuration = 2,
+    interface = 4,
+    endpoint = 5,
+};
+
+/// General information about a device.
+const DeviceDescriptor = packed struct(u144) {
+    /// Size of this descriptor in bytes.
+    length: u8,
+    /// Descriptor type.
+    type: DescriptorType = .device,
+    /// USB Specification Release Number in Binary-Coded Decimal (BCD) format.
+    usb_spec: u16,
+    /// Class code.
+    class: u8,
+    /// Subclass code.
+    subclass: u8,
+    /// Protocol code.
+    protocol: u8,
+    /// Maximum packet size for endpoint 0 (default control pipe).
+    max_packet_size: u8,
+    /// Vendor ID.
+    vendor: u16,
+    /// Product ID.
+    product: u16,
+    /// Device release number in BCD format.
+    device: u16,
+    /// Index of string descriptor describing the manufacturer.
+    manufacture_index: u8,
+    /// Index of string descriptor describing the product.
+    product_index: u8,
+    /// Index of string descriptor describing the serial number.
+    serial_index: u8,
+    /// Number of possible configurations.
+    num_configs: u8,
+};
+
 // =============================================================
 // Imports
 // =============================================================
 
 const std = @import("std");
+const log = std.log.scoped(.usb);
 const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const arch = norn.arch;
 const mem = norn.mem;
+const general_allocator = norn.mem.general_allocator;
 const usb = norn.drivers.usb;
 const UsbError = usb.UsbError;
 
@@ -442,3 +730,17 @@ const trbs = @import("trbs.zig");
 const PortRegisterSet = regs.PortRegisterSet;
 const Trb = trbs.Trb;
 const Xhc = @import("Xhc.zig");
+
+// =============================================================
+// Tests
+// =============================================================
+
+const testing = std.testing;
+
+test "DCI" {
+    try testing.expectEqual(0, calcDci(0, .out));
+    try testing.expectEqual(1, calcDci(0, .in));
+    try testing.expectEqual(2, calcDci(1, .out));
+    try testing.expectEqual(3, calcDci(1, .in));
+    try testing.expectEqual(4, calcDci(2, .out));
+}

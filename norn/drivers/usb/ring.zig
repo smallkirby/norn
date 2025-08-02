@@ -17,6 +17,7 @@ pub const Ring = struct {
             mem.size_4kib,
             size,
         );
+        @memset(@as([*]u8, @ptrCast(trbs_buffer.ptr))[0..mem.size_4kib], 0);
 
         return .{
             .trbs = trbs_buffer,
@@ -27,31 +28,35 @@ pub const Ring = struct {
     ///
     /// CRB of the TRB is properly set.
     /// TRB is copied, so the argument can be located in the stack.
-    pub fn push(self: *Ring, trb: *Trb) void {
+    pub fn push(self: *Ring, trb: *Trb) *const Trb {
         // Copy the TRB to the tail of the Ring.
-        self.copyToTail(trb);
+        const ret = self.copyToTail(trb);
 
         // Increment cursor.
         self.index += 1;
         if (self.index == self.trbs.len - 1) {
             self.rotate();
         }
+
+        return ret;
     }
 
     /// Copy a TRB to the tail of the Ring pointed to by the index.
-    fn copyToTail(self: *Ring, trb: *Trb) void {
+    fn copyToTail(self: *Ring, trb: *Trb) *const Trb {
         // Set the cycle bit.
         trb.cycle = self.pcs;
 
         // Copy the TRB.
         self.trbs[self.index] = trb.*;
+
+        return @volatileCast(@ptrCast(&self.trbs[self.index]));
     }
 
     /// Push a Link TRB and reset the cursor.
     fn rotate(self: *Ring) void {
         norn.rtt.expect(self.index == self.trbs.len - 1);
         var link = trbs.LinkTrb.new(self.trbs);
-        self.copyToTail(@ptrCast(&link));
+        _ = self.copyToTail(@ptrCast(&link));
         self.pcs +%= 1;
         self.index = 0;
     }

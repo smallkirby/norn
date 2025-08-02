@@ -92,7 +92,6 @@ pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
 
     // Init DCBAA.
     const dcbaa = try Dcbaa.init();
-    operational_regs.write(.dcbaap, dcbaa.dcbaap());
 
     return .{
         .pci_device = pci_device,
@@ -145,6 +144,7 @@ pub fn reset(self: *Self) UsbError!void {
 pub fn setup(self: *Self) UsbError!void {
     try self.initRings();
     try self.enableInterrupt();
+    self.operational_regs.write(.dcbaap, self.dcbaa.dcbaap());
 
     {
         const irs0 = self.getIrsAt(0);
@@ -222,7 +222,7 @@ pub fn registerDevices(self: *Self, allocator: Allocator) UsbError!void {
 
         const device = try allocator.create(Device);
         errdefer allocator.destroy(device);
-        device.* = Device.new(self, @intCast(n), prs);
+        device.* = try Device.new(self, @intCast(n), prs);
 
         try self.devices.append(device);
         errdefer _ = self.devices.pop();
@@ -254,7 +254,7 @@ inline fn portNumber(index: usb.PortIndex) usb.PortNumber {
     return index + 1;
 }
 
-/// TODO doc
+/// Set the Device Context in DCBAA entry of the given slot index.
 pub fn setDeviceContext(self: *Self, slot: u8, region: *anyopaque) void {
     self.dcbaa.set(slot, @intFromPtr(region));
 }
@@ -263,6 +263,16 @@ pub fn setDeviceContext(self: *Self, slot: u8, region: *anyopaque) void {
 fn findDeviceByPort(self: *const Self, port_number: usb.PortNumber) ?*Device {
     for (self.devices.items) |device| {
         if (portNumber(device.port_index) == port_number) {
+            return device;
+        }
+    }
+    return null;
+}
+
+/// Find a device by its slot ID.
+fn findDeviceBySlot(self: *const Self, slot_id: u8) ?*Device {
+    for (self.devices.items) |device| {
+        if (device.slot_id == slot_id) {
             return device;
         }
     }
@@ -292,10 +302,25 @@ pub fn handleEvent(self: *Self) UsbError!void {
     while (self.event_ring.next()) |event| {
         switch (event.type) {
             .port_status_change => try self.handlePortStatusChange(@ptrCast(event)),
+            .transfer_event => try self.handleTransfer(@ptrCast(event)),
             .command_completion => try self.handleCommandCompletion(@ptrCast(event)),
             else => log.err("Unhandled event type: {d}", .{@intFromEnum(event.type)}),
         }
     }
+}
+
+/// Handles Transfer Event.
+fn handleTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb) UsbError!void {
+    const slot_id = event.slot_id;
+
+    // Find the device by slot ID.
+    const device = self.findDeviceBySlot(slot_id) orelse {
+        log.err("Transfer Event for not registered slot#{d}", .{slot_id});
+        return UsbError.NotFound;
+    };
+
+    // Handle the transfer.
+    try device.onTransferEvent(event);
 }
 
 /// Handles Command Completion Event.
@@ -314,7 +339,7 @@ fn handleCommandCompletion(self: *Self, event: *const volatile trbs.CommandCompl
                 return UsbError.NotFound;
             };
             log.debug("Port#{d}, Slot#{d}: Enable Slot Command completed.", .{ portNumber(device.port_index), slot_id });
-            norn.rtt.expectEqual(1, event.code);
+            norn.rtt.expectEqual(.success, event.code);
 
             try device.assignAddress(slot_id);
         },
@@ -322,8 +347,14 @@ fn handleCommandCompletion(self: *Self, event: *const volatile trbs.CommandCompl
         // Address is assigned.
         .address_device => {
             log.debug("Slot#{d}: Address Device Command completed.", .{slot_id});
-            norn.rtt.expectEqual(1, event.code);
-            log.err("TODO: Address Device Command: implement the handler", .{});
+            norn.rtt.expectEqual(.success, event.code);
+
+            const device = self.findDeviceByState(.waiting_address) orelse {
+                log.err("Address Device Command completed, but no device is waiting for it.", .{});
+                return UsbError.NotFound;
+            };
+
+            try device.onAddressAssigned();
         },
 
         // Unhandled command completions.
@@ -340,11 +371,12 @@ fn handlePortStatusChange(self: *Self, event: *const volatile trbs.PortStatusCha
         return UsbError.NotFound;
     };
     log.debug("Port#{d}: Status changed.", .{event.port});
-    norn.rtt.expectEqual(1, event.code);
+    norn.rtt.expectEqual(.success, event.code);
 
     var enable_slot = trbs.EnableSlotTrb{ .cycle = undefined };
-    self.command_ring.push(Trb.from(&enable_slot));
-    self.doorbells.notify(0); // To xHC.
+    _ = self.command_ring.push(Trb.from(&enable_slot));
+
+    self.doorbells.notifyCommand();
 }
 
 // =============================================================
@@ -610,9 +642,16 @@ const DoorBellArray = struct {
         return RegisterType.new(self._base.add(index * @sizeOf(regs.DoorBell)));
     }
 
-    pub fn notify(self: *const DoorBellArray, target: u8) void {
-        const db = self.at(target);
-        db.set(regs.DoorBell{ .target = target });
+    /// Notify the xHC of a command being pushed to the Command Ring.
+    pub fn notifyCommand(self: *const DoorBellArray) void {
+        const db = self.at(0);
+        db.set(regs.DoorBell{ .target = 0 });
+    }
+
+    /// Notify the specified endpoint, of the device specified by the slot ID, of a new TRB in the Transfer Ring.
+    pub fn notifyEndpoint(self: *const DoorBellArray, slot: u8, dci: u5) void {
+        const db = self.at(slot);
+        db.set(regs.DoorBell{ .target = dci });
     }
 };
 
