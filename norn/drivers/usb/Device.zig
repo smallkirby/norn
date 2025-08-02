@@ -7,12 +7,21 @@ const work_buffer_size = mem.size_4kib;
 /// Number of TRBs in a Transfer Ring.
 const num_ents_in_tr = mem.size_4kib / @sizeOf(Trb);
 
+/// List type of descriptors.
+///
+/// Note that each component has a variant size depending on the descriptor type.
+const DescriptorList = std.ArrayList(*DescriptorHeader);
+
 /// State.
 state: State,
 /// Transfer Ring.
 tr: ring.Ring,
 /// Device descriptor.
 device_desc: DeviceDescriptor = undefined,
+/// Configuration descriptor.
+config_desc: ConfigurationDescriptor = undefined,
+/// List of descriptors other than device and configuration descriptors.
+descriptors: DescriptorList,
 
 /// Port index.
 port_index: usb.PortIndex,
@@ -49,6 +58,7 @@ pub fn new(
     return .{
         .state = .initialized,
         .tr = undefined,
+        .descriptors = DescriptorList.init(general_allocator),
 
         .port_index = port_index,
         .slot_id = undefined,
@@ -194,6 +204,77 @@ fn getDeviceDescriptor(self: *Self) UsbError!void {
     try self.controlTransferIn(setup_data);
 }
 
+/// Request a configuration descriptor from the device.
+fn getConfigurationDescriptor(self: *Self, config_index: u8) UsbError!void {
+    norn.rtt.expectEqual(.waiting_config_desc, self.state);
+
+    log.debug("Requesting configuration descriptor {d} from slot#{d}.", .{ config_index, self.slot_id });
+
+    self.clearWorkBuffer();
+
+    // Setup GET_DESCRIPTOR request for configuration descriptor
+    const Value = packed struct(u16) {
+        /// Configuration index.
+        desc_index: u8,
+        /// Type of descriptor.
+        desc_type: DescriptorType,
+    };
+    const request_type = SetupData.RequestType{
+        .recipient = .device,
+        .type = .standard,
+        .direction = .in,
+    };
+    const setup_data = SetupData{
+        .request_type = request_type,
+        .request = .get_descriptor,
+        .value = @bitCast(Value{
+            .desc_index = config_index,
+            .desc_type = .configuration,
+        }),
+        .index = 0,
+        .length = work_buffer_size,
+    };
+    try self.controlTransferIn(setup_data);
+}
+
+/// Parse and record the configuration descriptor.
+fn consumeConfigurationDescriptor(self: *Self, config_desc: *const ConfigurationDescriptor) UsbError!void {
+    norn.rtt.expectEqual(.configuration, config_desc.type);
+    self.config_desc = config_desc.*;
+
+    // Iterate through all descriptors in the configuration descriptor.
+    var left = config_desc.total_length - config_desc.length;
+    var cur: *align(1) const DescriptorHeader = @ptrFromInt(@intFromPtr(config_desc) + config_desc.length);
+    while (left > 0) {
+        norn.rtt.expect(cur.length != 0);
+
+        switch (cur.type) {
+            .endpoint => {},
+            .interface => {
+                const desc: *align(1) const InterfaceDescriptor = @alignCast(@ptrCast(cur));
+                log.debug(
+                    "Interface found: {X:0>2}:{X:0>2}:{X:0>2}",
+                    .{ desc.class, desc.subclass, desc.interface_number },
+                );
+            },
+            .hid => log.debug("HID class found.", .{}),
+            else => log.warn(
+                "Unexpected descriptor type {d} in configuration descriptor (length={d}).",
+                .{ @intFromEnum(cur.type), cur.length },
+            ),
+        }
+
+        // Record the descriptor.
+        const desc_buf = try general_allocator.alloc(u8, cur.length);
+        errdefer general_allocator.free(desc_buf);
+        @memcpy(desc_buf, @as([*]const u8, @ptrCast(cur))[0..cur.length]);
+        try self.descriptors.append(@alignCast(@ptrCast(desc_buf.ptr)));
+
+        left -= cur.length;
+        cur = @ptrFromInt(@intFromPtr(cur) + cur.length);
+    }
+}
+
 // =============================================================
 // Transfer event handlers
 // =============================================================
@@ -214,7 +295,20 @@ fn onDataTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, iss
             const device_desc: *const DeviceDescriptor = @alignCast(@ptrCast(self.buffer.ptr));
             self.device_desc = device_desc.*;
 
-            log.err("Unimplemented: get configuration descriptor.", .{});
+            // Transition to waiting for configuration descriptor
+            self.state = .waiting_config_desc;
+            try self.getConfigurationDescriptor(0);
+        },
+        .waiting_config_desc => {
+            if (code != .short_packet) {
+                log.warn("GET_DESCRIPTOR (config) control transfer failed: code={s}", .{@tagName(code)});
+                return;
+            }
+            // Buffer size specified by SetupData and Data TRB is larger than the descriptor size.
+            norn.rtt.expectEqual(self.bufferPhysAddr(), issuer.data_buffer);
+
+            const config_desc: *const ConfigurationDescriptor = @alignCast(@ptrCast(self.buffer.ptr));
+            try self.consumeConfigurationDescriptor(config_desc);
         },
         else => {
             log.warn("Unexpected transfer event for control transfer while state is {s}", .{@tagName(self.state)});
@@ -671,10 +765,32 @@ const RequestDirection = enum(u1) {
 
 /// List of Descriptor Types.
 const DescriptorType = enum(u8) {
+    // Standard descriptor types.
     device = 1,
     configuration = 2,
+    string = 3,
     interface = 4,
     endpoint = 5,
+    interface_power = 8,
+    otg = 9,
+    debug = 10,
+    interface_association = 11,
+    bos = 15,
+    device_cap = 16,
+
+    // Class-specific descriptor types.
+    hid = 33,
+    hid_report = 34,
+
+    _,
+};
+
+/// Common header for all USB descriptors.
+const DescriptorHeader = packed struct(u16) {
+    /// Size of this descriptor in bytes.
+    length: u8,
+    /// Descriptor type.
+    type: DescriptorType,
 };
 
 /// General information about a device.
@@ -707,6 +823,87 @@ const DeviceDescriptor = packed struct(u144) {
     serial_index: u8,
     /// Number of possible configurations.
     num_configs: u8,
+};
+
+/// Describes a specific device configuration.
+const ConfigurationDescriptor = packed struct(u72) {
+    /// Size of this descriptor in bytes.
+    length: u8,
+    /// Descriptor type.
+    type: DescriptorType = .configuration,
+    /// Total length of this configuration including all interfaces, endpoints, and class descriptors.
+    total_length: u16,
+    /// Number of interfaces supported by this configuration.
+    num_interfaces: u8,
+    /// Value used by the Set Configuration request to select this configuration.
+    config_value: u8,
+    /// Index of string descriptor describing this configuration.
+    config_index: u8,
+    /// Configuration characteristics.
+    attributes: u8,
+    /// Maximum power consumption from the bus (in 2mA units).
+    max_power: u8,
+};
+
+/// Describes a specific interface within a configuration.
+///
+/// Endpoint descriptors for this interface follow the interface descriptor.
+/// Always part of a configuration descriptor.
+const InterfaceDescriptor = packed struct(u72) {
+    /// Size of this descriptor in bytes.
+    length: u8,
+    /// Descriptor type.
+    type: DescriptorType = .interface,
+    /// Interface number.
+    interface_number: u8,
+    /// Value used to select this alternate setting for this interface.
+    alternate_setting: u8,
+    /// Number of endpoints used by this interface (excluding endpoint 0).
+    num_endpoints: u8,
+    /// Class code.
+    class: u8,
+    /// Subclass code.
+    subclass: u8,
+    /// Protocol code.
+    protocol: u8,
+    /// Index of string descriptor describing this interface.
+    interface_index: u8,
+};
+
+/// Information required by the host to determine the bandwidth requirements of an endpoint.
+///
+/// Always part of a configuration descriptor.
+const EndpointDescriptor = packed struct(u56) {
+    /// Size of this descriptor in bytes.
+    length: u8,
+    /// Descriptor type.
+    type: DescriptorType = .endpoint,
+    /// Endpoint address.
+    address: u8,
+    /// Attributes of the endpoint.
+    attributes: u8,
+    /// Maximum packet size for this endpoint.
+    max_packet_size: u16,
+    /// Interval for polling the endpoint (in milliseconds).
+    interval: u8,
+};
+
+/// Descriptor specific to HID class devices.
+const HidDescriptor = packed struct(u72) {
+    /// Size of this descriptor in bytes.
+    length: u8,
+    /// Descriptor type.
+    type: DescriptorType = .hid,
+    /// HID Class Specification release number in BCD format.
+    hid_spec: u16,
+    /// Country code of the localized hardware.
+    country_code: u8,
+    /// The number of class descriptors.
+    num_descriptors: u8,
+    /// Type of class descriptor.
+    class_descriptor_type: u8,
+    /// Total size of the Report descriptor in bytes.
+    report_length: u16,
 };
 
 // =============================================================

@@ -15,7 +15,6 @@ DEFAULT_INIT_HEYSTACK=(
   "[1]=0000000000000000 [2]=0000000000000001 [3]=0000000000000002"
   "[4]=0000000000000003"
   "xHC has started running"
-  "Device enumeration completed"
 )
 # Success indicator for "/bin/busybox ls -la".
 BUSYBOX_LS_HEYSTACK=(
