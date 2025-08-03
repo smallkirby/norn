@@ -216,6 +216,13 @@ fn nornThread(initramfs: surtr.InitramfsInfo) !void {
     };
     try norn.drivers.usb.init(pci_usb, norn.mem.general_allocator);
 
+    // Spin wait for runtime tests.
+    if (norn.is_runtime_test and norn.rtt_hid_wait != 0) {
+        for (0..norn.rtt_hid_wait) |_| {
+            try norn.acpi.spinForUsec(1000 * 1000);
+        }
+    }
+
     // Start the scheduler.
     // This function never returns.
     norn.sched.unlock();

@@ -46,6 +46,11 @@ pub const banner = @import("banner.zig").banner;
 /// Maximum number of supported CPUs.
 pub const num_max_cpu = 256;
 
+/// Seconds to wait after USB is initialized.
+///
+/// Only for runtime tests.
+pub const rtt_hid_wait = option.rtt_hid_wait;
+
 var serial = Serial{};
 
 /// Print an unimplemented message and halt the CPU indefinitely.
@@ -94,6 +99,14 @@ pub fn endlessHalt() noreturn {
     }
     while (true) {
         _ = arch.disableIrq();
+        arch.halt();
+    }
+}
+
+/// Halt the CPU indefinitely with IRQs enabled.
+pub fn endlessHaltIrqEnable() noreturn {
+    arch.enableIrq();
+    while (true) {
         arch.halt();
     }
 }

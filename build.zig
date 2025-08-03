@@ -102,6 +102,12 @@ pub fn build(b: *std.Build) !void {
         "Disable KVM.",
     ) orelse false;
 
+    const rtt_hid_wait = b.option(
+        u32,
+        "rtt_hid_wait",
+        "(Runtime Test) Seconds to wait for keyboard input after USB subsystem is initialized.",
+    ) orelse 0;
+
     const options = b.addOptions();
     options.addOption(std.log.Level, "log_level", log_level);
     options.addOption(bool, "is_runtime_test", is_runtime_test);
@@ -109,6 +115,7 @@ pub fn build(b: *std.Build) !void {
     options.addOption([]const u8, "sha", try getGitSha(b));
     options.addOption([]const u8, "version", norn_version);
     options.addOption(bool, "debug_syscall", debug_syscall);
+    options.addOption(u32, "rtt_hid_wait", rtt_hid_wait);
 
     // =============================================================
     // Modules

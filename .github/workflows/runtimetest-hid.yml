@@ -1,0 +1,50 @@
+name: Runtime Tests (no kvm / USB HID driver)
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  ZIG_VERSION: 0.14.1
+
+jobs:
+  runtime_test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        BUILD_TYPE: [Debug, ReleaseSafe, ReleaseFast]
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          lfs: true
+
+      - name: Install dependency
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            git sudo binutils curl wget tar xz-utils qemu-system-x86 qemu-utils ovmf socat
+
+      - name: Install zig
+        run: |
+          curl https://ziglang.org/download/${{env.ZIG_VERSION}}/zig-x86_64-linux-${{env.ZIG_VERSION}}.tar.xz -L -o zig.tar.xz
+          tar -xf zig.tar.xz
+          echo "$(pwd)/zig-x86_64-linux-${{env.ZIG_VERSION}}" >> $GITHUB_PATH
+
+      - name: Runtime Tests (busybox)
+        run: |
+          mkdir -p ./assets/rootfs/bin
+          cp ./vendor/busybox/busybox ./assets/rootfs/bin
+
+          zig build install \
+            -Dlog_level=debug \
+            -Doptimize=${{ matrix.BUILD_TYPE }} \
+            -Druntime_test=true \
+            -Dinit_binary=/bin/busybox \
+            -Drtt_hid_wait=20
+          bash ./runtime_test_hid.bash

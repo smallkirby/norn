@@ -6,6 +6,7 @@
 ![Unit Tests](https://github.com/smallkirby/norn/actions/workflows/unittest.yml/badge.svg)
 ![Runtime Tests (init)](https://github.com/smallkirby/norn/actions/workflows/runtimetest-testinit.yml/badge.svg)
 ![Runtime Tests (busybox)](https://github.com/smallkirby/norn/actions/workflows/runtimetest-busybox.yml/badge.svg)
+![Runtime Tests (USB HID driver)](https://github.com/smallkirby/norn/actions/workflows/runtimetest-hid.yml/badge.svg)
 
 ## Development
 

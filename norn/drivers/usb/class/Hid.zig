@@ -360,6 +360,7 @@ pub fn onStatusTransferComplete(
 
             self.state = .initialized;
             try self.requestData();
+            log.debug("Ready to accept inputs.", .{});
         },
         // Unexpected state.
         else => {
