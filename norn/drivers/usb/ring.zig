@@ -97,6 +97,7 @@ pub const EventRing = struct {
             mem.size_4kib,
             num_trbs_per_segment,
         );
+        @memset(@as([*]u8, @ptrCast(trbs_buffer.ptr))[0..mem.size_4kib], 0);
         const erst = try allocator.alignedAlloc(
             ErstEntry,
             16,
