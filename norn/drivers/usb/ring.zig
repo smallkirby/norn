@@ -63,8 +63,8 @@ pub const Ring = struct {
 
     /// Deinitialize the Ring and free the backing memory.
     pub fn deinit(self: *Ring, allocator: Allocator) void {
-        allocator.free(self.trbs);
         self.trbs = undefined;
+        allocator.free(@volatileCast(self.trbs));
     }
 };
 

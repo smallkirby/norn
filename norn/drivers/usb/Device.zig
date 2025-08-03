@@ -7,8 +7,12 @@ const work_buffer_size = mem.size_4kib;
 /// Number of TRBs in a Transfer Ring.
 const num_ents_in_tr = mem.size_4kib / @sizeOf(Trb);
 
+/// ID type of endpoint.
+const EndpointId = u5;
 /// List type of interfaces.
 const InterfaceList = std.ArrayList(Interface);
+/// List type of class drivers.
+const ClassDriverList = std.AutoHashMap(EndpointId, class.ClassDriver);
 
 /// State.
 state: State,
@@ -20,9 +24,11 @@ device_desc: DeviceDescriptor = undefined,
 config_desc: ConfigurationDescriptor = undefined,
 /// List of interfaces belonging to the device.
 interfaces: InterfaceList,
+/// List of class drivers for each interface.
+class_drivers: ClassDriverList,
 
 /// Port index.
-port_index: usb.PortIndex,
+port_index: PortIndex,
 /// Slot ID.
 slot_id: u8,
 /// Port Register Set.
@@ -64,20 +70,25 @@ pub const Interface = struct {
 /// Create a new USB device.
 pub fn new(
     xhc: *Xhc,
-    port_index: usb.PortIndex,
+    port_index: PortIndex,
     prs: PortRegisterSet.RegisterType,
 ) UsbError!Self {
+    const buffer = try mem.general_allocator.alloc(u8, work_buffer_size);
+    const interfaces = InterfaceList.init(mem.general_allocator);
+    const class_drivers = ClassDriverList.init(mem.general_allocator);
+
     return .{
         .state = .initialized,
         .tr = undefined,
-        .interfaces = InterfaceList.init(mem.general_allocator),
+        .interfaces = interfaces,
+        .class_drivers = class_drivers,
 
         .port_index = port_index,
         .slot_id = undefined,
         .prs = prs,
         .xhc = xhc,
 
-        .buffer = try general_allocator.alloc(u8, work_buffer_size),
+        .buffer = buffer,
     };
 }
 
@@ -177,6 +188,11 @@ pub fn onEndpointConfigured(self: *Self) UsbError!void {
     norn.rtt.expectEqual(.waiting_config_set, self.state);
 
     self.state = .complete;
+
+    // Configure class drivers for each interface
+    for (self.interfaces.items) |*interface| {
+        try class.configure(self.class_drivers.get(interface.endpoint.address.ep).?);
+    }
 }
 
 /// Handles transfer events.
@@ -185,6 +201,7 @@ pub fn onTransferEvent(self: *Self, event: *const volatile trbs.TransferEventTrb
     switch (issuer.type) {
         .data => try self.onDataTransfer(event, @ptrCast(issuer)),
         .status => try self.onStatusTransfer(event, @ptrCast(issuer)),
+        .normal => try self.onNormalTransfer(event, @ptrCast(issuer)),
         else => log.warn(
             "Unhandled TRB type that generated Transfer Event: {d}",
             .{@intFromEnum(issuer.type)},
@@ -361,11 +378,12 @@ fn configureEndpoint(self: *Self) UsbError!void {
     ic.slot = dc.slot;
 
     // Set Add Context Flags and configure all endpoints.
-    for (self.interfaces.items) |interface| {
+    for (self.interfaces.items) |*interface| {
         const dci = interface.endpoint.address.dci();
         const ep = interface.endpoint;
         ic.control.ac.set(dci);
 
+        // Configure endpoint context.
         const epctx = ic.at(dci);
         epctx.max_packet_size = ep.max_packet_size;
         epctx.max_burst_size = 0;
@@ -388,6 +406,19 @@ fn configureEndpoint(self: *Self) UsbError!void {
                 .interrupt => .intr_in,
             },
         };
+
+        // Init class drivers.
+        var tr = try ring.Ring.new(num_ents_in_tr, mem.general_allocator);
+        errdefer tr.deinit(mem.general_allocator);
+        epctx.setTrdp(&tr.trbs[0]);
+
+        const class_driver = try class.init(
+            self,
+            interface,
+            tr,
+            general_allocator,
+        ) orelse continue;
+        try self.class_drivers.put(interface.endpoint.address.ep, class_driver);
     }
 
     // Issue Configure Endpoint command.
@@ -438,6 +469,14 @@ fn onDataTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, iss
             self.state = .waiting_config_set;
             try self.setConfiguration(config_desc.config_value);
         },
+        // Class-specific control transfer.
+        .complete => {
+            const driver = self.class_drivers.get(event.endpoint) orelse {
+                log.warn("No class driver found for endpoint#{d}.", .{event.endpoint});
+                return;
+            };
+            try driver.onDataTransferComplete(@volatileCast(event), @volatileCast(issuer));
+        },
         // Unexpected state.
         else => {
             log.warn("Unexpected transfer event for control transfer while state is {s}", .{@tagName(self.state)});
@@ -447,7 +486,6 @@ fn onDataTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, iss
 
 /// Called when a Transfer Event TRB is received for Status TRB of control transfer.
 fn onStatusTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, issuer: *const trbs.StatusTrb) UsbError!void {
-    _ = issuer;
     const code = event.code;
 
     switch (self.state) {
@@ -461,11 +499,51 @@ fn onStatusTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, i
             // Notify the xHC of the selected configuration.
             try self.configureEndpoint();
         },
+        // Class-specific control transfer.
+        .complete => {
+            const driver = self.class_drivers.get(event.endpoint) orelse {
+                log.warn("No class driver found for endpoint#{d}.", .{event.endpoint});
+                return;
+            };
+            try driver.onStatusTransferComplete(@volatileCast(event), @volatileCast(issuer));
+        },
         // Unexpected state.
         else => {
             log.warn("Unexpected transfer event for control transfer while state is {s}", .{@tagName(self.state)});
         },
     }
+}
+
+/// Called when a Transfer Event TRB is received for Normal TRB.
+fn onNormalTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, issuer: *const trbs.NormalTrb) UsbError!void {
+    const code = event.code;
+    const dci = event.endpoint;
+    const endpoint = dci >> 1;
+
+    // Only handle successful transfers and short packets
+    if (code != .success and code != .short_packet) {
+        log.warn(
+            "Normal transfer failed: code={s}, EP={d}",
+            .{ @tagName(code), endpoint },
+        );
+        return;
+    }
+
+    // Calculate the amount of data transferred
+    const transfer_length = issuer.length;
+    const residual = event.length;
+    const length = transfer_length - residual;
+
+    // Get the data from the transfer buffer
+    const data_ptr: [*]const u8 = @ptrFromInt(mem.phys2virt(issuer.data_buffer));
+    const data = data_ptr[0..length];
+
+    // Route the data to appropriate class drivers
+    const driver = self.class_drivers.get(endpoint) orelse {
+        log.warn("No class driver found for endpoint#{d}.", .{endpoint});
+        return;
+    };
+    try driver.onNormalTransferComplete(data);
 }
 
 // =============================================================
@@ -477,7 +555,7 @@ fn onStatusTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, i
 /// If it requires data input, they're stored in the work buffer.
 ///
 /// TODO: support transfer to other than control endpoint.
-fn controlTransferIn(self: *Self, data: SetupData) UsbError!void {
+pub fn controlTransferIn(self: *Self, data: SetupData) UsbError!void {
     // Setup Stage
     var setup_trb = trbs.SetupTrb{
         .request_type = @bitCast(data.request_type),
@@ -532,7 +610,7 @@ fn controlTransferIn(self: *Self, data: SetupData) UsbError!void {
 /// Caller must fulfill the work buffer with the data before calling this function.
 ///
 /// TODO: support transfer to other than control endpoint.
-fn controlTransferOut(self: *Self, data: SetupData, length: usize) UsbError!void {
+pub fn controlTransferOut(self: *Self, data: SetupData, length: usize) UsbError!void {
     // Setup Stage
     var setup_trb = trbs.SetupTrb{
         .request_type = @bitCast(data.request_type),
@@ -1027,7 +1105,7 @@ const InputControlContext = packed struct(u256) {
 };
 
 /// Contents of the Setup Stage TRB.
-const SetupData = packed struct(u64) {
+pub const SetupData = packed struct(u64) {
     /// bmRequestType.
     ///
     /// Identifies the characteristics of the request.
@@ -1049,24 +1127,13 @@ const SetupData = packed struct(u64) {
     /// Specifies the length of the data transferred during the second stage of the control transfer.
     length: u16,
 
-    const RequestType = packed struct(u8) {
+    pub const RequestType = packed struct(u8) {
         recipient: Recipient,
         type: Type,
         direction: RequestDirection,
     };
 
-    const Type = enum(u2) {
-        /// Standard
-        standard = 0,
-        /// Class
-        class = 1,
-        /// Vendor
-        vendor = 2,
-        /// Reserved
-        reserved = 3,
-    };
-
-    const Recipient = enum(u5) {
+    pub const Recipient = enum(u5) {
         /// Device
         device = 0,
         /// Interface
@@ -1079,6 +1146,17 @@ const SetupData = packed struct(u64) {
         vendor = 31,
         /// Reserved.
         _,
+    };
+
+    pub const Type = enum(u2) {
+        /// Standard
+        standard = 0,
+        /// Class
+        class = 1,
+        /// Vendor
+        vendor = 2,
+        /// Reserved
+        reserved = 3,
     };
 
     const Request = enum(u8) {
@@ -1097,7 +1175,7 @@ const SetupData = packed struct(u64) {
     };
 };
 
-const RequestDirection = enum(u1) {
+pub const RequestDirection = enum(u1) {
     /// Host-to-device.
     out = 0,
     /// Device-to-host.
@@ -1267,7 +1345,7 @@ const EndpointDescriptor = packed struct(u56) {
         /// Direction. Ignored for control endpoints.
         direction: RequestDirection,
 
-        inline fn dci(self: Address) u5 {
+        pub inline fn dci(self: Address) u5 {
             return (@as(u5, self.ep) << 1) + @as(u5, @intFromEnum(self.direction));
         }
     };
@@ -1302,16 +1380,18 @@ const Allocator = std.mem.Allocator;
 const norn = @import("norn");
 const arch = norn.arch;
 const mem = norn.mem;
-const general_allocator = norn.mem.general_allocator;
 const usb = norn.drivers.usb;
+const PortIndex = usb.PortIndex;
 const UsbError = usb.UsbError;
+const general_allocator = norn.mem.general_allocator;
 
+const class = @import("class.zig");
 const regs = @import("regs.zig");
 const ring = @import("ring.zig");
 const trbs = @import("trbs.zig");
+const Xhc = @import("Xhc.zig");
 const PortRegisterSet = regs.PortRegisterSet;
 const Trb = trbs.Trb;
-const Xhc = @import("Xhc.zig");
 
 // =============================================================
 // Tests

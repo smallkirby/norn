@@ -46,7 +46,7 @@ pub const Trb = packed struct(u128) {
 /// Normal TRB.
 pub const NormalTrb = packed struct(u128) {
     /// Address of the TRB data area or 8 bytes of immediate data.
-    data_buffer: [*]u8,
+    data_buffer: Phys,
 
     /// Transfer length.
     length: u17,
@@ -79,7 +79,7 @@ pub const NormalTrb = packed struct(u128) {
     /// TRB type.
     type: TrbType = .normal,
     /// Reserved.
-    _reserved2: u6 = 0,
+    _reserved2: u16 = 0,
 };
 
 /// Setup Stage TRB.
