@@ -59,6 +59,8 @@ fn interruptHandler(_: *norn.interrupt.Context) void {
     xhc.handleEvent() catch |err| {
         log.err("Failed to handle xHC event: {s}", .{@errorName(err)});
     };
+
+    arch.getLocalApic().eoi();
 }
 
 // =============================================================
