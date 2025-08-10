@@ -1,3 +1,12 @@
+//! USB host controller driver.
+//!
+//! Limitations:
+//! - Supports only one Interrupter (primary).
+//!
+//! References:
+//! - eXtensible Host Controller Interface for Universal Serial Bus (xHCI). May 2019. Revision 1.2. Intel Corporation.
+//! - Universal Serial Bus 3.2 Specification. June 2022. Revision 1.1. USB 3.0 Promoter Group.
+
 const UsbError = usb.UsbError;
 
 const Self = @This();
@@ -6,21 +15,35 @@ const Self = @This();
 const DeviceList = ArrayList(*Device);
 
 /// xHC PCI device.
-pci_device: *pci.Device,
-/// I/O base address of the xHC.
+pci_device: *const pci.Device,
+/// I/O base address of the xHC MMIO registers.
 iobase: mem.IoAddr,
+
 /// Capability registers.
+///
+/// Specifies the limits and capabilities of the host controller implementation.
+/// All Capability Registers are read-only.
 capability_regs: Register(CapabilityRegisters, .dword),
 /// Operational registers.
+///
+/// Specifies host controller configuration and runtime modifiable state.
 operational_regs: Register(OperationalRegisters, .dword),
 /// Runtime registers.
+///
+/// Just an extension of the Operational Registers.
 runtime_regs: Register(RuntimeRegisters, .dword),
 /// Doorbell Registers array.
+///
+/// Software can "ring" the doorbell to make xHC issue Transfer Event TRBs.
 doorbells: DoorBellArray,
 
 /// Command Ring.
+///
+/// Only one Command Ring exists per xHC instance.
 command_ring: ring.Ring = undefined,
 /// Event Ring.
+///
+/// Used to receive events from the xHC.
 event_ring: ring.EventRing = undefined,
 
 /// DCBAA.
@@ -100,9 +123,7 @@ pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
         .operational_regs = operational_regs,
         .runtime_regs = runtime_regs,
         .doorbells = doorbells,
-
         .dcbaa = dcbaa,
-
         .devices = DeviceList.init(allocator),
     };
 }
@@ -168,46 +189,6 @@ pub fn run(self: *Self) void {
     }
 }
 
-/// Initialize Command Ring and Event Ring.
-fn initRings(self: *Self) UsbError!void {
-    const num_trbs_per_ring = mem.size_4kib / @sizeOf(Trb);
-
-    // Init Command Ring.
-    const command_ring = try ring.Ring.new(
-        num_trbs_per_ring,
-        general_allocator,
-    );
-    self.command_ring = command_ring;
-    self.operational_regs.write(
-        .crcr,
-        OperationalRegisters.CommandRingControl.new(command_ring),
-    );
-
-    // Init Event Ring.
-    const irs0 = self.getIrsAt(0);
-    const event_ring = try ring.EventRing.new(irs0._iobase, general_allocator);
-    self.event_ring = event_ring;
-    self.event_ring.init();
-}
-
-/// Enable the xHC interrupt.
-fn enableInterrupt(self: *Self) UsbError!void {
-    const irs0 = self.getIrsAt(0);
-
-    var imod = irs0.read(.imod);
-    imod.imodi = 4000; // 250 * 4000 ns == 1ms
-    irs0.write(.imod, imod);
-
-    var iman = irs0.read(.iman);
-    iman.ie = true; // Enable interrupt
-    iman.ip = true; // Clear Interrupt pending
-    irs0.write(.iman, iman);
-
-    var usbcmd = self.operational_regs.read(.usbcmd);
-    usbcmd.inte = true; // Enable interrupt
-    self.operational_regs.write(.usbcmd, usbcmd);
-}
-
 /// Scan all ports and register connected devices.
 pub fn registerDevices(self: *Self, allocator: Allocator) UsbError!void {
     const max_ports = self.capability_regs.read(.hcs_params1).maxports;
@@ -241,8 +222,64 @@ pub fn hasEvent(self: *const Self) bool {
     return self.event_ring.hasEvent();
 }
 
+/// Set the Device Context in DCBAA entry of the given slot index.
+pub fn setDeviceContext(self: *const Self, slot: u8, region: *const anyopaque) void {
+    self.dcbaa.set(slot, @intFromPtr(region));
+}
+
+/// Get the Device Context of the given slot index.
+pub fn getDeviceContext(self: *const Self, slot: u8) Virt {
+    return self.dcbaa.at(slot).?;
+}
+
+/// Initialize Command Ring and Event Ring.
+fn initRings(self: *Self) UsbError!void {
+    const num_trbs_per_ring = mem.size_4kib / @sizeOf(Trb);
+
+    // Init Command Ring.
+    const command_ring = try ring.Ring.new(
+        num_trbs_per_ring,
+        general_allocator,
+    );
+    self.command_ring = command_ring;
+    self.operational_regs.write(
+        .crcr,
+        OperationalRegisters.CommandRingControl.new(command_ring),
+    );
+
+    // Init Event Ring for the primary Interrupter.
+    const irs0 = self.getIrsAt(0);
+    const event_ring = try ring.EventRing.new(
+        irs0._iobase,
+        general_allocator,
+    );
+    self.event_ring = event_ring;
+    self.event_ring.init();
+}
+
+/// Enable the xHC interrupt (primary Interrupter only).
+fn enableInterrupt(self: *Self) UsbError!void {
+    const irs0 = self.getIrsAt(0);
+
+    var imod = irs0.read(.imod);
+    imod.imodi = 4000; // 250 * 4000 ns == 1ms
+    irs0.write(.imod, imod);
+
+    var iman = irs0.read(.iman);
+    iman.ie = true; // Enable interrupt
+    iman.ip = true; // Clear Interrupt pending
+    irs0.write(.iman, iman);
+
+    var usbcmd = self.operational_regs.read(.usbcmd);
+    usbcmd.inte = true; // Enable interrupt
+    self.operational_regs.write(.usbcmd, usbcmd);
+}
+
 /// Get IRS of the given index.
-inline fn getIrsAt(self: *const Self, comptime index: usize) regs.InterrupterRegisterSet.RegisterType {
+fn getIrsAt(self: *const Self, comptime index: usize) regs.InterrupterRegisterSet.RegisterType {
+    // Supports only the primary interrupter.
+    norn.rtt.expectEqual(0, index);
+
     return RuntimeRegisters.getIrsAt(
         self.runtime_regs._iobase,
         index,
@@ -250,18 +287,8 @@ inline fn getIrsAt(self: *const Self, comptime index: usize) regs.InterrupterReg
 }
 
 /// Get the port number from the port index.
-inline fn portNumber(index: usb.PortIndex) usb.PortNumber {
+fn portNumber(index: usb.PortIndex) usb.PortNumber {
     return index + 1;
-}
-
-/// Set the Device Context in DCBAA entry of the given slot index.
-pub fn setDeviceContext(self: *Self, slot: u8, region: *anyopaque) void {
-    self.dcbaa.set(slot, @intFromPtr(region));
-}
-
-/// Get the Device Context of the given slot index.
-pub fn getDeviceContext(self: *const Self, slot: u8) Virt {
-    return self.dcbaa.at(slot).?;
 }
 
 /// Find a device by its port index.
@@ -300,11 +327,12 @@ fn findDeviceByState(self: *const Self, state: Device.State) ?*Device {
 // Event handlers
 // =============================================================
 
-/// Handles pending events in the event ring.
+/// Handles pending events in the Event Ring.
 ///
-/// This dispatches the event to the appropriate handler based on the event type.
+/// Dispatches the event to the appropriate handler based on the event type.
 pub fn handleEvent(self: *Self) UsbError!void {
-    while (self.event_ring.next()) |event| {
+    while (self.event_ring.next()) |e| {
+        const event: *const Trb = @volatileCast(e);
         switch (event.type) {
             .port_status_change => try self.handlePortStatusChange(@ptrCast(event)),
             .transfer_event => try self.handleTransfer(@ptrCast(event)),
@@ -315,7 +343,7 @@ pub fn handleEvent(self: *Self) UsbError!void {
 }
 
 /// Handles Transfer Event.
-fn handleTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb) UsbError!void {
+fn handleTransfer(self: *Self, event: *const trbs.TransferEventTrb) UsbError!void {
     const slot_id = event.slot_id;
 
     // Find the device by slot ID.
@@ -331,7 +359,7 @@ fn handleTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb) Usb
 /// Handles Command Completion Event.
 ///
 /// This dispatches the command completion event to the appropriate handler based on the command type.
-fn handleCommandCompletion(self: *Self, event: *const volatile trbs.CommandCompletionTrb) UsbError!void {
+fn handleCommandCompletion(self: *Self, event: *const trbs.CommandCompletionTrb) UsbError!void {
     const command_trb = event.commandTrb();
     const command_type = command_trb.type;
     const slot_id = event.slot_id;
@@ -444,7 +472,7 @@ const Dcbaa = struct {
     }
 
     /// Set the Device Context for the given slot index.
-    pub fn set(self: *Dcbaa, slot: u8, context: Virt) void {
+    pub fn set(self: *const Dcbaa, slot: u8, context: Virt) void {
         self._raw.entries[slot] = mem.virt2phys(context);
     }
 

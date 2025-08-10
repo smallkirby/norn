@@ -1,3 +1,11 @@
+//! USB Device.
+//!
+//! Limitations:
+//! - Does not support multiple endpoints for one interface.
+//!
+//! References:
+//! - Universal Serial Bus 3.2 Specification. June 2022. Revision 1.1. USB 3.0 Promoter Group.
+
 const Self = @This();
 
 /// Size in bytes of the work buffer used for transfers.
@@ -40,6 +48,8 @@ xhc: *Xhc,
 buffer: []u8,
 
 /// Device state.
+///
+/// TODO: should be private.
 pub const State = enum {
     /// Port is connected.
     initialized,
@@ -94,7 +104,8 @@ pub fn new(
 
 /// Reset the port.
 ///
-/// Blocks until the port reset is completed.
+/// Blocks until the request is accepted.
+/// Once the reset is completed, Port Status Change Event is generated.
 pub fn resetPort(self: *Self) UsbError!void {
     norn.rtt.expectEqual(.initialized, self.state);
 

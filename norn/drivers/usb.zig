@@ -5,7 +5,7 @@ pub const UsbError = error{
     AlreadyRegistered,
 } || norn.pci.PciError || norn.mem.MemError;
 
-/// Class code for USB host controller.
+/// PCI class code for USB host controller.
 pub const class = pci.ClassCode{
     .base_class = 0x0C,
     .sub_class = 0x03,
