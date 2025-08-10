@@ -24,6 +24,7 @@ zig build test --summary all -Druntime_test=true
 | `debug_exit` | Flag | Add `isa-debug-exit` device. When enabled, Norn can terminate QEMU with arbitrary exit code. | `false` |
 | `debug_intr` | Flag | Print all interrupts and exceptions for debugging. | `false` |
 | `debug_syscall` | Flag | Print context for the unhandled or ignored syscalls. | `false` |
+| `graphics` | Flag | Enable QEMU graphical output. | `false` |
 | `init_binary` | String | Path to the init binary within rootfs. | `/sbin/init` |
 | `log_level` | String: `debug`, `info`, `warn`, `error` | Logging level. Output under the logging level is suppressed. | `info` |
 | `no_kvm` | Flag | Disable KVM. | `false` |

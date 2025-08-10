@@ -101,6 +101,11 @@ pub fn build(b: *std.Build) !void {
         "no_kvm",
         "Disable KVM.",
     ) orelse false;
+    const graphics = b.option(
+        bool,
+        "graphics",
+        "Enable QEMU graphics.",
+    ) orelse false;
 
     const rtt_hid_wait = b.option(
         u32,
@@ -247,7 +252,6 @@ pub fn build(b: *std.Build) !void {
         "nec-usb-xhci,id=xhci",
         "-device",
         "usb-kbd",
-        "-nographic",
         "-serial",
         "mon:stdio",
         "-no-reboot",
@@ -280,6 +284,9 @@ pub fn build(b: *std.Build) !void {
     if (debug_exit) try qemu_args.appendSlice(&.{
         "-device",
         "isa-debug-exit,iobase=0xF0,iosize=0x01",
+    });
+    if (!graphics) try qemu_args.appendSlice(&.{
+        "-nographic",
     });
     const qemu_cmd = b.addSystemCommand(qemu_args.items);
     qemu_cmd.step.dependOn(b.getInstallStep());
