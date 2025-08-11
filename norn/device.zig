@@ -22,16 +22,11 @@ extern const __module_init_end: *void;
 /// Section name where array of pointers to init functions is placed.
 const init_section = ".module.init";
 
+/// Instance of DevFs.
+var devfs: *DevFs = undefined;
+
 /// Initialize the module system.
 pub fn init() DeviceError!void {
-    // Call registered init functions.
-    const array_len = (@intFromPtr(&__module_init_end) - @intFromPtr(&__module_init_start)) / @sizeOf(ModuleInit);
-    const initcalls_ptr: [*]const ModuleInit = @alignCast(@ptrCast(&__module_init_start));
-    log.debug("Calling {} module init functions", .{array_len});
-    for (initcalls_ptr[0..array_len]) |initcall| {
-        initcall();
-    }
-
     // Create /dev directory.
     _ = try fs.createDirectory("/dev", .{
         .other = .rx,
@@ -39,11 +34,21 @@ pub fn init() DeviceError!void {
         .user = .rwx,
         .type = .directory,
     });
-    const devfs = try DevFs.new(allocator);
+    devfs = try DevFs.new(allocator);
     try fs.mount("/dev", devfs.filesystem());
+
+    // Call registered init functions.
+    const array_len = (@intFromPtr(&__module_init_end) - @intFromPtr(&__module_init_start)) / @sizeOf(ModuleInit);
+    const initcalls_ptr: [*]const ModuleInit = @alignCast(@ptrCast(&__module_init_start));
+    log.debug("Calling {} module init functions", .{array_len});
+    for (initcalls_ptr[0..array_len]) |initcall| {
+        initcall();
+    }
 }
 
 /// Register a init function for module.
+///
+/// Init function is ensured to be called after `/dev` is created.
 ///
 /// NOTE: `name` is just to prevent name collision.
 /// If we can achieve a global comptime counter, it'd be preferable.
@@ -56,6 +61,21 @@ pub fn staticRegisterDevice(comptime f: ModuleInit, name: []const u8) void {
             .visibility = .default,
         });
     }
+}
+
+/// Character device.
+pub const CharDev = struct {
+    /// Device name.
+    name: []const u8,
+    /// Device major and minor numbers.
+    type: fs.DevType,
+    /// File operations.
+    fops: *const fs.Fops,
+};
+
+/// Register a character device.
+pub fn registerCharDev(dev: CharDev) DevFs.DevFsError!void {
+    try devfs.registerCharDev(dev);
 }
 
 // =============================================================

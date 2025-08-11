@@ -4,11 +4,25 @@
 
 /// FS Error.
 pub const FsError = error{
+    /// File already exists.
+    AlreadyExists,
     /// The file descriptor is invalid.
     BadFileDscriptor,
     /// No available file descriptor in pool.
     DescriptorFull,
-} || vfs.VfsError;
+    /// Invalid argument.
+    InvalidArgument,
+    /// Operation for regular file only is called on a non-regular file.
+    IsDirectory,
+    /// Operation for directory only is called on a non-directory.
+    NotDirectory,
+    /// File not found.
+    NotFound,
+    /// Failed to allocate memory.
+    OutOfMemory,
+    /// Calculation result overflowed or underflowed.
+    Overflow,
+};
 
 /// Convert FsError to syscall error type.
 fn syscallError(err: FsError) SysError {
@@ -197,6 +211,14 @@ pub const OpenFlags = struct {
         };
     }
 };
+
+/// Device major and minor numbers.
+pub const DevType = vfs.DevType;
+/// i-node.
+pub const Inode = vfs.Inode;
+
+/// File operations.
+pub const Fops = vfs.File.Vtable;
 
 /// Initialize filesystem.
 pub fn init() FsError!void {

@@ -1,21 +1,3 @@
-/// VFS error.
-pub const VfsError = error{
-    /// File already exists.
-    AlreadyExists,
-    /// Invalid argument.
-    InvalidArgument,
-    /// Operation for regular file only is called on a non-regular file.
-    IsDirectory,
-    /// Operation for directory only is called on a non-directory.
-    NotDirectory,
-    /// File not found.
-    NotFound,
-    /// Failed to allocate memory.
-    OutOfMemory,
-    /// Calculation result overflowed or underflowed.
-    Overflow,
-};
-
 /// Spin lock.
 var lock: norn.SpinLock = .{};
 
@@ -106,17 +88,17 @@ pub const Dentry = struct {
         /// Create a directory named `name` in this directory inode.
         ///
         /// If the directory is created successfully, return the dentry.
-        createDirectory: *const fn (self: *Dentry, name: []const u8, mode: Mode) VfsError!*Dentry,
+        createDirectory: *const fn (self: *Dentry, name: []const u8, mode: Mode) FsError!*Dentry,
         /// Create a file named `name` in this directory inode.
         ///
         /// If the file is created successfully, return the dentry.
-        createFile: *const fn (self: *Dentry, name: []const u8, mode: Mode) VfsError!*Dentry,
+        createFile: *const fn (self: *Dentry, name: []const u8, mode: Mode) FsError!*Dentry,
     };
 
     /// Create a directory named `name` in this directory inode.
-    pub fn createDirectory(self: *Self, name: []const u8, mode: Mode) VfsError!*Dentry {
+    pub fn createDirectory(self: *Self, name: []const u8, mode: Mode) FsError!*Dentry {
         const inode = self.inode;
-        if (inode.inode_type != InodeType.directory) return VfsError.NotDirectory;
+        if (inode.inode_type != InodeType.directory) return FsError.NotDirectory;
 
         if (self.ops.createDirectory(self, name, mode)) |new| {
             new.parent = followUp(self);
@@ -125,9 +107,9 @@ pub const Dentry = struct {
     }
 
     /// Create a file named `name` in this directory inode.
-    pub fn createFile(self: *Self, name: []const u8, mode: Mode) VfsError!*Dentry {
+    pub fn createFile(self: *Self, name: []const u8, mode: Mode) FsError!*Dentry {
         const inode = self.inode;
-        if (inode.inode_type != InodeType.directory) return VfsError.NotDirectory;
+        if (inode.inode_type != InodeType.directory) return FsError.NotDirectory;
 
         return self.ops.createFile(self, name, mode);
     }
@@ -139,6 +121,10 @@ pub const InodeType = enum {
     file,
     /// Directory
     directory,
+    /// Character device
+    character_device,
+    /// Block device
+    block_device,
 };
 
 /// User ID.
@@ -294,6 +280,10 @@ pub const Inode = struct {
     gid: Gid,
     /// File size.
     size: usize,
+    /// Device number (for character/block devices).
+    ///
+    /// TODO: rename.
+    device: DevType = DevType.zero,
     /// Operations for this inode.
     inode_ops: *const Vtable,
     /// Operations for a file.
@@ -307,21 +297,21 @@ pub const Inode = struct {
         ///
         /// If the file is found, return the dentry.
         /// If the file is not found, return null.
-        lookup: *const fn (self: *Inode, name: []const u8) VfsError!?*Dentry,
+        lookup: *const fn (self: *Inode, name: []const u8) FsError!?*Dentry,
         /// Get stat information of this inode.
-        stat: *const fn (inode: *Inode) VfsError!Stat,
+        stat: *const fn (inode: *Inode) FsError!Stat,
     };
 
     /// Lookup a file named `name` in this directory inode.
     ///
     /// This function searches only in the given directory, and does not search more than one level of depth.
-    pub fn lookup(self: *Self, name: []const u8) VfsError!?*Dentry {
-        if (self.inode_type != InodeType.directory) return VfsError.NotDirectory;
+    pub fn lookup(self: *Self, name: []const u8) FsError!?*Dentry {
+        if (self.inode_type != InodeType.directory) return FsError.NotDirectory;
         return self.inode_ops.lookup(self, name);
     }
 
     /// Get stat information of this inode.
-    pub fn stat(self: *Self) VfsError!Stat {
+    pub fn stat(self: *Self) FsError!Stat {
         return self.inode_ops.stat(self);
     }
 };
@@ -344,19 +334,31 @@ pub const File = struct {
         /// Iterate over all files in this directory inode.
         ///
         /// Caller must free the returned slice.
-        iterate: *const fn (self: *Inode, allocator: Allocator) VfsError![]*Dentry,
+        iterate: *const fn (self: *Inode, allocator: Allocator) FsError![]*Dentry = iterateUnimplemented,
         /// Read data from this inode from position `pos` to `buf`.
         ///
         /// Return the number of bytes read.
-        read: *const fn (inode: *Inode, buf: []u8, pos: usize) VfsError!usize,
+        read: *const fn (inode: *Inode, buf: []u8, pos: usize) FsError!usize = readUnimplemented,
         /// Write data to this inode from position `pos` with `data`.
         ///
         /// Return the number of bytes written.
-        write: *const fn (inode: *Inode, data: []const u8, pos: usize) VfsError!usize,
+        write: *const fn (inode: *Inode, data: []const u8, pos: usize) FsError!usize = writeUnimplemented,
+
+        fn iterateUnimplemented(_: *Inode, _: Allocator) FsError![]*Dentry {
+            @panic("Unimplemented iterate operation");
+        }
+
+        fn readUnimplemented(_: *Inode, _: []u8, _: usize) FsError!usize {
+            @panic("Unimplemented read operation");
+        }
+
+        fn writeUnimplemented(_: *Inode, _: []const u8, _: usize) FsError!usize {
+            @panic("Unimplemented write operation");
+        }
     };
 
     /// Allocate a new file instance.
-    pub fn new(dentry: *Dentry, allocator: Allocator) VfsError!*Self {
+    pub fn new(dentry: *Dentry, allocator: Allocator) FsError!*Self {
         const file = try allocator.create(File);
         file.* = .{
             .dentry = dentry,
@@ -373,9 +375,9 @@ pub const File = struct {
     }
 
     /// Iterate over all files in this directory inode.
-    pub fn iterate(self: *Self) VfsError![]*Dentry {
+    pub fn iterate(self: *Self) FsError![]*Dentry {
         if (self.dentry.inode.inode_type != InodeType.directory) {
-            return VfsError.IsDirectory;
+            return FsError.IsDirectory;
         }
         return self.vtable.iterate(
             self.dentry.inode,
@@ -384,9 +386,9 @@ pub const File = struct {
     }
 
     /// Read data from this inode.
-    pub fn read(self: *Self, buf: []u8) VfsError!usize {
+    pub fn read(self: *Self, buf: []u8) FsError!usize {
         if (self.dentry.inode.inode_type == InodeType.directory) {
-            return VfsError.IsDirectory;
+            return FsError.IsDirectory;
         }
         const num_read = try self.vtable.read(
             self.dentry.inode,
@@ -400,20 +402,20 @@ pub const File = struct {
     /// Reposition file offset.
     ///
     /// This functions allows the file offset to be set beyond the end of the file.
-    pub fn seek(file: *File, offset: usize, whence: SeekMode) VfsError!usize {
+    pub fn seek(file: *File, offset: usize, whence: SeekMode) FsError!usize {
         file.pos = switch (whence) {
-            .current => std.math.add(usize, file.pos, offset) catch return VfsError.Overflow,
+            .current => std.math.add(usize, file.pos, offset) catch return FsError.Overflow,
             .set => offset,
-            .end => std.math.sub(usize, file.dentry.inode.size, offset) catch return VfsError.Overflow,
-            else => return VfsError.InvalidArgument,
+            .end => std.math.sub(usize, file.dentry.inode.size, offset) catch return FsError.Overflow,
+            else => return FsError.InvalidArgument,
         };
         return file.pos;
     }
 
     /// Write data to this inode.
-    pub fn write(self: *Self, data: []const u8, pos: usize) VfsError!usize {
+    pub fn write(self: *Self, data: []const u8, pos: usize) FsError!usize {
         if (self.dentry.inode.inode_type == InodeType.directory) {
-            return VfsError.IsDirectory;
+            return FsError.IsDirectory;
         }
         return self.vtable.write(self.dentry.inode, data, pos);
     }
@@ -432,7 +434,7 @@ const MountListNode = MountList.Node;
 var mount_list: MountList = .{};
 
 /// Initialize VFS system.
-pub fn init(allocator: Allocator) VfsError!void {
+pub fn init(allocator: Allocator) FsError!void {
     // Initialize the root directory entry.
     const fs = try allocator.create(FileSystem);
     const root = try allocator.create(Dentry);
@@ -484,12 +486,12 @@ pub fn getRoot() *Dentry {
 /// Mount the filesystem on the given path.
 ///
 /// `entry_point` must be absolute path.
-pub fn mount(fs: *FileSystem, entry_point: []const u8, allocator: Allocator) VfsError!void {
+pub fn mount(fs: *FileSystem, entry_point: []const u8, allocator: Allocator) FsError!void {
     const ie = lock.lockDisableIrq();
     defer lock.unlockRestoreIrq(ie);
 
     if (!isAbsolutePath(entry_point)) {
-        return VfsError.InvalidArgument;
+        return FsError.InvalidArgument;
     }
 
     // Get the directory on which the filesystem is being mounted.
@@ -497,17 +499,17 @@ pub fn mount(fs: *FileSystem, entry_point: []const u8, allocator: Allocator) Vfs
         if (!root_mounted) {
             if (std.mem.eql(u8, entry_point, "/")) {
                 break :blk root_dentry;
-            } else return VfsError.NotFound;
+            } else return FsError.NotFound;
         } else {
             const result = try resolvePath(root_dentry, entry_point);
-            if (result.result) |dentry| break :blk dentry else return VfsError.NotFound;
+            if (result.result) |dentry| break :blk dentry else return FsError.NotFound;
         }
     };
     if (mp_dentry.inode.inode_type != .directory) {
-        return VfsError.NotDirectory;
+        return FsError.NotDirectory;
     }
     if (mp_dentry.mounted_by != null) {
-        return VfsError.AlreadyExists;
+        return FsError.AlreadyExists;
     }
 
     // TODO: check if the directory is empty.
@@ -539,7 +541,7 @@ const PathResult = struct {
 ///
 /// - origin: The dentry to start the search from. Ignored if the path is absolute.
 /// - path: The path string to resolve.
-pub fn resolvePath(origin: *Dentry, path: []const u8) VfsError!PathResult {
+pub fn resolvePath(origin: *Dentry, path: []const u8) FsError!PathResult {
     var result = PathResult{
         .result = null,
         .parent = origin,
@@ -625,3 +627,4 @@ const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const mem = norn.mem;
+const FsError = norn.fs.FsError;

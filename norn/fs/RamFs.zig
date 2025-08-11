@@ -534,11 +534,11 @@ const Allocator = std.mem.Allocator;
 const DoublyLinkedList = std.DoublyLinkedList;
 
 const norn = @import("norn");
+const Error = norn.fs.FsError;
 const SpinLock = norn.SpinLock;
 
 const cpio = @import("cpio.zig");
 const vfs = @import("vfs.zig");
-const Error = vfs.VfsError;
 const Dentry = vfs.Dentry;
 const Inode = vfs.Inode;
 const InodeType = vfs.InodeType;

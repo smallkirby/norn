@@ -1,10 +1,12 @@
 const DevFs = Self;
 const Self = @This();
 
-pub const DevFsError = error{
-    /// Memory allocation error.
-    OutOfMemory,
-} || vfs.VfsError;
+pub const DevFsError = error{} || FsError;
+
+/// List type of character devices.
+const CharDevList = std.AutoHashMap(norn.fs.DevType, CharDev);
+/// List type of children of the root directory.
+const ChildrenList = std.ArrayList(*Dentry);
 
 /// Memory allocator used by this FS.
 allocator: Allocator,
@@ -14,6 +16,12 @@ fs: *vfs.FileSystem,
 root: *Dentry,
 /// Spin lock.
 lock: SpinLock = .{},
+
+/// List of registered character devices.
+char_devs: CharDevList,
+
+/// Children of the root directory.
+children: ChildrenList,
 
 const dentry_vtable = Dentry.Vtable{
     .createFile = createFile,
@@ -42,6 +50,8 @@ pub fn new(allocator: Allocator) DevFsError!*Self {
         .root = undefined, // TODO
         .lock = SpinLock{},
         .fs = fs,
+        .char_devs = CharDevList.init(allocator),
+        .children = ChildrenList.init(allocator),
     };
     fs.* = .{
         .name = "devfs",
@@ -73,6 +83,27 @@ pub fn filesystem(self: *Self) *vfs.FileSystem {
     return self.fs;
 }
 
+/// TODO rename
+pub fn registerCharDev(self: *Self, char: device.CharDev) FsError!void {
+    try self.char_devs.put(char.type, char);
+
+    const inode = try self.createInode(.character_device, .{
+        .other = .rx,
+        .group = .rx,
+        .user = .rwx,
+        .type = .cdev,
+    });
+    inode.file_ops = char.fops;
+    inode.device = char.type;
+
+    const dentry = try self.createDentry(
+        inode,
+        self.root,
+        char.name,
+    );
+    try self.children.append(dentry);
+}
+
 // =============================================================
 // dentry operations.
 // =============================================================
@@ -91,11 +122,11 @@ fn createDentry(self: *Self, inode: *Inode, parent: *Dentry, name: []const u8) D
     return dentry;
 }
 
-fn createFile(_: *Dentry, _: []const u8, _: Mode) VfsError!*Dentry {
+fn createFile(_: *Dentry, _: []const u8, _: Mode) FsError!*Dentry {
     norn.unimplemented("DevFs: createFile()");
 }
 
-fn createDirectory(_: *Dentry, _: []const u8, _: Mode) VfsError!*Dentry {
+fn createDirectory(_: *Dentry, _: []const u8, _: Mode) FsError!*Dentry {
     norn.unimplemented("DevFs: createDirectory()");
 }
 
@@ -129,11 +160,12 @@ fn createInode(self: *Self, itype: vfs.InodeType, mode: vfs.Mode) DevFsError!*In
         .inode_ops = &inode_vtable,
         .file_ops = &file_vtable,
         .ctx = self,
+        // TODO: `type` should be decided by `mode`.
     };
     return inode;
 }
 
-fn stat(inode: *Inode) VfsError!vfs.Stat {
+fn stat(inode: *Inode) FsError!vfs.Stat {
     const self = inodeContext(inode);
     if (inode == self.root.inode) {
         return .{
@@ -158,19 +190,20 @@ fn stat(inode: *Inode) VfsError!vfs.Stat {
     norn.unimplemented("DevFs: stat()");
 }
 
-fn iterate(_: *Inode, _: Allocator) VfsError![]*Dentry {
-    return &.{}; // TODO
+fn iterate(inode: *Inode, allocator: Allocator) FsError![]*Dentry {
+    const self = inodeContext(inode);
+    return try allocator.dupe(*Dentry, self.children.items);
 }
 
-fn lookup(_: *Inode, _: []const u8) VfsError!?*Dentry {
+fn lookup(_: *Inode, _: []const u8) FsError!?*Dentry {
     return null; // TODO
 }
 
-fn read(_: *Inode, _: []u8, _: usize) VfsError!usize {
+fn read(_: *Inode, _: []u8, _: usize) FsError!usize {
     norn.unimplemented("DevFs: read()");
 }
 
-fn write(_: *Inode, _: []const u8, _: usize) VfsError!usize {
+fn write(_: *Inode, _: []const u8, _: usize) FsError!usize {
     norn.unimplemented("DevFs: write()");
 }
 
@@ -193,10 +226,12 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
+const device = norn.device;
+const CharDev = device.CharDev;
+const FsError = norn.fs.FsError;
 const SpinLock = norn.SpinLock;
 
 const vfs = @import("vfs.zig");
 const Dentry = vfs.Dentry;
 const Inode = vfs.Inode;
 const Mode = vfs.Mode;
-const VfsError = vfs.VfsError;
