@@ -232,6 +232,32 @@ pub fn wrmsr(comptime msr: Msr, value: anytype) void {
     );
 }
 
+pub fn xgetbv(index: u32) u64 {
+    var eax: u32 = undefined;
+    var edx: u32 = undefined;
+    asm volatile (
+        \\xgetbv
+        : [eax] "={eax}" (eax),
+          [edx] "={edx}" (edx),
+        : [index] "{ecx}" (index),
+        : "memory"
+    );
+    return bits.concat(u64, edx, eax);
+}
+
+pub fn xsetbv(index: u32, value: u64) void {
+    const eax: u32 = @truncate(value);
+    const edx: u32 = @truncate(value >> 32);
+    asm volatile (
+        \\xsetbv
+        :
+        : [index] "{ecx}" (index),
+          [eax] "{eax}" (eax),
+          [edx] "{edx}" (edx),
+        : "memory"
+    );
+}
+
 // =============================================================
 // Imports
 // =============================================================

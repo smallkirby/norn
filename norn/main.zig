@@ -162,6 +162,9 @@ fn nornThread(initramfs: surtr.InitramfsInfo) !void {
     norn.rtt.expectEqual(false, norn.arch.isIrqEnabled());
     norn.arch.enableIrq();
 
+    // Initialize arch-specific features.
+    try norn.arch.init();
+
     // Initialize filesystem.
     try norn.fs.init();
     log.info("Initialized filesystem.", .{});

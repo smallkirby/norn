@@ -210,6 +210,38 @@ pub const Cr4 = packed struct(u64) {
     _reserved4: u39 = 0,
 };
 
+/// XCR0 register.
+pub const Xcr0 = packed struct(u64) {
+    /// X87. Must be set.
+    x87: bool = true,
+    /// SSE. If set, the XSAVE feature set can be used to manage MXCSR and the XMM registers.
+    sse: bool,
+    /// AVX. If set, AVX instructions can be executed and the XSAVE feature set can be used to manage the upper halves of the YMM registers.
+    avx: bool,
+    /// BNDREG. If set, MPX instructions can be executed.
+    bndreg: bool,
+    /// BNDCSR. If set, MPX instructions can be executed.
+    bndcsr: bool,
+    /// If set, AVX-512 instructions can be executed and the XSAVE feature set can be used to manage the opmask registers k0-k7.
+    opmask: bool,
+    /// If set, AVX-512 instructions can be executed and the XSAVE feature set can be used to manage the lower ZMM registers.
+    zmm_hi256: bool,
+    /// If set, AVX-512 instructions can be executed and the XSAVE feature set can be used to manage the upper ZMM registers.
+    hi16_zmm: bool,
+    /// Reserved.
+    _reserved1: u1 = 0,
+    /// If true, the XSAVE feature set can be used to manage the PKRU register.
+    pkru: bool,
+    /// Reserved.
+    _reserved2: u7 = 0,
+    /// If set, and if TILEDATA is set, AMX instructions can be executed.
+    tilecfg: bool,
+    /// If set, and if TILECFG is set, AMX instructions can be executed.
+    tiledata: bool,
+    /// Reserved.
+    _reserved3: u45 = 0,
+};
+
 /// Address of Model-Specific Registers.
 pub const Msr = enum(u64) {
     /// IA32_APIC_BASE.

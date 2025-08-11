@@ -12,6 +12,38 @@ pub const ArchError = apic.ApicError || intr.IntrError || pg.PageError || syscal
 /// Saved registers for system call handlers.
 pub const SyscallContext = regs.CpuContext;
 
+/// Initialize the architecture-specific components.
+pub fn init() ArchError!void {
+    const ie = disableIrq();
+    defer if (ie) enableIrq();
+
+    enableAvx();
+}
+
+/// Enable AVX instructions.
+///
+/// TODO: Save and restore the state of AVX registers on task switch.
+fn enableAvx() void {
+    // Check if AVX is supported
+    const cpuid_res = cpuid.Leaf.version_info.query(0);
+    const avx_supported = bits.isset(cpuid_res.ecx, 28);
+
+    if (avx_supported) {
+        var cr4 = am.readCr4();
+        if (!cr4.osxsave) {
+            cr4.osxsave = true;
+            am.writeCr4(cr4);
+        }
+
+        var xcr0: regs.Xcr0 = @bitCast(am.xgetbv(0));
+        xcr0.sse = true;
+        xcr0.avx = true;
+        am.xsetbv(0, @bitCast(xcr0));
+    } else {
+        log.warn("Failed to enable AVX instructions: not supported.", .{});
+    }
+}
+
 /// Disable external interrupts.
 pub fn disableIrq() bool {
     const ie = isIrqEnabled();
