@@ -22,7 +22,7 @@ fi
 
 NUM_CORES=3
 CPU_MODEL=qemu64
-CPU_FEATURES=fsgsbase
+CPU_FEATURES=+fsgsbase,+avx,+avx2,+xsave,+xsaveopt
 TIMEOUT=80
 TMPFILE=$(mktemp)
 
@@ -113,7 +113,7 @@ qemu-system-x86_64 \
   -serial mon:stdio \
   -monitor unix:"$MONITOR_SOCKET",server,nowait \
   -no-reboot \
-  -cpu $CPU_MODEL,+$CPU_FEATURES \
+  -cpu $CPU_MODEL,$CPU_FEATURES \
   -smp $NUM_CORES \
   -device isa-debug-exit,iobase=0xF0,iosize=0x01 \
   -d guest_errors \

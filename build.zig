@@ -265,14 +265,14 @@ pub fn build(b: *std.Build) !void {
     if (debug_intr) {
         try qemu_args.appendSlice(&.{
             "-cpu",
-            "qemu64,+fsgsbase,+invtsc",
+            "qemu64,+fsgsbase,+invtsc,+avx,+avx2,+xsave,+xsaveopt",
             "-d",
             "int",
         });
     } else if (no_kvm) {
         try qemu_args.appendSlice(&.{
             "-cpu",
-            "qemu64,+fsgsbase,+invtsc",
+            "qemu64,+fsgsbase,+invtsc,+avx,+avx2,+xsave,+xsaveopt",
         });
     } else {
         try qemu_args.appendSlice(&.{

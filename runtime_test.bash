@@ -4,17 +4,16 @@ set -o pipefail
 
 NUM_CORES=3
 CPU_MODEL=qemu64
-CPU_FEATURES=fsgsbase
+CPU_FEATURES=+fsgsbase,+avx,+avx2,+xsave,+xsaveopt
 
 TIMEOUT=60
 TMPFILE=$(mktemp)
 
 # Success indicator for the default init binary.
 DEFAULT_INIT_HEYSTACK=(
-  "Unhandled syscall (nr=511)"
-  "[1]=0000000000000000 [2]=0000000000000001 [3]=0000000000000002"
-  "[4]=0000000000000003"
-  "xHC has started running"
+  "info(user): Hello, from userland!"
+  "error(user): PANIC: Reached end of main. panic"
+  "[DEBUG] syscall | exit_group(): status=99"
 )
 # Success indicator for "/bin/busybox ls -la".
 BUSYBOX_LS_HEYSTACK=(
@@ -84,7 +83,7 @@ qemu-system-x86_64 \
   -nographic \
   -serial mon:stdio \
   -no-reboot \
-  -cpu $CPU_MODEL,+$CPU_FEATURES \
+  -cpu $CPU_MODEL,$CPU_FEATURES \
   -smp $NUM_CORES \
   -device isa-debug-exit,iobase=0xF0,iosize=0x01 \
   -d guest_errors \
