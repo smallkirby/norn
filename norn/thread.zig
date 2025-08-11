@@ -241,6 +241,7 @@ pub fn createInitialThread(comptime filename: []const u8) ThreadError!*Thread {
 
         break :blk try sc.finalize();
     };
+    norn.rtt.expectEqual(0, stack_top % 16);
 
     // Set up user stack.
     thread.setUserContext(elf_loader.entry_point, stack_top);

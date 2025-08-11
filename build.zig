@@ -179,7 +179,7 @@ pub fn build(b: *std.Build) !void {
     const init = b.addExecutable(.{
         .name = "init",
         .root_source_file = b.path("apps/init/main.zig"),
-        .target = target,
+        .target = userland_target,
         .optimize = optimize,
         .linkage = .static,
     });

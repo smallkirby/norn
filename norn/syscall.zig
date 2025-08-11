@@ -23,7 +23,9 @@ const sys_entries = [_]SysEntry{
     // Change data segment size.
     .new("brk", 12, .normal(norn.mm.sysBrk)),
     // Change a signal action.
-    .new("rt_sigaction", 13, .debug(ignore)),
+    .new("rt_sigaction", 13, .debug(noop)),
+    // Change a signal action.
+    .new("rt_sigprocmask", 14, .debug(unsupported)),
     // Control device.
     .new("ioctl", 16, .normal(sysIoctl)),
     // Write data into multiple buffers.
@@ -31,7 +33,7 @@ const sys_entries = [_]SysEntry{
     // Get process ID.
     .new("getpid", 39, .normal(sysGetPid)),
     // Get name and information about current kernel.
-    .new("uname", 63, .debug(ignore)),
+    .new("uname", 63, .debug(unsupported)),
     // Get current working directory.
     .new("getcwd", 79, .normal(fs.sysGetCwd)),
     // Change working directory.
@@ -41,19 +43,21 @@ const sys_entries = [_]SysEntry{
     // Get user identity.
     .new("getuid", 102, .normal(sysGetUid)),
     // Set user identity.
-    .new("setuid", 105, .debug(ignore)),
+    .new("setuid", 105, .debug(unsupported)),
     // Get effective user ID.
-    .new("geteuid", 107, .debug(ignore)),
+    .new("geteuid", 107, .debug(unsupported)),
     // Get parent process ID.
-    .new("getppid", 110, .debug(ignore)),
+    .new("getppid", 110, .debug(unsupported)),
+    // Get thread ID.
+    .new("gettid", 186, .debug(noop)),
     // Get time in seconds.
-    .new("time", 201, .debug(ignore)),
+    .new("time", 201, .debug(unsupported)),
     // Get directory entries
     .new("getdents64", 217, .normal(fs.sysGetDents64)),
     // Set pointer to thread ID.
-    .new("set_tid_address", 218, .debug(ignore)),
+    .new("set_tid_address", 218, .debug(unsupported)),
     // Retrieve the time of of the specified clock.
-    .new("clock_gettime", 222, .debug(ignore)),
+    .new("clock_gettime", 222, .debug(unsupported)),
     // Exit all threads in a process.
     .new("exit_group", 231, .normal(sysExitGroup)),
     // Open and possibly create a file.
@@ -61,15 +65,15 @@ const sys_entries = [_]SysEntry{
     // Get file status.
     .new("newfstatat", 262, .normal(fs.sysNewFstatAt)),
     // Read value of a symbolic link.
-    .new("readlinkat", 267, .debug(ignore)),
+    .new("readlinkat", 267, .debug(unsupported)),
     // Get or set list of robust futexes.
-    .new("set_robust_list", 273, .debug(ignore)),
+    .new("set_robust_list", 273, .debug(unsupported)),
     // Get and set resource limits.
-    .new("prlimit", 302, .debug(ignore)),
+    .new("prlimit", 302, .debug(unsupported)),
     // Obtain a series of random bytes.
     .new("getrandom", 318, .normal(sysGetRandom)),
     // Restartable sequences.
-    .new("rseq", 334, .debug(ignore)),
+    .new("rseq", 334, .debug(unsupported)),
 
     // =============================================================
     // Norn-specific syscalls
@@ -307,14 +311,26 @@ fn unhandle(ctx: *const Context, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg
     return SysError.Unimplemented;
 }
 
-/// Handler for ignored syscalls.
-fn ignore(ctx: *const Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) SysError!i64 {
+/// Handler for unsupported / unimplemented syscalls.
+fn unsupported(ctx: *const Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) SysError!i64 {
     log.debug(
-        "Ignoring syscall: {s}",
+        "Unsupported syscall: {s}",
         .{@tagName(@as(Syscall, @enumFromInt(ctx.spec2.orig_rax)))},
     );
 
     return SysError.Unimplemented;
+}
+
+/// Handler for ignored syscalls.
+///
+/// This handler just returns 0 without any action.
+fn noop(ctx: *const Context, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) SysError!i64 {
+    log.debug(
+        "Ignored syscall: {s}",
+        .{@tagName(@as(Syscall, @enumFromInt(ctx.spec2.orig_rax)))},
+    );
+
+    return 0;
 }
 
 fn debugPrintContext(ctx: *const Context) void {
@@ -419,7 +435,7 @@ fn sysWrite(fd: u64, buf: [*]const u8, count: usize) SysError!i64 {
     // Print to the serial log.
     norn.getSerial().writeString(buf[0..count]);
 
-    return @bitCast(count);
+    return @intCast(count);
 }
 
 /// Command for `ioctl`.

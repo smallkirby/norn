@@ -1,47 +1,62 @@
-fn syscall(nr: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64) i64 {
-    return asm volatile (
-        \\movq %[nr], %%rax
-        \\movq %[arg1], %%rdi
-        \\movq %[arg2], %%rsi
-        \\movq %[arg3], %%rdx
-        \\movq %[arg4], %%r10
-        \\syscall
-        \\movq %%rax, %[ret]
-        : [ret] "=r" (-> i64),
-        : [nr] "r" (nr),
-          [arg1] "r" (arg1),
-          [arg2] "r" (arg2),
-          [arg3] "r" (arg3),
-          [arg4] "r" (arg4),
-        : "rax", "rcx", "rdx", "rdi", "rsi", "r8", "r9", "r10", "r11"
+pub const std_options = std.Options{
+    .log_level = .debug,
+};
+
+pub fn main() noreturn {
+    log.info("Hello, from userland!", .{});
+    log.info("Address of main: 0x{X}", .{@intFromPtr(&main)});
+
+    testSyscall() catch |err| {
+        log.err("Failed to test syscall: {s}", .{@errorName(err)});
+    };
+
+    testDevNull() catch |err| {
+        log.err("Failed to test /dev/null: {s}", .{@errorName(err)});
+    };
+
+    @panic("Reached end of main. panic");
+}
+
+// =============================================================
+// Tests
+// =============================================================
+
+fn testSyscall() !void {
+    // TODO
+}
+
+fn testDevNull() !void {
+    var buffer: [64]u8 = undefined;
+
+    const flags = std.fs.File.OpenFlags{
+        .mode = .read_write,
+    };
+    const file = try std.fs.openFileAbsolute(
+        "/dev/null",
+        flags,
     );
+    defer file.close();
+
+    const n = try file.read(buffer[0..]);
+    log.info("Read {d} bytes from /dev/null.", .{n});
 }
 
-fn dlog(comptime str: []const u8) void {
-    const nr_dlog = 500;
-    _ = syscall(
-        nr_dlog,
-        @intFromPtr(str.ptr),
-        str.len,
-        0,
-        0,
-    );
+// =============================================================
+// Panic
+// =============================================================
+
+pub fn panic(msg: []const u8, _: ?*builtin.StackTrace, _: ?usize) noreturn {
+    @branchHint(.cold);
+
+    log.err("PANIC: {s}", .{msg});
+
+    std.posix.exit(99);
 }
 
-export fn _start() callconv(.naked) noreturn {
-    asm volatile (
-        \\jmp main
-    );
-}
-
-export fn main() noreturn {
-    dlog("Hello, from userland!");
-
-    while (true) {
-        _ = syscall(511, 0, 1, 2, 3);
-    }
-
-    unreachable;
-}
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
+const builtin = std.builtin;
+const log = std.log.scoped(.user);
