@@ -41,4 +41,4 @@ jobs:
             -Doptimize=${{ matrix.BUILD_TYPE }} \
             -Druntime_test=true \
             -Dinit_binary=/sbin/init
-          bash ./runtime_test.bash /sbin/init
+          bash ./scripts/runtime_test.bash /sbin/init

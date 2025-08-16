@@ -46,4 +46,4 @@ jobs:
             -Doptimize=${{ matrix.BUILD_TYPE }} \
             -Druntime_test=true \
             -Dinit_binary=/bin/busybox
-          bash ./runtime_test.bash /bin/busybox
+          bash ./scripts/runtime_test.bash /bin/busybox
