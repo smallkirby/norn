@@ -238,6 +238,7 @@ pub fn build(b: *std.Build) !void {
     // =============================================================
     // QEMU
     // =============================================================
+    const qemu_cpu_feats = "+fsgsbase,+invtsc,+avx,+avx2,+xsave,+xsaveopt,+bmi1";
     var qemu_args = std.ArrayList([]const u8).init(b.allocator);
     defer qemu_args.deinit();
     try qemu_args.appendSlice(&.{
@@ -265,14 +266,14 @@ pub fn build(b: *std.Build) !void {
     if (debug_intr) {
         try qemu_args.appendSlice(&.{
             "-cpu",
-            "qemu64,+fsgsbase,+invtsc,+avx,+avx2,+xsave,+xsaveopt",
+            "qemu64," ++ qemu_cpu_feats,
             "-d",
             "int",
         });
     } else if (no_kvm) {
         try qemu_args.appendSlice(&.{
             "-cpu",
-            "qemu64,+fsgsbase,+invtsc,+avx,+avx2,+xsave,+xsaveopt",
+            "qemu64," ++ qemu_cpu_feats,
         });
     } else {
         try qemu_args.appendSlice(&.{

@@ -4,7 +4,7 @@ set -o pipefail
 
 NUM_CORES=3
 CPU_MODEL=qemu64
-CPU_FEATURES=+fsgsbase,+avx,+avx2,+xsave,+xsaveopt
+CPU_FEATURES=+fsgsbase,+avx,+avx2,+xsave,+xsaveopt,+bmi1
 
 TIMEOUT=60
 TMPFILE=$(mktemp)
