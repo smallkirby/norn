@@ -18,12 +18,12 @@ pub const mm = @import("mm.zig");
 pub const mmio = @import("mmio.zig");
 pub const pci = @import("pci.zig");
 pub const pcpu = if (!is_test) @import("percpu.zig") else @import("percpu.zig").mock_for_testing;
-pub const posix = @import("posix.zig");
 pub const prctl = @import("prctl.zig");
 pub const sched = @import("sched.zig");
 pub const rtt = @import("rtt.zig");
 pub const syscall = @import("syscall.zig");
 pub const thread = @import("thread.zig");
+pub const time = @import("time.zig");
 pub const timer = @import("timer.zig");
 pub const util = @import("util.zig");
 pub usingnamespace @import("typing.zig");
@@ -36,6 +36,11 @@ pub const LogFn = klog.LogFn;
 pub const RbTree = @import("RbTree.zig").RbTree;
 pub const Serial = @import("Serial.zig");
 pub const SpinLock = @import("SpinLock.zig");
+
+/// User ID.
+pub const Uid = u32;
+/// Group ID.
+pub const Gid = u32;
 
 /// Version of Norn kernel.
 pub const version = option.version;

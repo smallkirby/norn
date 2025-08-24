@@ -11,7 +11,17 @@
 pub const DeviceError = error{
     /// File operation failed.
     FileOperationFailed,
-} || DevFs.DevFsError || fs.FsError;
+} || fs.FsError;
+
+/// Device number type.
+pub const Number = packed struct(u64) {
+    /// Minor number.
+    minor: u20,
+    /// Major number.
+    major: u44,
+
+    pub const zero = Number{ .minor = 0, .major = 0 };
+};
 
 /// Signature of init functions.
 const ModuleInit = *const fn () callconv(.c) void;
@@ -27,15 +37,18 @@ var devfs: *DevFs = undefined;
 
 /// Initialize the module system.
 pub fn init() DeviceError!void {
-    // Create /dev directory.
-    _ = try fs.createDirectory("/dev", .{
-        .other = .rx,
-        .group = .rx,
-        .user = .rwx,
-        .type = .directory,
-    });
-    devfs = try DevFs.new(allocator);
-    try fs.mount("/dev", devfs.filesystem());
+    // Open "/dev".
+    const open_flags = fs.OpenFlags{
+        .mode = .read_write,
+        .create = true,
+    };
+    const open_mode = fs.Mode{ .type = .dir };
+    const dev_file = try fs.openFile("/dev", open_flags, open_mode);
+
+    // Mount devfs on "/dev".
+    const devfs_path = try fs.mountTo(dev_file.path, "devfs", null);
+    // TODO: should not do this outside DevFs impl.
+    devfs = @alignCast(@ptrCast(devfs_path.dentry.inode.sb.ctx));
 
     // Call registered init functions.
     const array_len = (@intFromPtr(&__module_init_end) - @intFromPtr(&__module_init_start)) / @sizeOf(ModuleInit);
@@ -68,13 +81,13 @@ pub const CharDev = struct {
     /// Device name.
     name: []const u8,
     /// Device major and minor numbers.
-    type: fs.DevType,
+    type: Number,
     /// File operations.
-    fops: *const fs.Fops,
+    fops: fs.File.Ops,
 };
 
-/// Register a character device.
-pub fn registerCharDev(dev: CharDev) DevFs.DevFsError!void {
+// Register a character device.
+pub fn registerCharDev(dev: CharDev) fs.FsError!void {
     try devfs.registerCharDev(dev);
 }
 
@@ -92,12 +105,13 @@ comptime {
 // =============================================================
 // Imports
 // =============================================================
+
 const std = @import("std");
 const log = std.log.scoped(.device);
 const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const fs = norn.fs;
-const allocator = norn.mem.general_allocator;
+const DevFs = norn.fs.DevFs;
 
-const DevFs = @import("fs/DevFs.zig");
+const allocator = norn.mem.general_allocator;

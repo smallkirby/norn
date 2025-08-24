@@ -1,10 +1,11 @@
 const null_dev = CharDev{
     .name = "null",
     .type = .{ .major = 1, .minor = 3 },
-    .fops = &fops,
+    .fops = fops,
 };
 
-const fops = fs.Fops{
+const fops = fs.File.Ops{
+    .iterate = iterate,
     .read = read,
     .write = write,
 };
@@ -16,13 +17,24 @@ fn init() callconv(.c) void {
     };
 }
 
+// =============================================================
+// File operations
+// =============================================================
+
+fn iterate(file: *fs.File, allocator: Allocator) fs.FsError![]fs.File.IterResult {
+    _ = file;
+    _ = allocator;
+
+    norn.unimplemented("null.iterate");
+}
+
 /// Empty read operation.
-fn read(_: *fs.Inode, _: []u8, _: usize) fs.FsError!usize {
+fn read(_: *fs.File, _: []u8, _: fs.Offset) fs.FsError!usize {
     return 0;
 }
 
 /// Empty write operation.
-fn write(_: *fs.Inode, _: []const u8, _: usize) fs.FsError!usize {
+fn write(_: *fs.File, _: []const u8, _: fs.Offset) fs.FsError!usize {
     return 0;
 }
 
@@ -33,7 +45,9 @@ comptime {
 // =============================================================
 // Imports
 // =============================================================
+
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const fs = norn.fs;

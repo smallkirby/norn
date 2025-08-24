@@ -108,7 +108,7 @@ pub const Thread = struct {
         self.* = Thread{
             .tid = assignNewTid(),
             .mm = try MemoryMap.new(),
-            .fs = fs.ThreadFs.new(undefined, undefined), // TODO
+            .fs = fs.ThreadFs.new(undefined, undefined, general_allocator), // TODO
             .name = try general_allocator.dupe(u8, name),
         };
 

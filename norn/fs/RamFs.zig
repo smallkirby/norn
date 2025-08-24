@@ -1,198 +1,288 @@
-//! Implementation of a simple in-memory filesystem.
-
-const RamFs = Self;
 const Self = @This();
+const RamFs = Self;
+const Error = fs.FsError;
 
-/// Backing allocator.
-allocator: Allocator,
-/// Next inode number.
-inum_next: usize = 0,
-/// VFS filesystem interface.
-fs: *vfs.FileSystem,
-/// Root directory.
-root: *Dentry,
-/// Spin lock.
-lock: SpinLock = SpinLock{},
-
-/// Dentry operations.
-const dentry_vtable = Dentry.Vtable{
-    .createFile = createFile,
-    .createDirectory = createDirectory,
+/// Option passed to initialize ramfs.
+pub const InitOption = struct {
+    /// CPIO archive image.
+    image: []const u8,
 };
 
-/// Inode operations.
-const inode_vtable = Inode.Vtable{
-    .lookup = lookup,
-    .stat = stat,
+pub const ramfs_fs = FileSystem{
+    .name = "ramfs",
+    .mount = mount,
+    .unmount = unmount,
 };
 
-const file_vtable = vfs.File.Vtable{
+const sb_ops = SuperBlock.Ops{};
+
+const file_ops = File.Ops{
     .iterate = iterate,
     .read = read,
     .write = write,
 };
 
-/// Default file mode.
-const default_file_mode: Mode = .anybody_full;
-/// Default UID.
-const default_uid: Uid = 0; // TODO
-/// Default GID.
-const default_gid: Gid = 0; // TODO
+const inode_ops = Inode.Ops{
+    .lookup = lookup,
+    .create = create,
+};
 
-/// Load CPIO image and initialize ramfs.
-pub fn from(image: []const u8, allocator: Allocator) (Error || cpio.Error)!*Self {
-    // Partially initialize myself.
+/// Spin lock.
+lock: SpinLock,
+/// Memory allocator.
+allocator: Allocator,
+
+/// Super block.
+sb: *SuperBlock,
+/// Next inode number to allocate.
+inum_next: Inode.Number,
+
+// =============================================================
+// Filesystem operations
+// =============================================================
+
+fn mount(data: ?*const anyopaque, allocator: Allocator) Error!*SuperBlock {
+    const sb = try allocator.create(SuperBlock);
+    errdefer allocator.destroy(sb);
+
+    // Init self.
     const self = try allocator.create(Self);
     errdefer allocator.destroy(self);
-    const fs = try allocator.create(vfs.FileSystem);
-    errdefer allocator.destroy(fs);
-    self.* = std.mem.zeroInit(Self, .{
+    self.* = .{
+        .lock = .{},
         .allocator = allocator,
-        .root = undefined, // filled later
-        .fs = fs,
-    });
+        .sb = sb,
+        .inum_next = 0,
+    };
 
-    // Iterate over the CPIO archive and create files.
-    var iter = cpio.CpioIterator.new(image);
-    var root_created = false;
-    while (try iter.next()) |entry| {
-        const path = try entry.getPath();
-        const basename = vfs.basename(path);
-        const mode = try entry.getMode();
+    // Init root dentry.
+    const root_inode = try self.createInode();
+    root_inode.mode = .{
+        .other = .rx,
+        .group = .rwx,
+        .user = .rwx,
+        .flags = .none,
+        .type = .dir,
+    };
+    const root_dentry = try self.createDentry(root_inode);
 
-        if (!root_created) {
-            // Root directory must be the first entry.
-            if (!std.mem.eql(u8, path, ".")) return Error.InvalidArgument;
-            if (mode.type != .directory) return Error.NotDirectory;
+    // Init super block.
+    sb.* = .{
+        .root = root_dentry,
+        .ops = sb_ops,
+        .ctx = self,
+    };
 
-            // Create a root directory.
-            const node = try Node.newDirectory(allocator);
-            const root_inode = try self.createInode(
-                .directory,
-                self.assignInum(),
-                mode,
-                node,
-            );
-            const root_dentry = try self.createDentry(
-                root_inode,
-                undefined,
-                "",
-            );
-            root_dentry.parent = root_dentry;
+    // Init internal root directory.
+    const root_dir = try Node.newDir("", root_inode, allocator);
+    root_inode.ctx = root_dir;
 
-            self.root = root_dentry;
-            self.fs.* = .{
-                .name = "ramfs",
-                .root = self.root,
-                .ctx = self,
-                .mounted_to = undefined,
-            };
-
-            root_created = true;
-            continue;
-        }
-
-        if (std.mem.eql(u8, path, ".") or std.mem.eql(u8, path, "..")) {
-            continue;
-        }
-
-        const result = try vfs.resolvePath(self.root, path);
-        if (result.result != null) return Error.AlreadyExists;
-        if (result.parent == null) return Error.NotFound;
-        const parent = result.parent.?;
-
-        switch (mode.type) {
-            .regular => {
-                const new = try createFile(parent, basename, mode);
-                const data = try entry.getData();
-                const written = try write(new.inode, data, 0);
-                norn.rtt.expectEqual(data.len, written);
-            },
-            .directory => {
-                const new = try createDirectory(parent, basename, mode);
-                norn.rtt.expectEqual(parent, new.parent);
-            },
-            else => @panic("Unexpected file type in CPIO"),
-        }
+    // If the initramfs image is provided, load it into the filesystem.
+    if (data) |ptr| {
+        const option: *const InitOption = @alignCast(@ptrCast(ptr));
+        boot.loadCpioImage(self, option.image) catch |err| return switch (err) {
+            error.Overflow, error.InvalidCharacter => Error.InvalidArgument,
+            else => @errorCast(err),
+        };
     }
 
-    return self;
+    return sb;
 }
 
-/// Actual file or directory entity.
-/// This struct is put in the inode's context.
+/// TODO: implement
+fn unmount() Error!void {
+    norn.unimplemented("RamFs.unmount");
+}
+
+// =============================================================
+// File operations
+// =============================================================
+
+fn iterate(file: *File, allocator: Allocator) Error![]File.IterResult {
+    const dir = &getNode(file.inode).dir;
+    const children = dir.children;
+    const num_children = children.len;
+
+    const results = try allocator.alloc(File.IterResult, num_children);
+    errdefer allocator.free(results);
+
+    var cur = children.first;
+    var i: usize = 0;
+    while (cur) |child| : ({
+        cur = child.next;
+        i += 1;
+    }) {
+        const child_node = getNode(child.data);
+        const name = child_node.getName();
+        results[i] = .{
+            .name = name,
+            .inum = child.data.number,
+            .type = child.data.mode.type,
+        };
+    }
+
+    return results;
+}
+
+fn read(file: *File, buf: []u8, pos: fs.Offset) Error!usize {
+    const file_node = &getNode(file.inode).file;
+    return file_node.read(buf, @intCast(pos));
+}
+
+fn write(file: *File, data: []const u8, pos: fs.Offset) Error!usize {
+    _ = file;
+    _ = data;
+    _ = pos;
+
+    norn.unimplemented("RamFs.write");
+}
+
+// =============================================================
+// inode operations
+// =============================================================
+
+fn lookup(dir: *Inode, name: []const u8) Error!?*Inode {
+    const node = getNode(dir);
+    return node.dir.getChild(name);
+}
+
+fn create(dir: *Inode, name: []const u8, mode: Mode) Error!*Inode {
+    const self = getSelf(dir);
+    const dir_node = &getNode(dir).dir;
+
+    const inode = try self.createInode();
+    errdefer self.allocator.destroy(inode);
+    inode.mode = mode;
+
+    const node = switch (mode.type) {
+        .regular => try Node.newFile(
+            dir_node,
+            name,
+            inode,
+            self.allocator,
+        ),
+        .dir => try Node.newDir(
+            name,
+            inode,
+            self.allocator,
+        ),
+        else => return Error.InvalidArgument,
+    };
+    inode.ctx = @ptrCast(node);
+
+    try dir_node.append(inode, self.allocator);
+
+    return inode;
+}
+
+// =============================================================
+// Internal utilities
+// =============================================================
+
+/// ramfs-specific inode data.
 const Node = union(enum) {
-    /// File node.
-    file: File,
-    /// Directory node.
-    directory: Directory,
+    file: FileNode,
+    dir: DirNode,
 
     /// Create a new file node.
-    pub fn newFile(allocator: Allocator) Error!*Node {
+    pub fn newFile(parent: *DirNode, name: []const u8, inode: *Inode, allocator: Allocator) Error!*Node {
         const node = try allocator.create(Node);
-        node.* = .{ .file = File{} };
+        node.* = .{ .file = try FileNode.new(
+            parent,
+            name,
+            inode,
+            allocator,
+        ) };
+
         return node;
     }
 
     /// Create a new directory node.
-    pub fn newDirectory(allocator: Allocator) Error!*Node {
+    pub fn newDir(name: []const u8, inode: *Inode, allocator: Allocator) Error!*Node {
         const node = try allocator.create(Node);
-        node.* = .{ .directory = Directory.new() };
+        node.* = .{ .dir = try DirNode.new(
+            name,
+            inode,
+            allocator,
+        ) };
+
         return node;
+    }
+
+    /// Get the name of the node.
+    pub fn getName(self: *Node) []const u8 {
+        return switch (self.*) {
+            .file => |*f| f.name,
+            .dir => |*d| d.name,
+        };
     }
 };
 
 /// File node.
-const File = struct {
+const FileNode = struct {
     /// Backing data.
     _data: []u8 = &.{},
-    /// Size of the file.
-    /// This value can be different from data.len, that represents an in-memory capacity.
-    size: usize = 0,
+    /// Parent directory.
+    parent: *DirNode,
+    /// File name.
+    name: []const u8,
+    /// inode.
+    inode: *Inode,
+
+    /// Create a new file node.
+    fn new(parent: *DirNode, name: []const u8, inode: *Inode, allocator: Allocator) Error!FileNode {
+        return .{
+            .parent = parent,
+            .name = try allocator.dupe(u8, name),
+            .inode = inode,
+        };
+    }
 
     /// Check if the the file has enough buffer to store `capacity` bytes.
-    fn hasCapacity(self: *File, capacity: usize) bool {
+    fn hasCapacity(self: *FileNode, capacity: usize) bool {
         return self._data.len >= capacity;
     }
 
     /// Resize the file.
-    fn resize(self: *File, new_size: usize, allocator: Allocator) Error!void {
+    fn resize(self: *FileNode, new_size: usize, allocator: Allocator) Error!void {
         // We don't shrink the file.
-        if (new_size <= self.size) return;
+        if (new_size <= self.inode.size) return;
         // If the file has enough capacity, just update the size.
         if (new_size <= self._data.len) {
-            self.size = new_size;
+            self.inode.size = new_size;
             return;
         }
 
         // Reallocate buffer and copy old data.
         const new_data = try allocator.alloc(u8, new_size);
         errdefer allocator.free(new_data);
-        @memcpy(new_data[0..self.size], self._data);
+        @memcpy(new_data[0..self.inode.size], self._data);
         allocator.free(self._data);
 
         // Update information.
         self._data = new_data;
-        self.size = new_size;
+        self.inode.size = new_size;
     }
 
     /// Read data from the file.
-    fn read(self: *File, buf: []u8, pos: usize) Error!usize {
-        const end = if (pos + buf.len > self.size) self.size else buf.len;
+    fn read(self: *FileNode, buf: []u8, pos: usize) Error!usize {
+        const end = if (pos + buf.len > self.inode.size) self.inode.size else buf.len;
         const len = end - pos;
         @memcpy(buf[0..len], self._data[pos..end]);
+
         return len;
     }
 
     /// Write data to the file.
+    ///
     /// If the file doesn't have enough capacity, resize it.
-    fn write(self: *File, data: []const u8, pos: usize, allocator: Allocator) Error!usize {
+    fn write(self: *FileNode, data: []const u8, pos: usize, allocator: Allocator) Error!usize {
         const end = pos + data.len;
         if (!self.hasCapacity(end)) {
             try self.resize(end, allocator);
         }
-        if (self.size < end) {
-            self.size = end;
+        if (self.inode.size < end) {
+            self.inode.size = end;
         }
         @memcpy(self._data[pos..end], data);
 
@@ -201,328 +291,211 @@ const File = struct {
 };
 
 /// Directory node.
-const Directory = struct {
-    const Children = DoublyLinkedList(*Dentry);
+const DirNode = struct {
+    const Children = DoublyLinkedList(*Inode);
     const Child = Children.Node;
 
     /// List of children.
     children: Children,
+    /// File name.
+    name: []const u8,
+    /// inode.
+    inode: *Inode,
 
     /// Create a new directory node.
-    pub fn new() Directory {
+    pub fn new(name: []const u8, inode: *Inode, allocator: Allocator) Error!DirNode {
         return .{
             .children = Children{},
+            .name = try allocator.dupe(u8, name),
+            .inode = inode,
         };
     }
 
     /// Append a dentry to the directory.
-    fn append(self: *Directory, dentry: *Dentry, allocator: Allocator) Error!void {
+    fn append(self: *DirNode, inode: *Inode, allocator: Allocator) Error!void {
         const new_child = try allocator.create(Child);
-        new_child.data = dentry;
+        new_child.data = inode;
         self.children.append(new_child);
+        self.inode.size += 1;
+    }
+
+    /// Get a child file named `name`.
+    fn getChild(self: *const DirNode, name: []const u8) ?*Inode {
+        var current = self.children.first;
+        while (current) |child| : (current = child.next) {
+            const node = getNode(child.data);
+            const node_name = node.getName();
+            if (std.mem.eql(u8, name, node_name)) {
+                return child.data;
+            }
+        } else {
+            return null;
+        }
     }
 };
 
-/// Create a file in the given directory.
-fn createFile(dir: *Dentry, name: []const u8, mode: Mode) Error!*Dentry {
-    const self: *Self = @alignCast(@ptrCast(dir.fs.ctx));
-
-    // Create a new file node.
-    const node = try Node.newFile(self.allocator);
-    const inode = try self.createInode(
-        .file,
-        self.assignInum(),
-        mode,
-        node,
-    );
-    const dentry = try self.createDentry(
-        inode,
-        dir,
-        name,
-    );
-
-    // Append the new dentry to the parent directory.
-    const dir_node: *Node = getNode(dir.inode);
-    try dir_node.directory.append(dentry, self.allocator);
-
-    return dentry;
+/// Get Self from a context pointer.
+inline fn getSelf(inode: *Inode) *Self {
+    return @alignCast(@ptrCast(inode.sb.ctx));
 }
 
-/// Create a directory in the given directory.
-fn createDirectory(dir: *Dentry, name: []const u8, mode: Mode) Error!*Dentry {
-    const self: *Self = @alignCast(@ptrCast(dir.fs.ctx));
-
-    // Create a new directory node.
-    const node = try Node.newDirectory(self.allocator);
-    const inode = try self.createInode(
-        .directory,
-        self.assignInum(),
-        mode,
-        node,
-    );
-    const dentry = try self.createDentry(inode, dir, name);
-
-    // Append the new dentry to the parent directory.
-    const dir_node: *Node = @alignCast(@ptrCast(dir.inode.ctx));
-    try dir_node.directory.append(dentry, self.allocator);
-
-    return dentry;
+/// Get a ramfs-specific node from an inode.
+inline fn getNode(inode: *Inode) *Node {
+    return @alignCast(@ptrCast(inode.ctx.?));
 }
 
-/// Iterate over children of the given directory.
-fn iterate(inode: *Inode, allocator: Allocator) Error![]*Dentry {
-    const dir = getNode(inode).directory;
-    const num_children = dir.children.len;
-
-    const entries = try allocator.alloc(*Dentry, num_children);
-    errdefer allocator.free(entries);
-
-    var child = dir.children.first;
-    var i: usize = 0;
-    while (child) |c| : ({
-        child = c.next;
-        i += 1;
-    }) {
-        entries[i] = c.data;
-    }
-
-    return entries;
-}
-
-/// Read data from the given inode.
-fn read(inode: *Inode, buf: []u8, pos: usize) Error!usize {
-    const file = &getNode(inode).file;
-    return file.read(buf, pos);
-}
-
-/// Write data to the given inode.
-fn write(inode: *Inode, data: []const u8, pos: usize) Error!usize {
-    const self: *Self = @alignCast(@ptrCast(inode.fs.ctx));
-    const file = &getNode(inode).file;
-    const ret = file.write(data, pos, self.allocator);
-
-    inode.size = file.size;
-    return ret;
-}
-
-/// Lookup a dentry with the given name in the given directory.
-fn lookup(dir: *Inode, name: []const u8) Error!?*Dentry {
-    var child = getNode(dir).directory.children.first;
-    while (child) |c| : (child = c.next) {
-        if (std.mem.eql(u8, c.data.name, name)) {
-            return c.data;
-        }
-    }
-    return null;
-}
-
-/// Get a file stat information.
-pub fn stat(inode: *Inode) Error!vfs.Stat {
-    return switch (getNode(inode).*) {
-        .directory => |_| .{
-            .dev = .zero, // TODO
-            .inode = inode.number,
-            .num_links = 1,
-            .mode = inode.mode,
-            .uid = inode.uid,
-            .gid = inode.gid,
-            .rdev = .zero,
-            .size = getNode(inode).directory.children.len,
-            .block_size = 0, // TODO
-            .num_blocks = 0, // TODO
-            .access_time = 0, // TODO
-            .access_time_nsec = 0, // TODO
-            .modify_time = 0, // TODO
-            .modify_time_nsec = 0, // TODO
-            .change_time = 0, // TODO
-            .change_time_nsec = 0, // TODO
-        },
-        .file => |f| .{
-            .dev = .zero, // TODO
-            .inode = inode.number,
-            .num_links = 1,
-            .mode = inode.mode,
-            .uid = inode.uid,
-            .gid = inode.gid,
-            .rdev = .zero,
-            .size = f.size,
-            .block_size = 0, // TODO
-            .num_blocks = 0, // TODO
-            .access_time = 0, // TODO
-            .access_time_nsec = 0, // TODO
-            .modify_time = 0, // TODO
-            .modify_time_nsec = 0, // TODO
-            .change_time = 0, // TODO
-            .change_time_nsec = 0, // TODO
-        },
-    };
-}
-
-/// Atomically assigns a new unique inode number.
-fn assignInum(self: *Self) u64 {
-    const ie = self.lock.lockDisableIrq();
-    defer self.lock.unlockRestoreIrq(ie);
+/// Create a new inode.
+///
+/// All variable entries are zero initialized.
+fn createInode(self: *Self) Error!*Inode {
+    self.lock.lock();
+    defer self.lock.unlock();
 
     const inum = self.inum_next;
-    self.inum_next +%= 1;
-    return inum;
-}
+    self.inum_next += 1;
 
-/// Get the Node from the given inode.
-inline fn getNode(inode: *Inode) *Node {
-    return @alignCast(@ptrCast(inode.ctx));
-}
-
-/// Create a new VFS inode.
-fn createInode(
-    self: *Self,
-    inode_type: InodeType,
-    inum: usize,
-    mode: Mode,
-    ctx: *anyopaque,
-) Error!*Inode {
     const inode = try self.allocator.create(Inode);
-    inode.* = .{
-        .fs = self.fs,
+    errdefer self.allocator.destroy(inode);
+    inode.* = std.mem.zeroInit(Inode, .{
         .number = inum,
-        .inode_type = inode_type,
-        .mode = mode,
-        .uid = default_uid,
-        .gid = default_gid,
-        .size = 0,
-        .inode_ops = &inode_vtable,
-        .file_ops = &file_vtable,
-        .ctx = ctx,
-    };
+        .ops = inode_ops,
+        .fops = file_ops,
+        .sb = self.sb,
+    });
+
     return inode;
 }
 
-/// Create a new VFS dentry.
-fn createDentry(
-    self: *Self,
-    inode: *Inode,
-    parent: *Dentry,
-    name: []const u8,
-) Error!*Dentry {
+/// Create a new dentry for the given inode.
+///
+/// All variable entries are zero initialized.
+fn createDentry(self: *Self, inode: *Inode) Error!*Dentry {
     const dentry = try self.allocator.create(Dentry);
-    dentry.* = .{
-        .fs = self.fs,
+    errdefer self.allocator.destroy(dentry);
+
+    dentry.* = std.mem.zeroInit(Dentry, .{
         .inode = inode,
-        .parent = parent,
-        .name = try self.allocator.dupe(u8, name),
-        .ops = &dentry_vtable,
-    };
+    });
 
     return dentry;
 }
 
-// =============================================================
-// Tests
-// =============================================================
+/// Boot time services.
+///
+/// These functions should NOT be called after the boot process.
+///
+/// These functions are exceptional in that they spawn `Dentry` by themselves. Usually, it is a duty of VFS.
+const boot = struct {
+    /// Create a new file in the given directory with the specified name and mode.
+    fn createFile(self: *Self, parent: *Inode, name: []const u8, mode: Mode) Error!*Inode {
+        const inode = try self.createInode();
+        inode.mode = mode;
 
-const testing = std.testing;
+        const parent_node = &getNode(parent).dir;
+        const node = try Node.newFile(
+            parent_node,
+            name,
+            inode,
+            self.allocator,
+        );
+        errdefer self.allocator.destroy(node);
+        inode.ctx = @ptrCast(node);
 
-// TODO: use testing allocator to detect leak.
-var test_gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        try parent_node.append(inode, self.allocator);
 
-/// Initialize ramfs for testing.
-fn testInitRamfs(allocator: Allocator) !*RamFs {
-    // Partially initialize myself.
-    const self = try allocator.create(Self);
-    errdefer allocator.destroy(self);
-    const fs = try allocator.create(vfs.FileSystem);
-    errdefer allocator.destroy(fs);
-    self.* = std.mem.zeroInit(Self, .{
-        .allocator = allocator,
-        .root = undefined, // filled later
-        .fs = fs,
-    });
+        return inode;
+    }
 
-    const node = try Node.newDirectory(allocator);
-    const inode = try self.createInode(.directory, 0, .anybody_full, node);
-    const dentry = try self.createDentry(inode, undefined, "");
-    dentry.parent = dentry;
-    dentry.fs = self.fs;
-    self.fs.* = .{
-        .name = "ramfs",
-        .root = dentry,
-        .ctx = self,
-        .mounted_to = undefined,
-    };
-    self.root = dentry;
+    /// Create a new directory in the given directory with the specified name and mode.
+    fn createDirectory(self: *Self, parent: *Inode, name: []const u8, mode: Mode) Error!*Inode {
+        const inode = try self.createInode();
+        inode.mode = mode;
 
-    return self;
-}
+        const parent_node = &getNode(parent).dir;
+        const node = try Node.newDir(name, inode, self.allocator);
+        errdefer self.allocator.destroy(node);
+        inode.ctx = @ptrCast(node);
 
-test "Create directories" {
-    const allocator = test_gpa.allocator();
-    const rfs = try testInitRamfs(allocator);
-    const root = rfs.root;
+        try parent_node.append(inode, self.allocator);
 
-    const dir1 = try root.createDirectory("dir1", .anybody_full);
-    const dir2 = try dir1.createDirectory("dir2", .anybody_full);
-    try testing.expectEqual(dir1, try root.inode.lookup("dir1"));
-    try testing.expectEqual(dir2, try dir1.inode.lookup("dir2"));
-    try testing.expectEqual(null, try root.inode.lookup("dne"));
-}
+        return inode;
+    }
 
-test "Create files" {
-    const allocator = test_gpa.allocator();
-    const rfs = try testInitRamfs(allocator);
-    const root = rfs.root;
+    /// Parse a CPIO archive image to create files in the filesystem.
+    fn loadCpioImage(self: *Self, data: []const u8) (Error || cpio.Error)!void {
+        var iter = cpio.CpioIterator.new(data);
+        while (try iter.next()) |entry| {
+            const path = try entry.getPath();
+            const basename = fs.basename(path);
+            const mode = try entry.getMode();
+            if (shouldIgnore(basename)) continue;
 
-    const dir1 = try root.createDirectory("dir1", .anybody_full);
-    const file1 = try dir1.createFile("file1", .anybody_full);
-    try testing.expectEqual(file1, try dir1.inode.lookup("file1"));
-}
+            const parent = getParent(self, path) orelse {
+                return Error.InvalidArgument;
+            };
 
-test "Write to file" {
-    const allocator = test_gpa.allocator();
-    const rfs = try testInitRamfs(allocator);
-    const root = rfs.root;
-    const dentry1 = try root.createFile("file1", .anybody_full);
-    const file1 = try vfs.File.new(dentry1, allocator);
-    defer file1.deinit();
+            switch (mode.type) {
+                // Create a file, then copy data from the archive.
+                .regular => {
+                    const new = try createFile(
+                        self,
+                        parent,
+                        basename,
+                        mode,
+                    );
+                    const filedata = try entry.getData();
+                    const written = try getNode(new).file.write(
+                        filedata,
+                        0,
+                        self.allocator,
+                    );
+                    norn.rtt.expectEqual(filedata.len, written);
+                },
 
-    const s1 = "Hello, world!";
-    const s2 = "Hello, world and beyond!";
-    var len = try file1.write(s1, 0);
-    try testing.expectEqual(len, s1.len);
-    try testing.expectEqualStrings(
-        s1,
-        getNode(file1.dentry.inode).file._data,
-    );
-    len = try file1.write(s2, 0);
-    try testing.expectEqual(len, s2.len);
-    try testing.expectEqualStrings(
-        s2,
-        getNode(file1.dentry.inode).file._data,
-    );
-}
+                // Create a directory.
+                .dir => {
+                    _ = try createDirectory(
+                        self,
+                        parent,
+                        basename,
+                        mode,
+                    );
+                },
 
-test "Read from file" {
-    const allocator = test_gpa.allocator();
-    const rfs = try testInitRamfs(allocator);
-    const root = rfs.root;
-    const dentry1 = try root.createFile("file1", .anybody_full);
-    const file1 = try vfs.File.new(dentry1, allocator);
-    defer file1.deinit();
+                // Unknown file type.
+                else => @panic("Unexpected file type in CPIO"),
+            }
+        }
+    }
 
-    const s1 = "Hello, world!";
-    const s2 = "Hello, world and beyond!";
-    var buf: [1024]u8 = undefined;
-    var len: usize = undefined;
+    /// Get the parent directory.
+    ///
+    /// `path` can be both absolute and relative.
+    /// In either case, it's regarded as relative to the root directory.
+    fn getParent(self: *Self, path: []const u8) ?*Inode {
+        var parent = self.sb.root.inode;
+        var iter = std.fs.path.componentIterator(path) catch return null;
 
-    _ = try file1.write(s1, 0);
-    len = try file1.read(buf[0..]);
-    try testing.expectEqual(len, s1.len);
-    try testing.expectEqualStrings(s1, buf[0..s1.len]);
+        while (iter.next()) |component| {
+            const parent_dir = getNode(parent).dir;
+            const name = component.name;
+            if (parent_dir.getChild(name)) |child| {
+                parent = child;
+            } else if (iter.peekNext() == null) {
+                return parent;
+            } else {
+                return null;
+            }
+        } else {
+            return parent;
+        }
+    }
+};
 
-    _ = try file1.write(s2, 0);
-    _ = try file1.seek(0, .set);
-    len = try file1.read(buf[0..]);
-    try testing.expectEqual(len, s2.len);
-    try testing.expectEqualStrings(s2, buf[0..s2.len]);
+/// Check if the entry should be ignored.
+fn shouldIgnore(basename: []const u8) bool {
+    return std.mem.eql(u8, basename, ".") or
+        std.mem.eql(u8, basename, "..");
 }
 
 // =============================================================
@@ -534,14 +507,13 @@ const Allocator = std.mem.Allocator;
 const DoublyLinkedList = std.DoublyLinkedList;
 
 const norn = @import("norn");
-const Error = norn.fs.FsError;
+const fs = norn.fs;
+const Mode = fs.Mode;
 const SpinLock = norn.SpinLock;
 
+const Dentry = @import("Dentry.zig");
+const Inode = @import("Inode.zig");
+const File = @import("File.zig");
+const SuperBlock = @import("SuperBlock.zig");
+const FileSystem = @import("FileSystem.zig");
 const cpio = @import("cpio.zig");
-const vfs = @import("vfs.zig");
-const Dentry = vfs.Dentry;
-const Inode = vfs.Inode;
-const InodeType = vfs.InodeType;
-const Uid = vfs.Uid;
-const Gid = vfs.Gid;
-const Mode = vfs.Mode;

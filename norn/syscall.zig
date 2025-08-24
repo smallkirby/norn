@@ -11,13 +11,13 @@ const sys_entries = [_]SysEntry{
     // POSIX syscalls.
     // =============================================================
     // Read from a file descriptor.
-    .new("read", 0, .normal(fs.sysRead)),
+    .new("read", 0, .normal(fs.sys.read)),
     // Write to a file descriptor.
     .new("write", 1, .normal(sysWrite)),
     // Close the file.
-    .new("close", 3, .normal(fs.sysClose)),
+    .new("close", 3, .normal(fs.sys.close)),
     // Get file status.
-    .new("fstat", 5, .normal(fs.sysFstat)),
+    .new("fstat", 5, .normal(fs.sys.fstat)),
     // Set protection on a region of memory.
     .new("mprotect", 10, .normal(mm.sysMemoryProtect)),
     // Change data segment size.
@@ -35,9 +35,9 @@ const sys_entries = [_]SysEntry{
     // Get name and information about current kernel.
     .new("uname", 63, .debug(unsupported)),
     // Get current working directory.
-    .new("getcwd", 79, .normal(fs.sysGetCwd)),
+    .new("getcwd", 79, .normal(fs.sys.getcwd)),
     // Change working directory.
-    .new("chdir", 80, .normal(fs.sysChdir)),
+    .new("chdir", 80, .normal(fs.sys.chdir)),
     // Get user identity.
     .new("arch_prctl", 158, .normal(norn.prctl.sysArchPrctl)),
     // Get user identity.
@@ -53,7 +53,7 @@ const sys_entries = [_]SysEntry{
     // Get time in seconds.
     .new("time", 201, .debug(unsupported)),
     // Get directory entries
-    .new("getdents64", 217, .normal(fs.sysGetDents64)),
+    .new("getdents64", 217, .normal(fs.sys.getdents64)),
     // Set pointer to thread ID.
     .new("set_tid_address", 218, .debug(unsupported)),
     // Retrieve the time of of the specified clock.
@@ -61,9 +61,9 @@ const sys_entries = [_]SysEntry{
     // Exit all threads in a process.
     .new("exit_group", 231, .normal(sysExitGroup)),
     // Open and possibly create a file.
-    .new("openat", 257, .normal(fs.sysOpenAt)),
+    .new("openat", 257, .normal(fs.sys.openat)),
     // Get file status.
-    .new("newfstatat", 262, .normal(fs.sysNewFstatAt)),
+    .new("newfstatat", 262, .normal(fs.sys.newfstatat)),
     // Read value of a symbolic link.
     .new("readlinkat", 267, .debug(unsupported)),
     // Get or set list of robust futexes.

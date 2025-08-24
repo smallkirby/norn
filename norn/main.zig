@@ -166,15 +166,11 @@ fn nornThread(initramfs: surtr.InitramfsInfo) !void {
     try norn.arch.init();
 
     // Initialize filesystem.
-    try norn.fs.init();
-    log.info("Initialized filesystem.", .{});
-
-    // Read initramfs.
     // Set the root directory and CWD to the root of initramfs.
     {
         const initimg = initramfs;
         const imgptr: [*]const u8 = @ptrFromInt(norn.mem.phys2virt(initimg.addr));
-        try norn.fs.loadInitImage(imgptr[0..initimg.size]);
+        try norn.fs.init(imgptr[0..initimg.size]);
         log.debug("Loaded initramfs.", .{});
 
         // Free initramfs pages
