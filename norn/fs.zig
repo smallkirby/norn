@@ -656,13 +656,13 @@ const Allocator = std.mem.Allocator;
 const ComponentIterator = std.fs.path.ComponentIterator;
 
 const norn = @import("norn");
+const cpio = norn.cpio;
 const device = norn.device;
 const sched = norn.sched;
 const syscall = norn.syscall;
 const util = norn.util;
 const TimeSpec = norn.time.TimeSpec;
 
-const cpio = @import("fs/cpio.zig");
 const FdTable = @import("fs/FdTable.zig");
 const RamFs = @import("fs/RamFs.zig");
 

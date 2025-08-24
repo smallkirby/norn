@@ -507,6 +507,7 @@ const Allocator = std.mem.Allocator;
 const DoublyLinkedList = std.DoublyLinkedList;
 
 const norn = @import("norn");
+const cpio = norn.cpio;
 const fs = norn.fs;
 const Mode = fs.Mode;
 const SpinLock = norn.SpinLock;
@@ -516,4 +517,3 @@ const Inode = @import("Inode.zig");
 const File = @import("File.zig");
 const SuperBlock = @import("SuperBlock.zig");
 const FileSystem = @import("FileSystem.zig");
-const cpio = @import("cpio.zig");

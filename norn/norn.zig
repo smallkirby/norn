@@ -5,6 +5,7 @@
 pub const acpi = @import("acpi.zig");
 pub const arch = @import("arch.zig");
 pub const bits = @import("bits.zig");
+pub const cpio = @import("cpio.zig");
 pub const device = @import("device.zig");
 pub const drivers = @import("drivers.zig");
 pub const errno = @import("errno.zig");
