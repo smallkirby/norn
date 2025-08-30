@@ -103,13 +103,13 @@ pub const Thread = struct {
     /// - `kentry`: Entry point of kernel thread.
     /// - `args`: Arguments for `kentry`.
     fn create(name: []const u8, comptime kentry: anytype, args: anytype) ThreadError!*Thread {
-        const self = try general_allocator.create(Thread);
-        errdefer general_allocator.destroy(self);
+        const self = try allocator.create(Thread);
+        errdefer allocator.destroy(self);
         self.* = Thread{
             .tid = assignNewTid(),
             .mm = try MemoryMap.new(),
-            .fs = fs.ThreadFs.new(undefined, undefined, general_allocator), // TODO
-            .name = try general_allocator.dupe(u8, name),
+            .fs = fs.ThreadFs.new(undefined, undefined, allocator), // TODO
+            .name = try allocator.dupe(u8, name),
         };
 
         // Set kernel thread entry point.
@@ -118,13 +118,13 @@ pub const Thread = struct {
             /// Trampoline function for kernel thread entry point.
             fn entryKernelThread(raw_args: ?*anyopaque) callconv(.c) void {
                 const args_ptr: *ArgType = @ptrCast(@alignCast(raw_args));
-                defer general_allocator.destroy(args_ptr);
+                defer allocator.destroy(args_ptr);
                 callThreadFunction(kentry, args_ptr.*);
             }
         };
-        const args_ptr = try general_allocator.create(ArgType);
+        const args_ptr = try allocator.create(ArgType);
         args_ptr.* = args;
-        errdefer general_allocator.destroy(args_ptr);
+        errdefer allocator.destroy(args_ptr);
 
         // Initialize arch-specific context.
         try arch.task.setupNewTask(
@@ -139,17 +139,17 @@ pub const Thread = struct {
     /// Destroy the thread.
     fn destroy(self: *Thread) void {
         page_allocator.freePages(self.kernel_stack);
-        general_allocator.destroy(self);
+        allocator.destroy(self);
     }
 
     /// Set command string.
     fn setComm(self: *Self, comm: []const u8) error{OutOfMemory}!void {
         if (self.comm) |old| {
             // If the com is already set, assign new one and then free the old one.
-            self.comm = try general_allocator.dupe(u8, comm);
-            general_allocator.free(old);
+            self.comm = try allocator.dupe(u8, comm);
+            allocator.free(old);
         } else {
-            self.comm = try general_allocator.dupe(u8, comm);
+            self.comm = try allocator.dupe(u8, comm);
         }
     }
 
@@ -272,13 +272,13 @@ const StackCreator = struct {
     /// argv type.
     const Argv = []const u8;
     /// argv list type.
-    const ArgvList = ArrayList(Argv);
+    const ArgvList = std.array_list.Aligned(Argv, null);
     /// envp type.
     const Envp = []const u8;
     /// envp list type.
-    const EnvpList = ArrayList(Envp);
+    const EnvpList = std.array_list.Aligned(Envp, null);
     /// auxv list type.
-    const AuxVectorList = ArrayList(AuxVector);
+    const AuxVectorList = std.array_list.Aligned(AuxVector, null);
     /// Opaque data type.
     const OpaqueType = struct {
         data: []const u8,
@@ -286,7 +286,7 @@ const StackCreator = struct {
         pointer: u64 = undefined,
     };
     /// Opaque data list type.
-    const OpaqueList = ArrayList(OpaqueType);
+    const OpaqueList = std.array_list.Aligned(OpaqueType, null);
 
     /// Stack alignment in bytes.
     const alignment = 16;
@@ -297,11 +297,11 @@ const StackCreator = struct {
     pub fn new(stack_vma: *const Vma) !StackCreator {
         return .{
             ._stack = try Stack.new(stack_vma),
-            ._argvs = ArgvList.init(general_allocator),
-            ._envps = EnvpList.init(general_allocator),
-            ._imm_auxvs = AuxVectorList.init(general_allocator),
-            ._handle_auxvs = AuxVectorList.init(general_allocator),
-            ._opaque_data = OpaqueList.init(general_allocator),
+            ._argvs = .empty,
+            ._envps = .empty,
+            ._imm_auxvs = .empty,
+            ._handle_auxvs = .empty,
+            ._opaque_data = .empty,
         };
     }
 
@@ -309,38 +309,38 @@ const StackCreator = struct {
     ///
     /// The argument `argv` must not be freed until you call `finalize()`.
     pub fn appendArgv(self: *Self, argv: []const u8) !void {
-        try self._argvs.append(argv);
+        try self._argvs.append(allocator, argv);
     }
 
     /// Append argvs.
     ///
     /// The argument `argvs` must not be freed until you call `finalize()`.
     pub fn appendArgvs(self: *Self, argvs: []const []const u8) !void {
-        try self._argvs.appendSlice(argvs);
+        try self._argvs.appendSlice(allocator, argvs);
     }
 
     /// Append an envp.
     ///
     /// The argument `envp` must not be freed until you call `finalize()`.
     pub fn appendEnvp(self: *Self, envp: []const u8) !void {
-        try self._envps.append(envp);
+        try self._envps.append(allocator, envp);
     }
 
     /// Append envps.
     ///
     /// The argument `envps` must not be freed until you call `finalize()`.
     pub fn appendEnvps(self: *Self, envps: []const []const u8) !void {
-        try self._envps.appendSlice(envps);
+        try self._envps.appendSlice(allocator, envps);
     }
 
     /// Append an auxv with an immediate value.
     pub fn appendAuxvImmediate(self: *Self, auxv: AuxVector) !void {
-        try self._imm_auxvs.append(auxv);
+        try self._imm_auxvs.append(allocator, auxv);
     }
 
     /// Append an auxv with a handle to opaque data.
     pub fn appendAuxvWithHandle(self: *Self, auxv: AuxVector) !void {
-        try self._handle_auxvs.append(auxv);
+        try self._handle_auxvs.append(allocator, auxv);
     }
 
     /// Append an arbitrary opaque data.
@@ -348,13 +348,16 @@ const StackCreator = struct {
     /// Returns the handler of the data.
     /// You can pass the handler as a data, that's resolve to the pointer to the opaque data.
     pub fn appendOpaqueData(self: *Self, T: type, data: T) !StackOpaqueHandler {
-        const duped = try general_allocator.create(T);
+        const duped = try allocator.create(T);
         duped.* = data;
-        const raw_ptr: [*]const u8 = @alignCast(@ptrCast(duped));
+        const raw_ptr: [*]const u8 = @ptrCast(@alignCast(duped));
         const u8_size = @sizeOf(T);
 
         const handle: StackOpaqueHandler = self._opaque_data.items.len;
-        try self._opaque_data.append(.{ .data = raw_ptr[0..u8_size], .handle = handle });
+        try self._opaque_data.append(
+            allocator,
+            .{ .data = raw_ptr[0..u8_size], .handle = handle },
+        );
         return handle;
     }
 
@@ -374,25 +377,25 @@ const StackCreator = struct {
         }
 
         // Push envp strings.
-        var envp_addrs = ArrayList(u64).init(general_allocator);
-        defer envp_addrs.deinit();
+        var envp_addrs = std.array_list.Aligned(u64, null).empty;
+        defer envp_addrs.deinit(allocator);
 
         var envp_num_pushed: usize = 0;
         while (envp_num_pushed < self._envps.items.len) : (envp_num_pushed += 1) {
             const envp = self._envps.items[self._envps.items.len - envp_num_pushed - 1];
             const addr = self._stack.pushData(envp);
-            try envp_addrs.append(@intFromPtr(addr));
+            try envp_addrs.append(allocator, @intFromPtr(addr));
         }
 
         // Push argv strings.
-        var argv_addrs = ArrayList(u64).init(general_allocator);
-        defer argv_addrs.deinit();
+        var argv_addrs = std.array_list.Aligned(u64, null).empty;
+        defer argv_addrs.deinit(allocator);
 
         var argv_num_pushed: usize = 0;
         while (argv_num_pushed < self._argvs.items.len) : (argv_num_pushed += 1) {
             const argv = self._argvs.items[self._argvs.items.len - argv_num_pushed - 1];
             const addr = self._stack.pushData(argv);
-            try argv_addrs.append(@intFromPtr(addr));
+            try argv_addrs.append(allocator, @intFromPtr(addr));
         }
 
         // Adjust alignment to 16 bytes.
@@ -431,13 +434,13 @@ const StackCreator = struct {
 
         // Free items.
         for (self._opaque_data.items) |data| {
-            general_allocator.free(data.data);
+            allocator.free(data.data);
         }
-        self._opaque_data.deinit();
-        self._handle_auxvs.deinit();
-        self._imm_auxvs.deinit();
-        self._envps.deinit();
-        self._argvs.deinit();
+        self._opaque_data.deinit(allocator);
+        self._handle_auxvs.deinit(allocator);
+        self._imm_auxvs.deinit(allocator);
+        self._envps.deinit(allocator);
+        self._argvs.deinit(allocator);
 
         return self._stack.getUserStackTop();
     }
@@ -464,7 +467,7 @@ const StackCreator = struct {
             const slice = stack_vma.slice();
 
             return .{
-                ._stack_top = @constCast(@ptrCast(slice.ptr)),
+                ._stack_top = @ptrCast(@constCast(slice.ptr)),
                 ._stack_bottom = @ptrFromInt(@intFromPtr(slice.ptr) + slice.len),
                 ._sp = @ptrFromInt(@intFromPtr(slice.ptr) + slice.len),
                 ._user_vma = stack_vma,
@@ -496,7 +499,7 @@ const StackCreator = struct {
             }
             self._sp -= value_size;
 
-            const ptr: *T = @alignCast(@ptrCast(self._sp));
+            const ptr: *T = @ptrCast(@alignCast(self._sp));
             ptr.* = value;
 
             const diff = @intFromPtr(self._sp) - @intFromPtr(self._stack_top);
@@ -597,7 +600,6 @@ const AuxVector = packed struct(u128) {
 // =============================================================
 
 const std = @import("std");
-const ArrayList = std.ArrayList;
 
 const norn = @import("norn");
 const arch = norn.arch;
@@ -606,10 +608,10 @@ const loader = norn.loader;
 const mem = norn.mem;
 const sched = norn.sched;
 const util = norn.util;
-const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
+const InlineDoublyLinkedList = norn.typing.InlineDoublyLinkedList;
 const MemoryMap = norn.mm.MemoryMap;
 const Vma = norn.mm.VmArea;
 const SpinLock = norn.SpinLock;
 
 const page_allocator = mem.page_allocator;
-const general_allocator = mem.general_allocator;
+const allocator = mem.general_allocator;

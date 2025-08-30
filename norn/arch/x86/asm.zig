@@ -1,5 +1,5 @@
 pub inline fn cli() void {
-    asm volatile ("cli" ::: "cc");
+    asm volatile ("cli" ::: .{ .cc = true });
 }
 
 pub inline fn hlt() void {
@@ -11,7 +11,7 @@ pub fn inb(port: u16) u8 {
         \\inb %[port], %[ret]
         : [ret] "={al}" (-> u8),
         : [port] "{dx}" (port),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -20,7 +20,7 @@ pub fn inw(port: u16) u16 {
         \\inw %[port], %[ret]
         : [ret] "={ax}" (-> u16),
         : [port] "{dx}" (port),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -29,7 +29,7 @@ pub fn inl(port: u16) u32 {
         \\inl %[port], %[ret]
         : [ret] "={eax}" (-> u32),
         : [port] "{dx}" (port),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -38,7 +38,7 @@ pub fn invlpg(addr: norn.mem.Virt) void {
         \\invlpg %[addr]
         :
         : [addr] "m" (addr),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -80,7 +80,7 @@ pub fn outb(value: u8, port: u16) void {
         :
         : [value] "{al}" (value),
           [port] "{dx}" (port),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -90,7 +90,7 @@ pub fn outw(value: u16, port: u16) void {
         :
         : [value] "{ax}" (value),
           [port] "{dx}" (port),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -100,7 +100,7 @@ pub fn outl(value: u32, port: u16) void {
         :
         : [value] "{eax}" (value),
           [port] "{dx}" (port),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -144,7 +144,7 @@ pub export fn readRflags() regs.Rflags {
         \\pop %[rflags]
         : [rflags] "=r" (-> u64),
         :
-        : "memory", "cc", "rflags"
+        : .{ .memory = true, .cc = true, .rflags = true }
     ));
 }
 
@@ -161,7 +161,7 @@ pub fn rdmsr(T: type, comptime msr: Msr) T {
         : [eax] "={eax}" (eax),
           [edx] "={edx}" (edx),
         : [msr] "{ecx}" (@intFromEnum(msr)),
-        : "memory"
+        : .{ .memory = true }
     );
 
     const value = bits.concat(u64, edx, eax);
@@ -189,13 +189,13 @@ pub fn sgdt() u80 {
         \\sgdt %[gdtr]
         : [gdtr] "=m" (gdtr),
         :
-        : "memory"
+        : .{ .memory = true }
     );
     return gdtr;
 }
 
 pub inline fn sti() void {
-    asm volatile ("sti" ::: "cc");
+    asm volatile ("sti" ::: .{ .cc = true });
 }
 
 pub fn writeCr3(cr3: u64) void {
@@ -228,7 +228,7 @@ pub fn wrmsr(comptime msr: Msr, value: anytype) void {
         : [msr] "{ecx}" (comptime @intFromEnum(msr)),
           [eax] "{eax}" (eax),
           [edx] "{edx}" (edx),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -240,7 +240,7 @@ pub fn xgetbv(index: u32) u64 {
         : [eax] "={eax}" (eax),
           [edx] "={edx}" (edx),
         : [index] "{ecx}" (index),
-        : "memory"
+        : .{ .memory = true }
     );
     return bits.concat(u64, edx, eax);
 }
@@ -254,7 +254,7 @@ pub fn xsetbv(index: u32, value: u64) void {
         : [index] "{ecx}" (index),
           [eax] "{eax}" (eax),
           [edx] "{edx}" (edx),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 

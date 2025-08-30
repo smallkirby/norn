@@ -27,7 +27,7 @@ export fn kernelEntry() callconv(.naked) noreturn {
 
 /// Trampoline function to call the main kernel function.
 /// This function is intended to convert the calling convention from .Win64 to Zig.
-export fn kernelTrampoline(boot_info: BootInfo) callconv(.Win64) noreturn {
+export fn kernelTrampoline(boot_info: BootInfo) callconv(.winapi) noreturn {
     kernelMain(boot_info) catch |err| {
         log.err("Kernel aborted with error: {}", .{err});
         @panic("Exiting...");

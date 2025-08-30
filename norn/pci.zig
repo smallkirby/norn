@@ -10,7 +10,7 @@ pub const PciError = error{
 };
 
 /// Type for a list of PCI devices.
-const DeviceList = std.ArrayList(*Device);
+const DeviceList = std.array_list.Aligned(*Device, null);
 /// List of devices.
 var devices: DeviceList = undefined;
 
@@ -786,7 +786,7 @@ const MsiCapability = packed struct {
 /// Initialize the PCI subsystem.
 pub fn init(allocator: Allocator) PciError!void {
     // Initialize the device list.
-    devices = DeviceList.init(allocator);
+    devices = .empty;
 
     // Register all PCI devices.
     try registerAllDevices(allocator);
@@ -827,7 +827,7 @@ fn registerAllDevices(allocator: Allocator) PciError!void {
 
             pci_device.* = try Device.new(bus, device, function);
 
-            try devices.append(pci_device);
+            try devices.append(alc, pci_device);
         }
     };
 

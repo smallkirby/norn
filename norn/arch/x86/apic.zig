@@ -354,7 +354,7 @@ const std = @import("std");
 const norn = @import("norn");
 const acpi = norn.acpi;
 const mem = norn.mem;
-const Partialable = norn.Partialable;
+const Partialable = norn.typing.Partialable;
 const Phys = mem.Phys;
 const VectorTable = norn.interrupt.VectorTable;
 

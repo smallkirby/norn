@@ -127,7 +127,7 @@ pub fn init() void {
         @intFromPtr(&early_tss),
         std.math.maxInt(u20),
     );
-    @as(*TssDescriptor, @alignCast(@ptrCast(&early_gdt[kernel_tss_index]))).* = tss_desc;
+    @as(*TssDescriptor, @ptrCast(@alignCast(&early_gdt[kernel_tss_index]))).* = tss_desc;
     loadKernelTss();
 
     // Testing
@@ -150,7 +150,7 @@ pub fn setupThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
     errdefer allocator.freePages(page);
 
     // Construct GDT entries.
-    const ptr: [*]SegmentDescriptor = @alignCast(@ptrCast(page.ptr));
+    const ptr: [*]SegmentDescriptor = @ptrCast(@alignCast(page.ptr));
     const gdt = ptr[0..max_num_gdt];
     gdt[0] = null_descriptor;
     gdt[kernel_ds_index] = kernel_ds;
@@ -166,7 +166,7 @@ pub fn setupThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
         @intFromPtr(tss_page.ptr),
         std.math.maxInt(u20),
     );
-    @as(*TssDescriptor, @alignCast(@ptrCast(&gdt[kernel_tss_index]))).* = tss_desc;
+    @as(*TssDescriptor, @ptrCast(@alignCast(&gdt[kernel_tss_index]))).* = tss_desc;
 
     // Set RSP0
     const rsp0 = try allocator.allocPages(1, .normal);
@@ -227,7 +227,7 @@ fn loadKernelDs() void {
             .rpl = 0,
             .index = kernel_ds_index,
           }))),
-        : "di"
+        : .{ .di = true }
     );
 }
 
@@ -251,7 +251,7 @@ fn loadKernelCs() void {
             .rpl = 0,
             .index = kernel_cs_index,
           }))),
-        : "rax"
+        : .{ .rax = true }
     );
 }
 
@@ -265,7 +265,7 @@ fn loadKernelTss() void {
             .rpl = 0,
             .index = kernel_tss_index,
           }))),
-        : "di"
+        : .{ .di = true }
     );
 }
 
@@ -582,7 +582,7 @@ fn testEarlyTss() void {
             \\str %[tr]
             : [tr] "={ax}" (-> u16),
             :
-            : "rax"
+            : .{ .rax = true }
         ));
         rtt.expectEqual(SegmentSelector{
             .index = kernel_tss_index,

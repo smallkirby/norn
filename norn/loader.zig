@@ -22,7 +22,8 @@ pub const ElfLoader = struct {
     /// Caller must deallocate the struct with `deinit`.
     pub fn new(filename: []const u8) LoaderError!Self {
         const elf_data = try readElfFile(filename);
-        const elf_header = elf.Header.parse(elf_data[0..elf_header_size]) catch {
+        var header_reader = std.Io.Reader.fixed(elf_data[0..]);
+        const elf_header = elf.Header.read(&header_reader) catch {
             return error.InvalidElf;
         };
 
@@ -35,8 +36,7 @@ pub const ElfLoader = struct {
     }
 
     pub fn load(self: *Self, mm: *MemoryMap) LoaderError!void {
-        const elf_stream = std.io.fixedBufferStream(self._elf_data);
-        var prog_iter = self._elf_header.program_header_iterator(elf_stream);
+        var prog_iter = self._elf_header.iterateProgramHeadersBuffer(self._elf_data);
 
         // Iterate over program headers.
         var cur_prog = prog_iter.next() catch return error.InvalidElf;
@@ -75,7 +75,7 @@ fn readElfFile(filename: []const u8) LoaderError![]align(8) u8 {
     const stat = fs.stat(file.inode);
     const size = stat.size;
 
-    const buf = try general_allocator.alignedAlloc(u8, 8, size);
+    const buf = try general_allocator.alignedAlloc(u8, .@"8", size);
     const read_size = try file.read(buf);
     norn.rtt.expectEqual(size, read_size);
 

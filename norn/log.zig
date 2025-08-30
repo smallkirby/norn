@@ -10,28 +10,36 @@ pub const log_level = switch (option.log_level) {
     .err => .err,
 };
 
-const LogError = error{};
+const writer_vtable = std.Io.Writer.VTable{
+    .drain = drain,
+};
 
-const Writer = std.io.Writer(
-    void,
-    LogError,
-    write,
-);
+var writer = std.Io.Writer{
+    .vtable = &writer_vtable,
+    .buffer = &.{},
+};
 
 /// Serial console for logging.
 var serial: *Serial = undefined;
 
+/// Write data to the serial console.
+fn drain(_: *std.Io.Writer, data: []const []const u8, _: usize) !usize {
+    var written: usize = 0;
+    for (data) |bytes| {
+        serial.writeString(bytes);
+        written += bytes.len;
+    }
+    return written;
+}
+
 /// Initialize the logger with the given serial console.
+///
 /// You MUST call this function before using the logger.
 pub fn init() void {
     serial = norn.getSerial();
 }
 
-fn write(_: void, bytes: []const u8) LogError!usize {
-    serial.writeString(bytes);
-    return bytes.len;
-}
-
+/// Log implementation.
 pub fn log(
     comptime level: std.log.Level,
     comptime scope: @Type(.enum_literal),
@@ -57,8 +65,7 @@ pub fn log(
         );
     };
 
-    std.fmt.format(
-        Writer{ .context = {} },
+    writer.print(
         level_str ++ " " ++ scope_str ++ fmt ++ "\n",
         args,
     ) catch {};

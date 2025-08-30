@@ -84,7 +84,7 @@ fn freeToBin(self: *Self, bin_index: usize, ptr: [*]u8) void {
     const mask = self.lock.lockDisableIrq();
     defer self.lock.unlockRestoreIrq(mask);
 
-    const chunk: *ChunkMetaNode = @alignCast(@ptrCast(ptr));
+    const chunk: *ChunkMetaNode = @ptrCast(@alignCast(ptr));
     push(&self.list_heads[bin_index], chunk);
 }
 
@@ -121,7 +121,7 @@ fn pop(list_head: *ChunkMetaPointer) *ChunkMetaNode {
 }
 
 fn allocate(ctx: *anyopaque, n: usize, log2_align: std.mem.Alignment, _: usize) ?[*]u8 {
-    const self: *Self = @alignCast(@ptrCast(ctx));
+    const self: *Self = @ptrCast(@alignCast(ctx));
 
     const ptr_align = log2_align.toByteUnits();
     const bin_index = binIndex(@max(ptr_align, n));
@@ -141,7 +141,7 @@ fn allocate(ctx: *anyopaque, n: usize, log2_align: std.mem.Alignment, _: usize) 
 }
 
 fn free(ctx: *anyopaque, slice: []u8, log2_align: Alignment, _: usize) void {
-    const self: *Self = @alignCast(@ptrCast(ctx));
+    const self: *Self = @ptrCast(@alignCast(ctx));
 
     const ptr_align = log2_align.toByteUnits();
     const bin_index = binIndex(@max(ptr_align, slice.len));
@@ -158,7 +158,7 @@ fn resize(_: *anyopaque, _: []u8, _: Alignment, _: usize, _: usize) bool {
 }
 
 fn remap(ctx: *anyopaque, slice: []u8, alignment: Alignment, new_len: usize, _: usize) ?[*]u8 {
-    const self: *Self = @alignCast(@ptrCast(ctx));
+    const self: *Self = @ptrCast(@alignCast(ctx));
 
     if (slice.len == new_len) return slice.ptr;
 
@@ -194,12 +194,11 @@ const TestPageAllocator = struct {
     }
 
     pub fn allocPages(_: *anyopaque, num_pages: usize, _: mem.Zone) Error![]align(mem.size_4kib) u8 {
-        const ret = std.heap.page_allocator.alignedAlloc(
+        const ret = try std.heap.page_allocator.alloc(
             u8,
-            mem.size_4kib,
             mem.size_4kib * num_pages,
         );
-        return ret;
+        return @alignCast(ret);
     }
 
     pub fn freePages(_: *anyopaque, slice: []u8) void {

@@ -48,11 +48,11 @@ pub fn init() DeviceError!void {
     // Mount devfs on "/dev".
     const devfs_path = try fs.mountTo(dev_file.path, "devfs", null);
     // TODO: should not do this outside DevFs impl.
-    devfs = @alignCast(@ptrCast(devfs_path.dentry.inode.sb.ctx));
+    devfs = @ptrCast(@alignCast(devfs_path.dentry.inode.sb.ctx));
 
     // Call registered init functions.
     const array_len = (@intFromPtr(&__module_init_end) - @intFromPtr(&__module_init_start)) / @sizeOf(ModuleInit);
-    const initcalls_ptr: [*]const ModuleInit = @alignCast(@ptrCast(&__module_init_start));
+    const initcalls_ptr: [*]const ModuleInit = @ptrCast(@alignCast(&__module_init_start));
     log.debug("Calling {} module init functions", .{array_len});
     for (initcalls_ptr[0..array_len]) |initcall| {
         initcall();

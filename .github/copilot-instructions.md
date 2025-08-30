@@ -1,6 +1,7 @@
 # Instructions for Copilot
 
 You must respond in Japanese.
+However, you must respond in English at PR review.
 
 ## Project Overview
 

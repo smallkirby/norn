@@ -464,7 +464,7 @@ const IoVec = packed struct {
     len: usize,
 };
 
-fn sysWriteVec(fd: u64, iov: [*]const IoVec, count: usize) SysError!i64 {
+fn sysWriteVec(fd: u64, iov: [*]align(8) const IoVec, count: usize) SysError!i64 {
     if (fd != 1 and fd != 2) {
         norn.unimplemented("sysWriteVec(): fd other than 1 or 2.");
     }

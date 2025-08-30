@@ -54,8 +54,8 @@ const VmArea = struct {
     /// BUG: Zig v0.14.1: using `*const VmArea` as an argument leads to a dependency loop error.
     ///     See https://github.com/ziglang/zig/issues/12325.
     fn compareVmArea(ap: *const anyopaque, bp: *const anyopaque) std.math.Order {
-        const a: *const VmArea = @alignCast(@ptrCast(ap));
-        const b: *const VmArea = @alignCast(@ptrCast(bp));
+        const a: *const VmArea = @ptrCast(@alignCast(ap));
+        const b: *const VmArea = @ptrCast(@alignCast(bp));
         if (a.start < b.start) return .lt;
         if (a.start > b.start) return .gt;
         return .eq;
@@ -65,7 +65,7 @@ const VmArea = struct {
     ///
     /// BUG: Same as above. See https://github.com/ziglang/zig/issues/12325.
     fn compareVmAreaByKey(key: Virt, ap: *const anyopaque) std.math.Order {
-        const a: *const VmArea = @alignCast(@ptrCast(ap));
+        const a: *const VmArea = @ptrCast(@alignCast(ap));
         if (key < a.start) return .lt;
         if (key >= a.end) return .gt;
         return .eq;
@@ -237,8 +237,8 @@ const VmStruct = struct {
     /// BUG: Zig v0.14.1: using `*const VmStruct` as an argument leads to a dependency loop error.
     ///     See https://github.com/ziglang/zig/issues/12325.
     fn compareVmStruct(ap: *const anyopaque, bp: *const anyopaque) std.math.Order {
-        const a: *const VmStruct = @alignCast(@ptrCast(ap));
-        const b: *const VmStruct = @alignCast(@ptrCast(bp));
+        const a: *const VmStruct = @ptrCast(@alignCast(ap));
+        const b: *const VmStruct = @ptrCast(@alignCast(bp));
         if (a.virt < b.virt) return .lt;
         if (a.virt > b.virt) return .gt;
         return .eq;
@@ -248,7 +248,7 @@ const VmStruct = struct {
     ///
     /// BUG: Same as above. See https://github.com/ziglang/zig/issues/12325.
     fn compareVmStructByKey(key: Virt, ap: *const anyopaque) std.math.Order {
-        const a: *const VmStruct = @alignCast(@ptrCast(ap));
+        const a: *const VmStruct = @ptrCast(@alignCast(ap));
         if (key < a.virt) return .lt;
         if (key >= a.virt + a.size) return .gt;
         return .eq;

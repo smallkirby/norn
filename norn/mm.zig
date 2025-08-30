@@ -246,7 +246,7 @@ pub fn sysBrk(requested_brk: u64) SysError!i64 {
             grow_size,
             .rw,
         ) catch |err| {
-            log.err("Failed to map growing brk: {?}", .{err});
+            log.err("Failed to map growing brk: {t}", .{err});
             return SysError.NoMemory;
         };
         mm.vm_areas.append(new_last);
@@ -257,7 +257,7 @@ pub fn sysBrk(requested_brk: u64) SysError!i64 {
             rounded_requested_brk - current_brk_start,
             .rw,
         ) catch |err| {
-            log.err("Failed to map new brk: {?}", .{err});
+            log.err("Failed to map new brk: {t}", .{err});
             return @bitCast(mm.brk.end);
         };
         mm.vm_areas.append(vma);
@@ -363,7 +363,7 @@ const mem = norn.mem;
 const util = norn.util;
 const SysError = norn.syscall.SysError;
 const Virt = mem.Virt;
-const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
+const InlineDoublyLinkedList = norn.typing.InlineDoublyLinkedList;
 
 const allocator = norn.mem.general_allocator;
 const page_allocator = norn.mem.page_allocator;

@@ -172,7 +172,7 @@ pub fn registerCharDev(self: *Self, char: device.CharDev) Error!void {
 
 /// Get self from inode.
 inline fn getSelf(inode: *Inode) *Self {
-    return @alignCast(@ptrCast(inode.ctx));
+    return @ptrCast(@alignCast(inode.ctx));
 }
 
 /// Create a new inode.

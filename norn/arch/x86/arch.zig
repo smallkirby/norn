@@ -100,7 +100,7 @@ pub fn getPerCpuBase() Virt {
         \\rdfsbase %[base]
         : [base] "={rax}" (-> Phys),
         :
-        : "rax"
+        : .{ .rax = true }
     );
 }
 
@@ -130,7 +130,7 @@ pub fn read8(addr: IoAddr) u8 {
         \\mov (%[addr]), %[result]
         : [result] "=r" (-> u8),
         : [addr] "r" (addr._virt),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -140,7 +140,7 @@ pub fn read16(addr: IoAddr) u16 {
         \\mov (%[addr]), %[result]
         : [result] "=r" (-> u16),
         : [addr] "r" (addr._virt),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -150,7 +150,7 @@ pub fn read32(addr: IoAddr) u32 {
         \\mov (%[addr]), %[result]
         : [result] "=r" (-> u32),
         : [addr] "r" (addr._virt),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -160,7 +160,7 @@ pub fn read64(addr: IoAddr) u64 {
         \\mov (%[addr]), %[result]
         : [result] "=r" (-> u64),
         : [addr] "r" (addr._virt),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -171,7 +171,7 @@ pub fn write8(addr: IoAddr, value: u8) void {
         :
         : [value] "r" (value),
           [addr] "r" (addr._virt),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -182,7 +182,7 @@ pub fn write16(addr: IoAddr, value: u16) void {
         :
         : [value] "r" (value),
           [addr] "r" (addr._virt),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -193,7 +193,7 @@ pub fn write32(addr: IoAddr, value: u32) void {
         :
         : [value] "r" (value),
           [addr] "r" (addr._virt),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 
@@ -204,7 +204,7 @@ pub fn write64(addr: IoAddr, value: u64) void {
         :
         : [value] "r" (value),
           [addr] "r" (addr._virt),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 

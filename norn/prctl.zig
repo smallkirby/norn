@@ -1,5 +1,7 @@
-pub usingnamespace switch (builtin.target.cpu.arch) {
-    .x86_64 => x64,
+const target = builtin.target.cpu.arch;
+
+pub const sysArchPrctl = switch (target) {
+    .x86_64 => x64.sysArchPrctl,
     else => @compileError("Unsupported architecture."),
 };
 
