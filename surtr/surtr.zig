@@ -44,7 +44,7 @@ pub const MemoryMap = extern struct {
     /// Total memory map size.
     map_size: usize,
     /// Map key used to check if the memory map has been changed.
-    map_key: usize,
+    map_key: uefi.tables.MemoryMapKey,
     /// Size in bytes of each memory descriptor.
     descriptor_size: usize,
     /// UEFI memory descriptor version.
@@ -60,7 +60,7 @@ pub const MemoryMap = extern struct {
             return error.InvalidData;
         }
 
-        const new_descriptors: [*]uefi.tables.MemoryDescriptor = @alignCast(@ptrCast(buffer.ptr));
+        const new_descriptors: [*]uefi.tables.MemoryDescriptor = @ptrCast(@alignCast(buffer.ptr));
         const new_descriptors_bytes: [*]u8 = @ptrCast(new_descriptors);
         const descriptors_bytes: [*]u8 = @ptrCast(self.descriptors);
         @memcpy(
@@ -125,7 +125,7 @@ pub const MemoryType = blk: {
     };
     // 0x7000_0000 ~ 0x7FFF_FFFF are reserved by OEM.
     // 0x8000_0000 ~ 0xFFFF_FFFF are reserved by UEFI OS loaders.
-    const extended_start_ix: u32 = 0x8000_0000;
+    const extended_start_ix: u32 = 0x8000_0000 + 1;
 
     const original_types = std.meta.fields(uefi.tables.MemoryType);
     const fields_len = original_types.len + extended_types.len;

@@ -12,11 +12,14 @@ pub const log_level = switch (option.log_level) {
 
 const LogError = error{};
 
-const Writer = std.io.Writer(
-    void,
-    LogError,
-    write,
-);
+const writer_vtable = std.Io.Writer.VTable{
+    .drain = drain,
+};
+
+var writer = std.Io.Writer{
+    .vtable = &writer_vtable,
+    .buffer = &.{},
+};
 
 /// Serial console for logging.
 var serial: *Serial = undefined;
@@ -27,9 +30,13 @@ pub fn init() void {
     serial = norn.getSerial();
 }
 
-fn write(_: void, bytes: []const u8) LogError!usize {
-    serial.writeString(bytes);
-    return bytes.len;
+fn drain(_: *std.Io.Writer, data: []const []const u8, _: usize) LogError!usize {
+    var written: usize = 0;
+    for (data) |bytes| {
+        serial.writeString(bytes);
+        written += bytes.len;
+    }
+    return written;
 }
 
 pub fn log(
@@ -57,8 +64,7 @@ pub fn log(
         );
     };
 
-    std.fmt.format(
-        Writer{ .context = {} },
+    writer.print(
         level_str ++ " " ++ scope_str ++ fmt ++ "\n",
         args,
     ) catch {};

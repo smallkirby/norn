@@ -294,7 +294,7 @@ const Allocator = std.mem.Allocator;
 
 const norn = @import("norn");
 const mem = norn.mem;
-const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
+const InlineDoublyLinkedList = norn.typing.InlineDoublyLinkedList;
 const Phys = mem.Phys;
 
 const surtr = @import("surtr");

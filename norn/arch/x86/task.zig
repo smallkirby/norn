@@ -56,7 +56,7 @@ pub fn setupNewTask(task: *Thread, ip: u64, args: ?*anyopaque) TaskError!void {
     // If the task has an user thread, this function additionally holds a user context.
     task.kernel_stack_ptr -= @sizeOf(CpuContext);
     {
-        const cpu_context: *CpuContext = @alignCast(@ptrCast(task.kernel_stack_ptr));
+        const cpu_context: *CpuContext = @ptrCast(@alignCast(task.kernel_stack_ptr));
         norn.rtt.expectEqual(0, @intFromPtr(cpu_context) % 16);
         norn.rtt.expectEqual(cpu_context, getCpuContextFromStack(task));
 
@@ -74,7 +74,7 @@ pub fn setupNewTask(task: *Thread, ip: u64, args: ?*anyopaque) TaskError!void {
     // Setup orphan frame.
     task.kernel_stack_ptr -= @sizeOf(OrphanFrame);
     {
-        const orphan_frame: *OrphanFrame = @alignCast(@ptrCast(task.kernel_stack_ptr));
+        const orphan_frame: *OrphanFrame = @ptrCast(@alignCast(task.kernel_stack_ptr));
         norn.rtt.expectEqual(0, @intFromPtr(orphan_frame) % 16);
         orphan_frame.* = OrphanFrame{
             .r12 = 0,
@@ -125,7 +125,7 @@ noinline fn kernelThreadArchEntry() noreturn {
         :
         : [args] "r" (cpu_context.r9),
           [entry] "r" (cpu_context.r8),
-        : "memory"
+        : .{ .memory = true }
     );
 
     unreachable; // TODO

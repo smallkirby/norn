@@ -12,7 +12,7 @@ const UsbError = usb.UsbError;
 const Self = @This();
 
 /// Type of list of USB devices.
-const DeviceList = ArrayList(*Device);
+const DeviceList = std.array_list.Managed(*Device); // TODO: make it unmanaged
 
 /// xHC PCI device.
 pci_device: *const pci.Device,

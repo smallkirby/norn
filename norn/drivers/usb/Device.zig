@@ -18,7 +18,7 @@ const num_ents_in_tr = mem.size_4kib / @sizeOf(Trb);
 /// ID type of endpoint.
 const EndpointId = u5;
 /// List type of interfaces.
-const InterfaceList = std.ArrayList(Interface);
+const InterfaceList = std.array_list.Managed(Interface); // TODO: make it unmanaged
 /// List type of class drivers.
 const ClassDriverList = std.AutoHashMap(EndpointId, class.ClassDriver);
 
@@ -312,7 +312,7 @@ fn consumeConfigurationDescriptor(self: *Self, config_desc: *const Configuration
             // Interface descriptor.
             .interface => {
                 norn.rtt.expectEqual(.interface, state);
-                const desc: *align(1) const InterfaceDescriptor = @alignCast(@ptrCast(cur));
+                const desc: *align(1) const InterfaceDescriptor = @ptrCast(@alignCast(cur));
                 interface.desc = desc.*;
                 state = .class;
             },
@@ -322,13 +322,13 @@ fn consumeConfigurationDescriptor(self: *Self, config_desc: *const Configuration
                 const desc_buf = try general_allocator.alloc(u8, cur.length);
                 errdefer general_allocator.free(desc_buf);
                 @memcpy(desc_buf, @as([*]const u8, @ptrCast(cur))[0..cur.length]);
-                interface.class = @alignCast(@ptrCast(desc_buf.ptr));
+                interface.class = @ptrCast(@alignCast(desc_buf.ptr));
                 state = .endpoint;
             },
             // Endpoint descriptor.
             .endpoint => {
                 norn.rtt.expectEqual(.endpoint, state);
-                const desc: *align(1) const EndpointDescriptor = @alignCast(@ptrCast(cur));
+                const desc: *align(1) const EndpointDescriptor = @ptrCast(@alignCast(cur));
                 interface.endpoint = desc.*;
                 state = .interface;
 
@@ -456,7 +456,7 @@ fn onDataTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, iss
             // Buffer size specified by SetupData and Data TRB is larger than the descriptor size.
             norn.rtt.expectEqual(self.bufferPhysAddr(), issuer.data_buffer);
 
-            const device_desc: *const DeviceDescriptor = @alignCast(@ptrCast(self.buffer.ptr));
+            const device_desc: *const DeviceDescriptor = @ptrCast(@alignCast(self.buffer.ptr));
             self.device_desc = device_desc.*;
 
             // Transition to waiting for configuration descriptor
@@ -473,7 +473,7 @@ fn onDataTransfer(self: *Self, event: *const volatile trbs.TransferEventTrb, iss
             norn.rtt.expectEqual(self.bufferPhysAddr(), issuer.data_buffer);
 
             // Parse descriptors.
-            const config_desc: *const ConfigurationDescriptor = @alignCast(@ptrCast(self.buffer.ptr));
+            const config_desc: *const ConfigurationDescriptor = @ptrCast(@alignCast(self.buffer.ptr));
             try self.consumeConfigurationDescriptor(config_desc);
 
             // Select configuration.

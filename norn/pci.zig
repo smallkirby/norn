@@ -10,7 +10,7 @@ pub const PciError = error{
 };
 
 /// Type for a list of PCI devices.
-const DeviceList = std.ArrayList(*Device);
+const DeviceList = std.array_list.Managed(*Device); // TODO: make it unmanaged
 /// List of devices.
 var devices: DeviceList = undefined;
 

@@ -186,7 +186,7 @@ const testing = std.testing;
 
 fn getTestCpio() ![]align(4) const u8 {
     const test_cpio = @embedFile("tests/assets/test.cpio");
-    const duped = try testing.allocator.alignedAlloc(u8, 4, test_cpio.len);
+    const duped = try testing.allocator.alignedAlloc(u8, .@"4", test_cpio.len);
     @memcpy(duped, test_cpio);
     return duped;
 }

@@ -12,11 +12,7 @@ pub const Ring = struct {
 
     /// Initialize a new Ring.
     pub fn new(comptime size: usize, allocator: Allocator) mem.MemError!Ring {
-        const trbs_buffer = try allocator.alignedAlloc(
-            Trb,
-            mem.size_4kib,
-            size,
-        );
+        const trbs_buffer = try allocator.alloc(Trb, size);
         @memset(@as([*]u8, @ptrCast(trbs_buffer.ptr))[0..mem.size_4kib], 0);
 
         return .{
@@ -49,7 +45,7 @@ pub const Ring = struct {
         // Copy the TRB.
         self.trbs[self.index] = trb.*;
 
-        return @volatileCast(@ptrCast(&self.trbs[self.index]));
+        return @ptrCast(@volatileCast(&self.trbs[self.index]));
     }
 
     /// Push a Link TRB and reset the cursor.
@@ -92,15 +88,11 @@ pub const EventRing = struct {
 
     /// Initialize a new Event Ring.
     pub fn new(interrupter: IoAddr, allocator: Allocator) mem.MemError!EventRing {
-        const trbs_buffer = try allocator.alignedAlloc(
-            Trb,
-            mem.size_4kib,
-            num_trbs_per_segment,
-        );
+        const trbs_buffer = try allocator.alloc(Trb, num_trbs_per_segment);
         @memset(@as([*]u8, @ptrCast(trbs_buffer.ptr))[0..mem.size_4kib], 0);
         const erst = try allocator.alignedAlloc(
             ErstEntry,
-            16,
+            .@"16",
             num_ers,
         );
 

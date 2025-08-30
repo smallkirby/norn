@@ -142,13 +142,16 @@ pub fn build(b: *std.Build) !void {
     // =============================================================
     const surtr = b.addExecutable(.{
         .name = "BOOTX64.EFI",
-        .root_source_file = b.path("surtr/main.zig"),
-        .target = b.resolveTargetQuery(.{
-            .cpu_arch = .x86_64,
-            .os_tag = .uefi,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("surtr/main.zig"),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .uefi,
+            }),
+            .optimize = optimize,
         }),
-        .optimize = optimize,
         .linkage = .static,
+        .use_llvm = true,
     });
     surtr.root_module.addOptions("option", options);
     b.installArtifact(surtr);
@@ -158,11 +161,14 @@ pub fn build(b: *std.Build) !void {
     // =============================================================
     const norn = b.addExecutable(.{
         .name = "norn.elf",
-        .root_source_file = b.path("norn/main.zig"),
-        .target = target, // Freestanding x64 ELF executable
-        .optimize = optimize, // You can choose the optimization level.
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("norn/main.zig"),
+            .target = target, // Freestanding x64 ELF executable
+            .optimize = optimize, // You can choose the optimization level.
+            .code_model = .kernel,
+        }),
         .linkage = .static,
-        .code_model = .kernel,
+        .use_llvm = true,
     });
     norn.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
     norn.entry = .{ .symbol_name = "kernelEntry" };
@@ -178,9 +184,11 @@ pub fn build(b: *std.Build) !void {
     // =============================================================
     const init = b.addExecutable(.{
         .name = "init",
-        .root_source_file = b.path("apps/init/main.zig"),
-        .target = userland_target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("apps/init/main.zig"),
+            .target = userland_target,
+            .optimize = optimize,
+        }),
         .linkage = .static,
     });
     b.installArtifact(init);
@@ -239,7 +247,7 @@ pub fn build(b: *std.Build) !void {
     // QEMU
     // =============================================================
     const qemu_cpu_feats = "+fsgsbase,+invtsc,+avx,+avx2,+xsave,+xsaveopt,+bmi1";
-    var qemu_args = std.ArrayList([]const u8).init(b.allocator);
+    var qemu_args = std.array_list.Managed([]const u8).init(b.allocator);
     defer qemu_args.deinit();
     try qemu_args.appendSlice(&.{
         "qemu-system-x86_64",
@@ -300,10 +308,13 @@ pub fn build(b: *std.Build) !void {
     // =============================================================
     const norn_unit_test = b.addTest(.{
         .name = "Norn Unit Test",
-        .root_source_file = b.path("norn/norn.zig"),
-        .target = userland_target,
-        .optimize = optimize,
-        .link_libc = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("norn/norn.zig"),
+            .target = userland_target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+        .use_llvm = true,
     });
     norn_unit_test.addAssemblyFile(b.path("norn/tests/mock.S"));
     norn_unit_test.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
@@ -314,10 +325,12 @@ pub fn build(b: *std.Build) !void {
 
     const surtr_unit_test = b.addTest(.{
         .name = "Surtr Unit Test",
-        .root_source_file = b.path("surtr/surtr.zig"),
-        .target = userland_target,
-        .optimize = optimize,
-        .link_libc = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("surtr/surtr.zig"),
+            .target = userland_target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
     });
     const run_surtr_unit_tests = b.addRunArtifact(surtr_unit_test);
 

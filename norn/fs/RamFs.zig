@@ -79,7 +79,7 @@ fn mount(data: ?*const anyopaque, allocator: Allocator) Error!*SuperBlock {
 
     // If the initramfs image is provided, load it into the filesystem.
     if (data) |ptr| {
-        const option: *const InitOption = @alignCast(@ptrCast(ptr));
+        const option: *const InitOption = @ptrCast(@alignCast(ptr));
         boot.loadCpioImage(self, option.image) catch |err| return switch (err) {
             error.Overflow, error.InvalidCharacter => Error.InvalidArgument,
             else => @errorCast(err),
@@ -101,7 +101,7 @@ fn unmount() Error!void {
 fn iterate(file: *File, allocator: Allocator) Error![]File.IterResult {
     const dir = &getNode(file.inode).dir;
     const children = dir.children;
-    const num_children = children.len;
+    const num_children = children.len();
 
     const results = try allocator.alloc(File.IterResult, num_children);
     errdefer allocator.free(results);
@@ -112,12 +112,13 @@ fn iterate(file: *File, allocator: Allocator) Error![]File.IterResult {
         cur = child.next;
         i += 1;
     }) {
-        const child_node = getNode(child.data);
+        const child_inode = DirNode.Child.getInode(child);
+        const child_node = getNode(child_inode);
         const name = child_node.getName();
         results[i] = .{
             .name = name,
-            .inum = child.data.number,
-            .type = child.data.mode.type,
+            .inum = child_inode.number,
+            .type = child_inode.mode.type,
         };
     }
 
@@ -292,11 +293,22 @@ const FileNode = struct {
 
 /// Directory node.
 const DirNode = struct {
-    const Children = DoublyLinkedList(*Inode);
-    const Child = Children.Node;
+    const Child = struct {
+        node: ChildNode,
+        inode: *Inode,
+
+        fn getData(node: *ChildNode) *Child {
+            return @as(*Child, @fieldParentPtr("node", node));
+        }
+
+        fn getInode(node: *ChildNode) *Inode {
+            return @as(*Child, @fieldParentPtr("node", node)).inode;
+        }
+    };
+    const ChildNode = DoublyLinkedList.Node;
 
     /// List of children.
-    children: Children,
+    children: DoublyLinkedList,
     /// File name.
     name: []const u8,
     /// inode.
@@ -305,7 +317,7 @@ const DirNode = struct {
     /// Create a new directory node.
     pub fn new(name: []const u8, inode: *Inode, allocator: Allocator) Error!DirNode {
         return .{
-            .children = Children{},
+            .children = .{},
             .name = try allocator.dupe(u8, name),
             .inode = inode,
         };
@@ -313,8 +325,8 @@ const DirNode = struct {
 
     /// Append a dentry to the directory.
     fn append(self: *DirNode, inode: *Inode, allocator: Allocator) Error!void {
-        const new_child = try allocator.create(Child);
-        new_child.data = inode;
+        const new_child = try allocator.create(ChildNode);
+        DirNode.Child.getData(new_child).inode = inode;
         self.children.append(new_child);
         self.inode.size += 1;
     }
@@ -323,10 +335,10 @@ const DirNode = struct {
     fn getChild(self: *const DirNode, name: []const u8) ?*Inode {
         var current = self.children.first;
         while (current) |child| : (current = child.next) {
-            const node = getNode(child.data);
+            const node = getNode(Child.getInode(child));
             const node_name = node.getName();
             if (std.mem.eql(u8, name, node_name)) {
-                return child.data;
+                return Child.getInode(child);
             }
         } else {
             return null;
@@ -336,12 +348,12 @@ const DirNode = struct {
 
 /// Get Self from a context pointer.
 inline fn getSelf(inode: *Inode) *Self {
-    return @alignCast(@ptrCast(inode.sb.ctx));
+    return @ptrCast(@alignCast(inode.sb.ctx));
 }
 
 /// Get a ramfs-specific node from an inode.
 inline fn getNode(inode: *Inode) *Node {
-    return @alignCast(@ptrCast(inode.ctx.?));
+    return @ptrCast(@alignCast(inode.ctx.?));
 }
 
 /// Create a new inode.

@@ -29,10 +29,10 @@ const FreeList = struct {
     num_total: usize,
 
     /// Doubly linked list of free pages.
-    pub const FreePageLink = DoublyLinkedList(void);
+    pub const FreePageLink = DoublyLinkedList;
     /// Free page.
     /// This struct is placed at the beginning of the free pages.
-    pub const FreePage = FreePageLink.Node;
+    pub const FreePage = DoublyLinkedList.Node;
 
     /// Create a new empty free list.
     pub fn new() FreeList {
@@ -111,7 +111,7 @@ const FreeList = struct {
 
     /// Get the number of blocks in the freelist.
     pub inline fn numFree(self: FreeList) usize {
-        return self.link.len;
+        return self.link.len();
     }
 
     /// Get the number of blocks in use.
@@ -175,7 +175,7 @@ const Arena = struct {
             break :retry try free_list.allocBlock();
         };
 
-        const ptr: [*]align(mem.size_4kib) u8 = @alignCast(@ptrCast(block));
+        const ptr: [*]align(mem.size_4kib) u8 = @ptrCast(@alignCast(block));
         return ptr[0 .. num_pages * mem.size_4kib];
     }
 
@@ -418,7 +418,7 @@ pub fn getAllocator(self: *Self) PageAllocator {
 fn allocPages(ctx: *anyopaque, num_pages: usize, zone: Zone) Error![]align(mem.size_4kib) u8 {
     rttExpectNewMap();
 
-    const self: *Self = @alignCast(@ptrCast(ctx));
+    const self: *Self = @ptrCast(@alignCast(ctx));
     const ie = self.lock.lockDisableIrq();
     defer self.lock.unlockRestoreIrq(ie);
 
@@ -426,7 +426,7 @@ fn allocPages(ctx: *anyopaque, num_pages: usize, zone: Zone) Error![]align(mem.s
 }
 
 fn freePages(ctx: *anyopaque, pages: []u8) void {
-    const self: *Self = @alignCast(@ptrCast(ctx));
+    const self: *Self = @ptrCast(@alignCast(ctx));
     const ie = self.lock.lockDisableIrq();
     defer self.lock.unlockRestoreIrq(ie);
 
@@ -434,7 +434,7 @@ fn freePages(ctx: *anyopaque, pages: []u8) void {
 }
 
 fn freePagesRaw(ctx: *anyopaque, addr: Virt, num_pages: usize) Error!void {
-    const self: *Self = @alignCast(@ptrCast(ctx));
+    const self: *Self = @ptrCast(@alignCast(ctx));
     const ie = self.lock.lockDisableIrq();
     defer self.lock.unlockRestoreIrq(ie);
 
@@ -508,7 +508,7 @@ fn debugPrintStatistics(self: *Self, log_fn: norn.LogFn) void {
 const testing = std.testing;
 const rtt = norn.rtt;
 
-const TestingAllocatedList = DoublyLinkedList(void);
+const TestingAllocatedList = DoublyLinkedList;
 const TestingAllocatedNode = TestingAllocatedList.Node;
 
 inline fn rttExpectNewMap() void {
@@ -551,7 +551,7 @@ fn rttTestBuddyAllocator(buddy_allocator: *Self) void {
             rtt.expect(@intFromPtr(prev) < @intFromPtr(page.ptr));
             prev = page.ptr;
         }
-        rtt.expectEqual(0, arena.lists[0].link.len);
+        rtt.expectEqual(0, arena.lists[0].link.len());
         rtt.expectEqual(null, arena.lists[0].link.first);
         rtt.expectEqual(null, arena.lists[0].link.last);
     }

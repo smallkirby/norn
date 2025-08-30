@@ -120,7 +120,7 @@ pub fn getUsedRegion(self: *Self) struct { region: Phys, num_pages: usize } {
 fn allocPages(ctx: *anyopaque, num_pages: usize, _: mem.Zone) Error![]align(mem.size_4kib) u8 {
     rttExpectOldMap();
 
-    const self: *Self = @alignCast(@ptrCast(ctx));
+    const self: *Self = @ptrCast(@alignCast(ctx));
     var start_ix: usize = 0;
 
     while (true) {

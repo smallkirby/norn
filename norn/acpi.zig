@@ -243,7 +243,7 @@ const Madt = extern struct {
                 inline else => |t| @unionInit(
                     Entry,
                     @tagName(t),
-                    @alignCast(@ptrCast(header)),
+                    @ptrCast(@alignCast(header)),
                 ),
             };
         }
@@ -538,7 +538,7 @@ const SystemInfo = struct {
     /// Physical address of the local APIC.
     local_apic_address: u32,
     /// List of local APIC IDs.
-    local_apic_ids: ArrayList(u8),
+    local_apic_ids: std.array_list.Managed(u8), // TODO: make it unmanaged
 };
 
 /// ACPI Power Management Timer.
@@ -605,7 +605,7 @@ pub fn init(rsdp_phys: *anyopaque, allocator: Allocator) AcpiError!void {
     try xsdt.header.validate("XSDT");
 
     // Find MADT structure.
-    madt = @alignCast(@ptrCast(xsdt.find("APIC") orelse return AcpiError.InvalidTable));
+    madt = @ptrCast(@alignCast(xsdt.find("APIC") orelse return AcpiError.InvalidTable));
     try madt.header.validate("APIC");
     if (norn.is_runtime_test) {
         // Check the validity of sizes.
@@ -623,7 +623,7 @@ pub fn init(rsdp_phys: *anyopaque, allocator: Allocator) AcpiError!void {
     system_info = .{
         .num_cpus = 0,
         .local_apic_address = madt.local_apic_address,
-        .local_apic_ids = ArrayList(u8).init(allocator),
+        .local_apic_ids = std.array_list.Managed(u8).init(allocator),
     };
 
     var madt_iter = madt.iter();
@@ -639,7 +639,7 @@ pub fn init(rsdp_phys: *anyopaque, allocator: Allocator) AcpiError!void {
     }
 
     // Find FADT structure.
-    fadt = @alignCast(@ptrCast(xsdt.find("FACP") orelse return AcpiError.InvalidTable));
+    fadt = @ptrCast(@alignCast(xsdt.find("FACP") orelse return AcpiError.InvalidTable));
     try fadt.header.validate("FACP");
 
     // Initialize PM Timer.

@@ -272,13 +272,13 @@ const StackCreator = struct {
     /// argv type.
     const Argv = []const u8;
     /// argv list type.
-    const ArgvList = ArrayList(Argv);
+    const ArgvList = std.array_list.Managed(Argv); // TODO: make it unmanaged
     /// envp type.
     const Envp = []const u8;
     /// envp list type.
-    const EnvpList = ArrayList(Envp);
+    const EnvpList = std.array_list.Managed(Envp); // TODO: make it unmanaged
     /// auxv list type.
-    const AuxVectorList = ArrayList(AuxVector);
+    const AuxVectorList = std.array_list.Managed(AuxVector); // TODO: make it unmanaged
     /// Opaque data type.
     const OpaqueType = struct {
         data: []const u8,
@@ -286,7 +286,7 @@ const StackCreator = struct {
         pointer: u64 = undefined,
     };
     /// Opaque data list type.
-    const OpaqueList = ArrayList(OpaqueType);
+    const OpaqueList = std.array_list.Managed(OpaqueType); // TODO: make it unmanaged
 
     /// Stack alignment in bytes.
     const alignment = 16;
@@ -350,7 +350,7 @@ const StackCreator = struct {
     pub fn appendOpaqueData(self: *Self, T: type, data: T) !StackOpaqueHandler {
         const duped = try general_allocator.create(T);
         duped.* = data;
-        const raw_ptr: [*]const u8 = @alignCast(@ptrCast(duped));
+        const raw_ptr: [*]const u8 = @ptrCast(@alignCast(duped));
         const u8_size = @sizeOf(T);
 
         const handle: StackOpaqueHandler = self._opaque_data.items.len;
@@ -374,7 +374,7 @@ const StackCreator = struct {
         }
 
         // Push envp strings.
-        var envp_addrs = ArrayList(u64).init(general_allocator);
+        var envp_addrs = std.array_list.Managed(u64).init(general_allocator);
         defer envp_addrs.deinit();
 
         var envp_num_pushed: usize = 0;
@@ -385,7 +385,7 @@ const StackCreator = struct {
         }
 
         // Push argv strings.
-        var argv_addrs = ArrayList(u64).init(general_allocator);
+        var argv_addrs = std.array_list.Managed(u64).init(general_allocator);
         defer argv_addrs.deinit();
 
         var argv_num_pushed: usize = 0;
@@ -464,7 +464,7 @@ const StackCreator = struct {
             const slice = stack_vma.slice();
 
             return .{
-                ._stack_top = @constCast(@ptrCast(slice.ptr)),
+                ._stack_top = @ptrCast(@constCast(slice.ptr)),
                 ._stack_bottom = @ptrFromInt(@intFromPtr(slice.ptr) + slice.len),
                 ._sp = @ptrFromInt(@intFromPtr(slice.ptr) + slice.len),
                 ._user_vma = stack_vma,
@@ -496,7 +496,7 @@ const StackCreator = struct {
             }
             self._sp -= value_size;
 
-            const ptr: *T = @alignCast(@ptrCast(self._sp));
+            const ptr: *T = @ptrCast(@alignCast(self._sp));
             ptr.* = value;
 
             const diff = @intFromPtr(self._sp) - @intFromPtr(self._stack_top);
@@ -597,7 +597,6 @@ const AuxVector = packed struct(u128) {
 // =============================================================
 
 const std = @import("std");
-const ArrayList = std.ArrayList;
 
 const norn = @import("norn");
 const arch = norn.arch;
@@ -606,7 +605,7 @@ const loader = norn.loader;
 const mem = norn.mem;
 const sched = norn.sched;
 const util = norn.util;
-const InlineDoublyLinkedList = norn.InlineDoublyLinkedList;
+const InlineDoublyLinkedList = norn.typing.InlineDoublyLinkedList;
 const MemoryMap = norn.mm.MemoryMap;
 const Vma = norn.mm.VmArea;
 const SpinLock = norn.SpinLock;

@@ -98,7 +98,7 @@ pub fn init(
     allocator: Allocator,
 ) UsbError!*Self {
     const device_type = detectDeviceType(interface);
-    const buffer = try allocator.alignedAlloc(u8, work_buffer_size, mem.size_4kib);
+    const buffer = try allocator.alloc(u8, work_buffer_size);
 
     const instance = switch (device_type) {
         .keyboard => blk: {

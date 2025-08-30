@@ -84,7 +84,7 @@ pub fn isThisCpuInitialized(cpu: usize) bool {
 /// Get the address of per-CPU data relative to the per-CPU address space for the current CPU.
 /// TODO disable preemption
 pub inline fn ptr(comptime pointer: anytype) *allowzero addrspace(percpu_addrspace) @typeInfo(@TypeOf(pointer)).pointer.child {
-    return @addrSpaceCast(@ptrCast(pointer));
+    return @ptrCast(@addrSpaceCast(pointer));
 }
 
 /// Get the value of the per-CPU variable.

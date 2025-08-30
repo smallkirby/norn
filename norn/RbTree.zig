@@ -1229,7 +1229,7 @@ fn verifyRules(tree: TestRbTree) !void {
         fn verifyBlackDepth(node: ?*TestRbTree.Node) !void {
             if (node == null) return;
 
-            var nodes = std.ArrayList(*TestRbTree.Node).init(std.testing.allocator);
+            var nodes = std.array_list.Managed(*TestRbTree.Node).init(std.testing.allocator);
             defer nodes.deinit();
             collectAllLeaves(node, &nodes);
 
@@ -1255,7 +1255,7 @@ fn verifyRules(tree: TestRbTree) !void {
             if (node.?._right) |right| try verifyBlackDepth(right);
         }
 
-        fn collectAllLeaves(node: ?*TestRbTree.Node, nodes: *std.ArrayList(*TestRbTree.Node)) void {
+        fn collectAllLeaves(node: ?*TestRbTree.Node, nodes: *std.array_list.Managed(*TestRbTree.Node)) void {
             if (node == null) return;
             const n = node.?;
 

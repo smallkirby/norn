@@ -7,11 +7,14 @@ const Sto = uefi.protocol.SimpleTextOutput;
 
 const LogError = error{};
 
-const Writer = std.io.Writer(
-    void,
-    LogError,
-    writerFunction,
-);
+const writer_vtable = std.Io.Writer.VTable{
+    .drain = drain,
+};
+
+var writer = std.Io.Writer{
+    .vtable = &writer_vtable,
+    .buffer = &.{},
+};
 
 /// Default log options.
 /// You can override std_options in your main file.
@@ -32,11 +35,15 @@ pub fn init(out: *Sto) void {
     con_out = out;
 }
 
-fn writerFunction(_: void, bytes: []const u8) LogError!usize {
-    for (bytes) |b| {
-        con_out.outputString(&[_:0]u16{b}).err() catch unreachable;
+fn drain(_: *std.Io.Writer, data: []const []const u8, _: usize) LogError!usize {
+    var written: usize = 0;
+    for (data) |bytes| {
+        for (bytes) |b| {
+            _ = con_out.outputString(&[_:0]u16{b}) catch unreachable;
+        }
+        written += bytes.len;
     }
-    return bytes.len;
+    return written;
 }
 
 fn log(
@@ -53,8 +60,7 @@ fn log(
     };
     const scope_str = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
 
-    std.fmt.format(
-        Writer{ .context = {} },
+    writer.print(
         level_str ++ " " ++ scope_str ++ fmt ++ "\r\n",
         args,
     ) catch unreachable;

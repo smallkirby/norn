@@ -3,7 +3,7 @@
 //! The operating system written from scratch in Zig.
 
 pub const acpi = @import("acpi.zig");
-pub const arch = @import("arch.zig");
+pub const arch = @import("arch.zig").impl;
 pub const bits = @import("bits.zig");
 pub const cpio = @import("cpio.zig");
 pub const device = @import("device.zig");
@@ -27,7 +27,7 @@ pub const thread = @import("thread.zig");
 pub const time = @import("time.zig");
 pub const timer = @import("timer.zig");
 pub const util = @import("util.zig");
-pub usingnamespace @import("typing.zig");
+pub const typing = @import("typing.zig");
 
 /// Whether the module is built with runtime tests enabled.
 pub const is_runtime_test = option.is_runtime_test;
