@@ -17,7 +17,7 @@ const Error = error{
 } || uefi.Error || arch.page.PageError;
 
 /// TODO: do not hardcode. Must be sync with norn.mem
-const percpu_base = 0xFFFF_FFFF_8010_0000;
+const percpu_base = 0xFFFF_FFFF_8000_0000;
 
 /// Kernel entry function signature.
 const KernelEntryType = fn (surtr.BootInfo) callconv(.{ .x86_64_win = .{} }) noreturn;
@@ -310,6 +310,14 @@ const KernelLoader = struct {
         assert(0 == vaddr & page_mask, "invalid alignment: vaddr");
         assert(0 == paddr & page_mask, "invalid alignment: paddr");
 
+        const chr_x: u8 = if (phdr.p_flags & elf.PF_X != 0) 'X' else '-';
+        const chr_w: u8 = if (phdr.p_flags & elf.PF_W != 0) 'W' else '-';
+        const chr_r: u8 = if (phdr.p_flags & elf.PF_R != 0) 'R' else '-';
+        log.info(
+            "  Seg @ 0x{X:0>16} - 0x{X:0>16} [{c}{c}{c}]",
+            .{ vaddr, vaddr + phdr.p_memsz, chr_x, chr_w, chr_r },
+        );
+
         // Allocate pages and map them.
         const mem = try allocatePages(
             bs,
@@ -330,13 +338,6 @@ const KernelLoader = struct {
         }
 
         // Load segment into memory.
-        const chr_x: u8 = if (phdr.p_flags & elf.PF_X != 0) 'X' else '-';
-        const chr_w: u8 = if (phdr.p_flags & elf.PF_W != 0) 'W' else '-';
-        const chr_r: u8 = if (phdr.p_flags & elf.PF_R != 0) 'R' else '-';
-        log.info(
-            "  Seg @ 0x{X:0>16} - 0x{X:0>16} [{c}{c}{c}]",
-            .{ vaddr, vaddr + phdr.p_memsz, chr_x, chr_w, chr_r },
-        );
         @memcpy(mem[0..msize], self._image[phdr.p_offset .. phdr.p_offset + msize]);
 
         // Zero-clear the BSS section and uninitialized data.
