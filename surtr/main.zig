@@ -20,7 +20,7 @@ const Error = error{
 const percpu_base = 0xFFFF_FFFF_8000_0000;
 
 /// Kernel entry function signature.
-const KernelEntryType = fn (surtr.BootInfo) callconv(.{ .x86_64_win = .{} }) noreturn;
+const KernelEntryType = fn (surtr.BootInfo) callconv(.winapi) noreturn;
 
 /// Surtr entry point.
 pub fn main() uefi.Status {
