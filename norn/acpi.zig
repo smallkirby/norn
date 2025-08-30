@@ -538,7 +538,7 @@ const SystemInfo = struct {
     /// Physical address of the local APIC.
     local_apic_address: u32,
     /// List of local APIC IDs.
-    local_apic_ids: std.array_list.Managed(u8), // TODO: make it unmanaged
+    local_apic_ids: std.array_list.Aligned(u8, null),
 };
 
 /// ACPI Power Management Timer.
@@ -623,7 +623,7 @@ pub fn init(rsdp_phys: *anyopaque, allocator: Allocator) AcpiError!void {
     system_info = .{
         .num_cpus = 0,
         .local_apic_address = madt.local_apic_address,
-        .local_apic_ids = std.array_list.Managed(u8).init(allocator),
+        .local_apic_ids = .empty,
     };
 
     var madt_iter = madt.iter();
@@ -632,7 +632,7 @@ pub fn init(rsdp_phys: *anyopaque, allocator: Allocator) AcpiError!void {
         switch (madt_ent.?) {
             .local_apic => |v| {
                 system_info.num_cpus += 1;
-                try system_info.local_apic_ids.append(v.apic_id);
+                try system_info.local_apic_ids.append(allocator, v.apic_id);
             },
             else => {},
         }

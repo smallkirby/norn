@@ -12,7 +12,7 @@ const UsbError = usb.UsbError;
 const Self = @This();
 
 /// Type of list of USB devices.
-const DeviceList = std.array_list.Managed(*Device); // TODO: make it unmanaged
+const DeviceList = std.array_list.Aligned(*Device, null);
 
 /// xHC PCI device.
 pci_device: *const pci.Device,
@@ -124,7 +124,7 @@ pub fn new(pci_device: *pci.Device, allocator: Allocator) UsbError!Self {
         .runtime_regs = runtime_regs,
         .doorbells = doorbells,
         .dcbaa = dcbaa,
-        .devices = DeviceList.init(allocator),
+        .devices = .empty,
     };
 }
 
@@ -205,7 +205,7 @@ pub fn registerDevices(self: *Self, allocator: Allocator) UsbError!void {
         errdefer allocator.destroy(device);
         device.* = try Device.new(self, @intCast(n), prs);
 
-        try self.devices.append(device);
+        try self.devices.append(allocator, device);
         errdefer _ = self.devices.pop();
 
         try device.resetPort();

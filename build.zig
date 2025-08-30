@@ -247,9 +247,9 @@ pub fn build(b: *std.Build) !void {
     // QEMU
     // =============================================================
     const qemu_cpu_feats = "+fsgsbase,+invtsc,+avx,+avx2,+xsave,+xsaveopt,+bmi1";
-    var qemu_args = std.array_list.Managed([]const u8).init(b.allocator);
-    defer qemu_args.deinit();
-    try qemu_args.appendSlice(&.{
+    var qemu_args = std.array_list.Aligned([]const u8, null).empty;
+    defer qemu_args.deinit(b.allocator);
+    try qemu_args.appendSlice(b.allocator, &.{
         "qemu-system-x86_64",
         "-m",
         "512M",
@@ -270,31 +270,31 @@ pub fn build(b: *std.Build) !void {
         "-d",
         "guest_errors",
     });
-    if (wait_qemu) try qemu_args.append("-S");
+    if (wait_qemu) try qemu_args.append(b.allocator, "-S");
     if (debug_intr) {
-        try qemu_args.appendSlice(&.{
+        try qemu_args.appendSlice(b.allocator, &.{
             "-cpu",
             "qemu64," ++ qemu_cpu_feats,
             "-d",
             "int",
         });
     } else if (no_kvm) {
-        try qemu_args.appendSlice(&.{
+        try qemu_args.appendSlice(b.allocator, &.{
             "-cpu",
             "qemu64," ++ qemu_cpu_feats,
         });
     } else {
-        try qemu_args.appendSlice(&.{
+        try qemu_args.appendSlice(b.allocator, &.{
             "-cpu",
             "host,+invtsc",
             "-enable-kvm",
         });
     }
-    if (debug_exit) try qemu_args.appendSlice(&.{
+    if (debug_exit) try qemu_args.appendSlice(b.allocator, &.{
         "-device",
         "isa-debug-exit,iobase=0xF0,iosize=0x01",
     });
-    if (!graphics) try qemu_args.appendSlice(&.{
+    if (!graphics) try qemu_args.appendSlice(b.allocator, &.{
         "-nographic",
     });
     const qemu_cmd = b.addSystemCommand(qemu_args.items);

@@ -18,7 +18,7 @@ const num_ents_in_tr = mem.size_4kib / @sizeOf(Trb);
 /// ID type of endpoint.
 const EndpointId = u5;
 /// List type of interfaces.
-const InterfaceList = std.array_list.Managed(Interface); // TODO: make it unmanaged
+const InterfaceList = std.array_list.Aligned(Interface, null);
 /// List type of class drivers.
 const ClassDriverList = std.AutoHashMap(EndpointId, class.ClassDriver);
 
@@ -83,9 +83,9 @@ pub fn new(
     port_index: PortIndex,
     prs: PortRegisterSet.RegisterType,
 ) UsbError!Self {
-    const buffer = try mem.general_allocator.alloc(u8, work_buffer_size);
-    const interfaces = InterfaceList.init(mem.general_allocator);
-    const class_drivers = ClassDriverList.init(mem.general_allocator);
+    const buffer = try allocator.alloc(u8, work_buffer_size);
+    const interfaces = InterfaceList.empty;
+    const class_drivers = ClassDriverList.init(allocator);
 
     return .{
         .state = .initialized,
@@ -129,16 +129,16 @@ pub fn assignAddress(self: *Self, slot: u8) UsbError!void {
     self.state = .waiting_address;
 
     // Allocate a Device Context region.
-    const dc = try mem.page_allocator.allocPages(1, .normal);
-    errdefer mem.page_allocator.freePages(dc);
+    const dc = try page_allocator.allocPages(1, .normal);
+    errdefer page_allocator.freePages(dc);
     @memset(dc, 0);
     self.xhc.setDeviceContext(slot, dc.ptr);
 
     // Create Input Context.
     // TODO: free somewhere
-    const ic_page = try mem.page_allocator.allocPages(1, .normal);
+    const ic_page = try page_allocator.allocPages(1, .normal);
     const ic: *InputContext = @ptrCast(ic_page.ptr);
-    errdefer mem.general_allocator.free(ic_page);
+    errdefer page_allocator.freePages(ic_page);
     @memset(ic_page, 0);
 
     // Configure Input Control Context (enable Slot Context and Endpoint 0).
@@ -160,8 +160,8 @@ pub fn assignAddress(self: *Self, slot: u8) UsbError!void {
     }
     // Configure EP0 (Default Control Pipe) Context.
     {
-        const tr = try ring.Ring.new(num_ents_in_tr, mem.general_allocator);
-        errdefer tr.deinit(mem.general_allocator);
+        const tr = try ring.Ring.new(num_ents_in_tr, allocator);
+        errdefer tr.deinit(allocator);
         self.tr = tr;
 
         const ep0 = &ic.ep0;
@@ -319,8 +319,8 @@ fn consumeConfigurationDescriptor(self: *Self, config_desc: *const Configuration
             // Class-specific descriptor.
             .hid => {
                 norn.rtt.expectEqual(.class, state);
-                const desc_buf = try general_allocator.alloc(u8, cur.length);
-                errdefer general_allocator.free(desc_buf);
+                const desc_buf = try allocator.alloc(u8, cur.length);
+                errdefer allocator.free(desc_buf);
                 @memcpy(desc_buf, @as([*]const u8, @ptrCast(cur))[0..cur.length]);
                 interface.class = @ptrCast(@alignCast(desc_buf.ptr));
                 state = .endpoint;
@@ -332,7 +332,7 @@ fn consumeConfigurationDescriptor(self: *Self, config_desc: *const Configuration
                 interface.endpoint = desc.*;
                 state = .interface;
 
-                try self.interfaces.append(interface);
+                try self.interfaces.append(allocator, interface);
                 interface = undefined;
             },
             // Unexpected descriptor.
@@ -378,9 +378,9 @@ fn setConfiguration(self: *Self, config: u8) UsbError!void {
 /// So we have to notify the selected setting to the xHC by this function.
 fn configureEndpoint(self: *Self) UsbError!void {
     // Create and clear the Input Context.
-    const ic_page = try mem.page_allocator.allocPages(1, .normal);
+    const ic_page = try page_allocator.allocPages(1, .normal);
     const ic: *InputContext = @ptrCast(ic_page.ptr);
-    errdefer mem.general_allocator.free(ic_page);
+    errdefer allocator.free(ic_page);
     @memset(ic_page, 0);
     ic.control.ac.a0 = true;
 
@@ -419,15 +419,15 @@ fn configureEndpoint(self: *Self) UsbError!void {
         };
 
         // Init class drivers.
-        var tr = try ring.Ring.new(num_ents_in_tr, mem.general_allocator);
-        errdefer tr.deinit(mem.general_allocator);
+        var tr = try ring.Ring.new(num_ents_in_tr, allocator);
+        errdefer tr.deinit(allocator);
         epctx.setTrdp(&tr.trbs[0]);
 
         const class_driver = try class.init(
             self,
             interface,
             tr,
-            general_allocator,
+            allocator,
         ) orelse continue;
         try self.class_drivers.put(interface.endpoint.address.ep, class_driver);
     }
@@ -1394,7 +1394,8 @@ const mem = norn.mem;
 const usb = norn.drivers.usb;
 const PortIndex = usb.PortIndex;
 const UsbError = usb.UsbError;
-const general_allocator = norn.mem.general_allocator;
+const allocator = mem.general_allocator;
+const page_allocator = mem.page_allocator;
 
 const class = @import("class.zig");
 const regs = @import("regs.zig");

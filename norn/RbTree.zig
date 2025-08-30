@@ -1225,12 +1225,15 @@ test "RbTree - Iterator" {
 /// Helper function to verify that the red-black tree properties are maintained.
 fn verifyRules(tree: TestRbTree) !void {
     const S = struct {
+        const allocator = std.testing.allocator;
+        const NodeList = std.array_list.Aligned(*TestRbTree.Node, null);
+
         /// Given the root node, recursively verify that the black depths for all paths are equal.
         fn verifyBlackDepth(node: ?*TestRbTree.Node) !void {
             if (node == null) return;
 
-            var nodes = std.array_list.Managed(*TestRbTree.Node).init(std.testing.allocator);
-            defer nodes.deinit();
+            var nodes = NodeList.empty;
+            defer nodes.deinit(allocator);
             collectAllLeaves(node, &nodes);
 
             var count: usize = 0;
@@ -1255,12 +1258,12 @@ fn verifyRules(tree: TestRbTree) !void {
             if (node.?._right) |right| try verifyBlackDepth(right);
         }
 
-        fn collectAllLeaves(node: ?*TestRbTree.Node, nodes: *std.array_list.Managed(*TestRbTree.Node)) void {
+        fn collectAllLeaves(node: ?*TestRbTree.Node, nodes: *NodeList) void {
             if (node == null) return;
             const n = node.?;
 
             if (n._left == null and n._right == null) {
-                nodes.append(n) catch unreachable;
+                nodes.append(allocator, n) catch unreachable;
             } else {
                 collectAllLeaves(n._left, nodes);
                 collectAllLeaves(n._right, nodes);
