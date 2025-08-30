@@ -9,7 +9,7 @@ on:
       - master
 
 env:
-  ZIG_VERSION: 0.14.1
+  ZIG_VERSION: 0.15.1
 
 jobs:
   unit_test:
