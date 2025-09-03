@@ -240,7 +240,7 @@ pub const LookupOrigin = union(enum) {
 /// Hash map type to associate the path of a mount point with its mount structure.
 const MountHashTable = std.AutoHashMap(Path, *Mount);
 /// All mount points.
-var mount_table: MountHashTable = MountHashTable.init(allocator);
+var mount_table: MountHashTable = .init(allocator);
 /// Dentry cache.
 var dentry_cache = Dentry.Store.new(allocator);
 
@@ -449,11 +449,10 @@ pub fn mountTo(to: Path, name: []const u8, data: ?*anyopaque) FsError!Path {
         .sb = root_sb,
     };
 
-    const path = Path{ .dentry = root_sb.root, .mount = mount };
-    try mount_table.put(path, mount);
+    try mount_table.put(to, mount);
     try dentry_cache.put(root_sb.root);
 
-    return path;
+    return Path{ .dentry = root_sb.root, .mount = mount };
 }
 
 /// Check if the path is absolute.
@@ -545,7 +544,7 @@ fn mntup(path: Path) Path {
     } else {
         return Path{
             .dentry = path.mount.mntpoint,
-            .mount = path.mount.parent.?,
+            .mount = path.mount.parent orelse path.mount, // orelse is root directory
         };
     }
 }
