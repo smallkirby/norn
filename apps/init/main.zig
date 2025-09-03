@@ -42,6 +42,12 @@ fn testDevNull() !void {
     const n_write = try file.write(data[0..]);
     try testing.expectEqual(data.len, n_write);
 
+    // Stat.
+    const stat = try file.stat();
+    try testing.expectEqual(0, stat.size);
+    try testing.expectEqual(.character_device, stat.kind);
+    try testing.expectEqual(0o20777, stat.mode); // RWX/RWX/RWX, character device
+
     // Open again.
     const file2 = try std.fs.openFileAbsolute(
         "/dev/null",
@@ -77,6 +83,12 @@ fn testDevZero() !void {
     const data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const n_write = try file.write(data[0..]);
     try testing.expectEqual(data.len, n_write);
+
+    // Stat.
+    const stat = try file.stat();
+    try testing.expectEqual(0, stat.size);
+    try testing.expectEqual(.character_device, stat.kind);
+    try testing.expectEqual(0o20777, stat.mode); // RWX/RWX/RWX, character device
 
     // Open /dev/null at the same time.
     try testDevNull();

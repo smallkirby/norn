@@ -236,6 +236,145 @@ pub fn newfstatat(fd: FileDescriptor, pathname: [*:0]const u8, buf: *fs.Stat, _:
     return 0;
 }
 
+/// Output information for statx.
+const Statx = packed struct {
+    /// Mask of bits indicating filled fields.
+    mask: StatxMask,
+    /// Block size for filesystem I/O.
+    block_size: u32,
+    /// Extra file attribute indicators.
+    attributes: u64,
+    //// Number of hard links.
+    nlink: u32,
+    /// UID of owner.
+    uid: u32,
+    /// GID of owner.
+    gid: u32,
+    /// File type and mode.
+    mode: fs.Mode,
+    /// Inode number.
+    ino: u64,
+    /// Total size in bytes.
+    size: u64,
+    /// Number of 512 bytes blocks allocated.
+    blocks: u64,
+    /// Mask to show what's supported in `attributes`.
+    attributes_mask: u64,
+
+    /// Last access time.
+    atime: StatxTimespec,
+    /// Creation time.
+    btime: StatxTimespec,
+    /// Last status change time.
+    ctime: StatxTimespec,
+    /// Last modification time.
+    mtime: StatxTimespec,
+
+    /// Major ID if the file represents a device.
+    rdev_major: u32,
+    /// Minor ID if the file represents a device.
+    rdev_minor: u32,
+    /// Major ID.
+    major: u32,
+    /// Minor ID.
+    minor: u32,
+    /// Mount ID.
+    mnt_id: u64,
+    /// Direct I/O alignment restriction.
+    dio_mem_align: u32,
+    /// Direct I/O alignment restriction.
+    dio_offset_align: u32,
+};
+
+/// Timespec used in statx.
+const StatxTimespec = packed struct(u128) {
+    sec: u64,
+    nsec: u32,
+    _reserved: u32 = 0,
+};
+
+/// statx flags.
+const StatxFlags = packed struct(u32) {
+    /// Reserved.
+    _reserved0: u12 = 0,
+    /// AT_EMPTY_PATH. Allow empty path string.
+    empty_path: bool,
+    /// Reserved.
+    _reserved1: u19 = 0,
+};
+
+/// Bitmask for statx to filter the output fields that the caller's interested in.
+const StatxMask = packed struct(u32) {
+    type: bool,
+    mode: bool,
+    nlink: bool,
+    uid: bool,
+    gid: bool,
+    atime: bool,
+    mtime: bool,
+    ctime: bool,
+    ino: bool,
+    size: bool,
+    blocks: bool,
+    btime: bool,
+    mnt_id: bool,
+    dioalign: bool,
+    _reserved: u18 = 0,
+};
+
+/// Get a extended file status.
+///
+/// - `dirfd`: File descriptor of a directory.
+/// - `pathname`: Pathname of the file to get status for.
+/// - `flags`
+/// - `mask`: Bitmask to filter the output fields that the caller's interested in.
+/// - `output`: Buffer to receive the file status information.
+///
+/// ### Target file search
+///
+/// If `pathname` is an absolute path, `dirfd` is not used.
+/// If `pathname` is a relative path, `dirfd` is used as the base directory.
+/// If `flags.empty_path` is set, `dirfd` is used as a target file.
+///
+/// ### Output
+///
+/// Caller can indicate which field they are interested in by setting the appropriate bits in the `mask`.
+/// Norn may ignore the mask and return fields that are not requested, or may not return requested fields.
+/// The returned field is indicated by `Statx.mask`.
+///
+/// NOTE that this function does not comply with the specification.
+pub fn statx(
+    dirfd: FileDescriptor,
+    pathname: [*:0]const u8,
+    flags: StatxFlags,
+    mask: StatxMask,
+    output: *align(1) Statx,
+) SysError!i64 {
+    const inode = blk: {
+        if (flags.empty_path) {
+            const file = fs.getFile(dirfd) orelse return SysError.BadFd;
+            break :blk file.inode;
+        }
+        break :blk fs.openToGetInode(dirfd, util.sentineledToSlice(pathname)) catch |err| {
+            return mapError(err);
+        };
+    };
+
+    // Ignore requested mask. We always return below fields only.
+    _ = mask;
+
+    output.size = inode.size;
+    output.mode = inode.mode;
+    output.ino = inode.number;
+
+    output.mask = std.mem.zeroInit(StatxMask, .{});
+    output.mask.size = true;
+    output.mask.mode = true;
+    output.mask.ino = true;
+
+    return 0;
+}
+
 /// Open a file relative to a directory file descriptor.
 ///
 /// - `fd`: File descriptor of the directory to search for the file.

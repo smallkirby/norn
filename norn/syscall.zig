@@ -72,6 +72,8 @@ const sys_entries = [_]SysEntry{
     .new("prlimit", 302, .debug(unsupported)),
     // Obtain a series of random bytes.
     .new("getrandom", 318, .normal(sysGetRandom)),
+    // Get extended file status.
+    .new("statx", 332, .normal(fs.sys.statx)),
     // Restartable sequences.
     .new("rseq", 334, .debug(unsupported)),
 

@@ -292,6 +292,24 @@ pub fn init(initimg: []const u8) FsError!void {
     sched.getCurrentTask().fs.setCwd(path);
 }
 
+/// Get an inode of a file.
+///
+/// This function does not check the permissions.
+pub fn openToGetInode(dirfd: FileDescriptor, pathname: []const u8) FsError!*Inode {
+    const result = blk: {
+        if (isAbsolutePath(pathname)) {
+            break :blk lookup(.cwd, pathname);
+        } else {
+            const dir = getFile(dirfd) orelse {
+                return FsError.BadFileDescriptor;
+            };
+            break :blk lookup(.{ .path = dir.path }, pathname);
+        }
+    } orelse return FsError.NotFound;
+
+    return result.dentry.inode;
+}
+
 /// Open a file by path.
 ///
 /// This function tries to open a file by the given path.
