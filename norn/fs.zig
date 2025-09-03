@@ -378,11 +378,16 @@ pub fn create(dir: Path, name: []const u8, mode: Mode) FsError!*Dentry {
     return dentry;
 }
 
-/// TODO: implement
+/// Write bytes to file.
+///
+/// - `file`: File to write to.
+/// - `buf`: Buffer to store the written data.
+///
+/// Returns the number of bytes written.
 pub fn write(file: *File, buf: []const u8) FsError!usize {
-    _ = file;
-    _ = buf;
-    norn.unimplemented("fs.write");
+    const n = try file.ops.write(file, buf, file.offset);
+    file.offset += @intCast(n);
+    return n;
 }
 
 /// Get a file status information of the given file.

@@ -13,7 +13,7 @@ const sys_entries = [_]SysEntry{
     // Read from a file descriptor.
     .new("read", 0, .normal(fs.sys.read)),
     // Write to a file descriptor.
-    .new("write", 1, .normal(sysWrite)),
+    .new("write", 1, .normal(fs.sys.write)),
     // Close the file.
     .new("close", 3, .normal(fs.sys.close)),
     // Get file status.
@@ -421,21 +421,6 @@ fn sysGetRandom(buf: [*]u8, size: usize, flags: GetRandomFlags) SysError!i64 {
     rand.bytes(buf[0..size]);
 
     return @bitCast(size);
-}
-
-/// Syscall handler for `write`.
-///
-/// Currently, only supports writing to stdout (fd=1) and stderr (fd=2).
-/// These outputs are printed to the debug log.
-fn sysWrite(fd: u64, buf: [*]const u8, count: usize) SysError!i64 {
-    if (fd != 1 and fd != 2) {
-        norn.unimplemented("sysWrite(): fd other than 1 or 2.");
-    }
-
-    // Print to the serial log.
-    norn.getSerial().writeString(buf[0..count]);
-
-    return @intCast(count);
 }
 
 /// Command for `ioctl`.
