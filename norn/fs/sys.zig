@@ -367,10 +367,11 @@ pub fn statx(
     output.mode = inode.mode;
     output.ino = inode.number;
 
-    output.mask = std.mem.zeroInit(StatxMask, .{});
-    output.mask.size = true;
-    output.mask.mode = true;
-    output.mask.ino = true;
+    output.mask = std.mem.zeroInit(StatxMask, .{
+        .size = true,
+        .mode = true,
+        .ino = true,
+    });
 
     return 0;
 }
