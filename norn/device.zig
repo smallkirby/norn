@@ -272,7 +272,6 @@ const DevFs = struct {
         };
         try char_devs.put(char.type, info);
         self.sb.root.inode.size += 1;
-        log.debug("root size: {d}", .{self.sb.root.inode.size});
     }
 
     /// Get DevFs instance from a given path.

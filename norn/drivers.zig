@@ -1,10 +1,10 @@
-pub const devnull = @import("drivers/null.zig");
 pub const serial8250 = @import("drivers/serial8250.zig");
 pub const usb = @import("drivers/usb.zig");
 
 comptime {
     // Register driver's init calls
-    _ = devnull;
+    _ = @import("drivers/null.zig");
+    _ = @import("drivers/zero.zig");
 }
 
 // =============================================================
