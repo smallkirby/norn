@@ -10,6 +10,10 @@ const fops = fs.File.Ops{
     .write = write,
 };
 
+comptime {
+    device.staticRegisterDevice(init, "null");
+}
+
 /// Module init function.
 fn init() callconv(.c) void {
     device.registerCharDev(null_dev) catch |err| {
@@ -36,10 +40,6 @@ fn read(_: *fs.File, _: []u8, _: fs.Offset) fs.FsError!usize {
 /// Empty write operation.
 fn write(_: *fs.File, _: []const u8, _: fs.Offset) fs.FsError!usize {
     return 0;
-}
-
-comptime {
-    device.staticRegisterDevice(init, "/dev/null");
 }
 
 // =============================================================
