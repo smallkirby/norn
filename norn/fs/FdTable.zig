@@ -17,7 +17,7 @@ pub fn new(allocator: Allocator) Self {
     // TODO: open stdin, stdout, and stderr.
     return .{
         ._map = FdMap.init(allocator),
-        ._next_fd = @enumFromInt(3),
+        ._next_fd = @enumFromInt(0),
         ._lock = SpinLock{},
     };
 }

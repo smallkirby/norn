@@ -5,6 +5,7 @@ comptime {
     // Register driver's init calls
     _ = @import("drivers/null.zig");
     _ = @import("drivers/zero.zig");
+    _ = @import("drivers/tty.zig");
 }
 
 // =============================================================

@@ -436,13 +436,6 @@ pub fn read(fd: FileDescriptor, buf: [*]u8, size: usize) SysError!i64 {
 ///
 /// Returns the number of bytes written.
 pub fn write(fd: FileDescriptor, buf: [*]const u8, count: usize) SysError!i64 {
-    // TODO: Do not handle stdout and stderr here.
-    // These descriptors should be associated with console descriptor.
-    if (fd == .stdout or fd == .stderr) {
-        norn.getSerial().writeString(buf[0..count]);
-        return @intCast(count);
-    }
-
     const buffer = buf[0..count];
     if (fs.getFile(fd)) |file| {
         const result = fs.write(file, buffer) catch |err| {
