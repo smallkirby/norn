@@ -28,8 +28,8 @@ pub const Inode = @import("fs/Inode.zig");
 pub const File = @import("fs/File.zig");
 pub const FileSystem = @import("fs/FileSystem.zig");
 pub const Mount = @import("fs/Mount.zig");
+pub const SuperBlock = @import("fs/SuperBlock.zig");
 pub const ThreadFs = @import("fs/ThreadFs.zig");
-pub const DevFs = @import("fs/DevFs.zig");
 
 /// Path separator.
 pub const separator = '/';
@@ -245,8 +245,10 @@ var mount_table: MountHashTable = .init(allocator);
 var dentry_cache = Dentry.Store.new(allocator);
 
 /// Registered filesystem types.
+///
+/// TODO: allow dynamic registration.
 const registered_fs_types = [_]FileSystem{
-    DevFs.devfs_fs,
+    device.devfs_fs,
     RamFs.ramfs_fs,
 };
 
