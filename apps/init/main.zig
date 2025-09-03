@@ -31,10 +31,7 @@ fn testDevNull() !void {
 
     // Test read.
     const n_read = try file.read(buffer[0..]);
-    try testing.expectEqual(buffer.len, n_read);
-    for (buffer) |c| {
-        try testing.expectEqual(0, c);
-    }
+    try testing.expectEqual(0, n_read);
 
     // Test write.
     const data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -49,10 +46,7 @@ fn testDevNull() !void {
     defer file2.close();
 
     const n_read2 = try file2.read(buffer[0..]);
-    try testing.expectEqual(buffer.len, n_read2);
-    for (buffer) |c| {
-        try testing.expectEqual(0, c);
-    }
+    try testing.expectEqual(0, n_read2);
 }
 
 // =============================================================

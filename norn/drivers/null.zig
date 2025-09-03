@@ -33,9 +33,8 @@ fn iterate(file: *fs.File, allocator: Allocator) fs.FsError![]fs.File.IterResult
 }
 
 /// Empty read operation.
-fn read(_: *fs.File, buffer: []u8, _: fs.Offset) fs.FsError!usize {
-    @memset(buffer, 0);
-    return buffer.len;
+fn read(_: *fs.File, _: []u8, _: fs.Offset) fs.FsError!usize {
+    return 0;
 }
 
 /// Empty write operation.
