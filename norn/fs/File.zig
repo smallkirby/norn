@@ -19,6 +19,10 @@ pub const Ops = struct {
     ///
     /// Return the number of bytes written.
     write: *const fn (self: *File, data: []const u8, pos: fs.Offset) Error!usize,
+    /// Send control command to a device.
+    ///
+    /// Return value depends on the command.
+    ioctl: ?*const fn (self: *File, command: u64, args: *anyopaque) Error!i64 = null,
 };
 
 /// Context used in `iterate` operation.

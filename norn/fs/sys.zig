@@ -18,6 +18,7 @@ fn mapError(err: FsError) SysError {
         E.NotFound => S.NoEntry,
         E.OutOfMemory => S.NoMemory,
         E.Overflow => S.OutOfRange,
+        E.TryAgain => S.Again,
         E.Unimplemented => S.Unimplemented,
     };
 }
@@ -444,6 +445,39 @@ pub fn write(fd: FileDescriptor, buf: [*]const u8, count: usize) SysError!i64 {
         return @intCast(result);
     } else {
         return SysError.BadFd;
+    }
+}
+
+/// Manipulate file descriptor.
+pub fn fcntl(_: fs.FileDescriptor, command: u64, _: *anyopaque) SysError!i64 {
+    const Command = enum(u64) {
+        /// Get file status flags.
+        get_status = 0x406,
+
+        _,
+    };
+
+    switch (@as(Command, @enumFromInt(command))) {
+        .get_status => {
+            return 0; // TODO
+        },
+        _ => {
+            std.log.debug("Unsupported fcntl: {d}", .{command});
+            return SysError.Unimplemented;
+        },
+    }
+}
+
+/// Call file-specific ioctl.
+pub fn ioctl(fd: fs.FileDescriptor, command: u64, args: *anyopaque) SysError!i64 {
+    const file = fs.getFile(fd) orelse return SysError.BadFd;
+    if (file.ops.ioctl) |f| {
+        const result = f(file, command, args) catch |err| {
+            return mapError(err);
+        };
+        return result;
+    } else {
+        return SysError.Unimplemented;
     }
 }
 

@@ -18,6 +18,8 @@ pub const FsError = error{
     OutOfMemory,
     /// Calculation result overflowed or underflowed.
     Overflow,
+    /// Resource is temporarily unavailable.
+    TryAgain,
     /// Not implemented or not supported.
     Unimplemented,
 };
@@ -503,10 +505,11 @@ pub fn putFile(file: *File) FsError!FileDescriptor {
 /// Close the file descriptor.
 ///
 /// If there's no reference to the open file, this function also closes the file.
-///
-/// TODO: Check if there're no references to the file.
 pub fn closeFd(fd: FileDescriptor) FsError!void {
-    return getCurrentFdTable().remove(fd);
+    const file = try getCurrentFdTable().remove(fd);
+
+    // TODO: If the file is not referenced, close the file.
+    _ = file;
 }
 
 /// Get the file descriptor table of the current task.

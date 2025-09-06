@@ -27,27 +27,33 @@ const sys_entries = [_]SysEntry{
     // Change a signal action.
     .new("rt_sigprocmask", 14, .debug(unsupported)),
     // Control device.
-    .new("ioctl", 16, .normal(sysIoctl)),
+    .new("ioctl", 16, .normal(fs.sys.ioctl)),
     // Write data into multiple buffers.
     .new("writev", 20, .normal(sysWriteVec)),
     // Get process ID.
     .new("getpid", 39, .normal(sysGetPid)),
     // Get name and information about current kernel.
     .new("uname", 63, .debug(unsupported)),
+    // Manipulate file descriptor
+    .new("fcntl", 72, .normal(fs.sys.fcntl)),
     // Get current working directory.
     .new("getcwd", 79, .normal(fs.sys.getcwd)),
     // Change working directory.
     .new("chdir", 80, .normal(fs.sys.chdir)),
-    // Get user identity.
-    .new("arch_prctl", 158, .normal(norn.prctl.sysArchPrctl)),
     // Get user identity.
     .new("getuid", 102, .normal(sysGetUid)),
     // Set user identity.
     .new("setuid", 105, .debug(unsupported)),
     // Get effective user ID.
     .new("geteuid", 107, .debug(unsupported)),
+    // Set process group ID.
+    .new("setpgid", 109, .debug(noop)),
     // Get parent process ID.
     .new("getppid", 110, .debug(unsupported)),
+    // Get process group ID.
+    .new("getpgrp", 111, .debug(noop)),
+    // Get user identity.
+    .new("arch_prctl", 158, .normal(norn.prctl.sysArchPrctl)),
     // Get thread ID.
     .new("gettid", 186, .debug(noop)),
     // Get time in seconds.
@@ -425,25 +431,6 @@ fn sysGetRandom(buf: [*]u8, size: usize, flags: GetRandomFlags) SysError!i64 {
     return @bitCast(size);
 }
 
-/// Command for `ioctl`.
-const IoctlCommand = enum(u64) {
-    _,
-};
-
-/// Syscall handler for `ioctl`.
-fn sysIoctl(fd: fs.FileDescriptor, cmd: IoctlCommand) SysError!i64 {
-    if (!fd.isSpecial()) {
-        norn.unimplemented("sysIoctl(): fd other than 1 or 2.");
-    }
-
-    switch (cmd) {
-        _ => {
-            log.warn("Unsupported ioctl command: {X:0>16}", .{cmd});
-            return SysError.Unimplemented;
-        },
-    }
-}
-
 const IoVec = packed struct {
     /// Pointer to the buffer.
     buf: [*]const u8,
@@ -481,6 +468,12 @@ fn sysExitGroup(status: i32) SysError!i64 {
 fn sysGetUid() SysError!i64 {
     const current = norn.sched.getCurrentTask();
     return @intCast(current.cred.uid);
+}
+
+/// Syscall handler for `getpgrp`.
+/// TODO: implement
+fn sysGetPgrp() SysError!i64 {
+    return 0;
 }
 
 /// Syscall handler for `dlog`.

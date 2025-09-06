@@ -39,17 +39,17 @@ pub fn put(self: *Self, file: *File) FsError!FileDescriptor {
     return fd;
 }
 
-/// Delete a file descriptor and close an associated file.
-pub fn remove(self: *Self, fd: FileDescriptor) FsError!void {
-    // TODO: check if there're no references.
-
+/// Close the file descriptor.
+///
+/// Returns the file associated with the descriptor.
+pub fn remove(self: *Self, fd: FileDescriptor) FsError!*File {
     const ie = self._lock.lockDisableIrq();
     defer self._lock.unlockRestoreIrq(ie);
 
     const file = self.get(fd) orelse return FsError.NotFound;
-    file.deinit();
-
     norn.rtt.expect(self._map.remove(fd));
+
+    return file;
 }
 
 /// Get a path corresponding to the file descriptor.
