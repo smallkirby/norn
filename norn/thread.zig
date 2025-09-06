@@ -218,6 +218,23 @@ pub fn createInitialThread(comptime filename: []const u8) ThreadError!*Thread {
     thread.fs.root = current.fs.root;
     thread.fs.cwd = current.fs.cwd;
 
+    // Open stdin, stdout, and stderr.
+    {
+        const open_flags_rw: fs.OpenFlags = .{
+            .mode = .read_write,
+        };
+        const open_flags_ro: fs.OpenFlags = .{
+            .mode = .read_only,
+        };
+        const stdin = try thread.fs.fdtable.put(try fs.openFile("/dev/tty", open_flags_ro, null));
+        const stdout = try thread.fs.fdtable.put(try fs.openFile("/dev/tty", open_flags_rw, null));
+        const stderr = try thread.fs.fdtable.put(try fs.openFile("/dev/tty", open_flags_rw, null));
+
+        norn.rtt.expectEqual(0, stdin.value());
+        norn.rtt.expectEqual(1, stdout.value());
+        norn.rtt.expectEqual(2, stderr.value());
+    }
+
     // Copy initial user function for debug.
     var elf_loader = try loader.ElfLoader.new(filename);
     try elf_loader.load(thread.mm);
