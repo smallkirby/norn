@@ -56,7 +56,7 @@ function check_success()
   ret=0
 
   for needle in "${SUCCESS_HEYSTACKS[@]}"; do
-    if ! grep -qF -- "$needle" "$TMPFILE"; then
+    if ! (sed -e 's/\x1b\[[0-9;]*m//g' "$TMPFILE" | grep -qF -- "$needle"); then
       echo_error "Missing: '$needle'"
       ret=1
     fi
