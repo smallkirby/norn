@@ -377,6 +377,30 @@ pub fn statx(
     return 0;
 }
 
+/// Open a file.
+///
+/// - `pathname`: Pathname of the file to open.
+/// - `flags`: Flags to control the open behavior.
+/// - `mode`: File mode to use if a new file is created.
+///
+/// Returns the file descriptor on success.
+///
+/// TODO: Use `flags`.
+pub fn open(pathname: [*:0]const u8, flags: OpenFlags, mode: fs.Mode) SysError!i64 {
+    const file = fs.openFile(
+        util.sentineledToSlice(pathname),
+        flags.toFsOpenFlags(),
+        mode,
+    ) catch |err| return mapError(err);
+
+    const new_fd = fs.putFile(file) catch |err| {
+        // TODO: deinit file
+        return mapError(err);
+    };
+
+    return @intFromEnum(new_fd);
+}
+
 /// Open a file relative to a directory file descriptor.
 ///
 /// - `fd`: File descriptor of the directory to search for the file.

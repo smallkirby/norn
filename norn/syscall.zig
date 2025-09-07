@@ -14,6 +14,8 @@ const sys_entries = [_]SysEntry{
     .new("read", 0, .normal(fs.sys.read)),
     // Write to a file descriptor.
     .new("write", 1, .normal(fs.sys.write)),
+    // Open a file.
+    .new("open", 2, .normal(fs.sys.open)),
     // Close the file.
     .new("close", 3, .normal(fs.sys.close)),
     // Get file status.
