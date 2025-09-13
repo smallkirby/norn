@@ -28,7 +28,7 @@ pub const ParseError = error{
 /// Parameters are passed by text file `/efi/boot/bootparams`.
 pub const SurtrParams = struct {
     /// Command line arguments for the kernel.
-    cmdline: ?[]const u8 = null,
+    cmdline: ?[:0]const u8 = null,
 };
 
 /// Parser for `bootparams` file.
@@ -93,7 +93,12 @@ pub const Parser = struct {
 
     fn setParam(self: *Parser, key: []const u8, value: []const u8) ParseError!void {
         if (std.mem.eql(u8, key, "SURTR_CMDLINE")) {
-            self.params.cmdline = try self.allocator.dupe(u8, value);
+            const buf = try self.allocator.alloc(u8, value.len + 1);
+            errdefer self.allocator.free(buf);
+            @memcpy(buf[0..value.len], value);
+            buf[value.len] = '\x00';
+
+            self.params.cmdline = buf[0..value.len :0];
             return;
         }
 

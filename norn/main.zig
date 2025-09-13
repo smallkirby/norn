@@ -72,13 +72,22 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     // (If the copy is performed after the mapping reconstruction, we cannot access the original boot_info and results in #PF).
     var boot_info: BootInfo = undefined;
     boot_info = early_boot_info;
-    // Also, copy the initramfs from .loader_data to Norn memory.
+    // Deep copy the initramfs from .loader_data to Norn memory.
     {
         const src = boot_info.initramfs;
         const dest = try norn.mem.boottimeAlloc(src.size);
         const src_ptr: [*]const u8 = @ptrFromInt(src.addr);
         @memcpy(dest[0..src.size], src_ptr[0..src.size]);
         boot_info.initramfs.addr = @intFromPtr(dest.ptr);
+    }
+    // Deep copy cmdline.
+    if (@intFromPtr(boot_info.cmdline) != 0) {
+        const src = norn.util.sentineledToSlice(@ptrCast(boot_info.cmdline));
+        const dest = try norn.mem.boottimeAlloc(src.len + 1);
+        @memcpy(dest[0..src.len], src);
+        boot_info.cmdline = @ptrCast(dest.ptr);
+    } else {
+        boot_info.cmdline = @ptrFromInt(0);
     }
     // Copy memory map.
     try boot_info.memory_map.deepCopy(norn.mem.getLimitedBoottimeAllocator());

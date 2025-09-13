@@ -14,7 +14,7 @@ const Error = error{
     Elf,
     /// Other misc errors.
     Other,
-} || uefi.Error || arch.page.PageError;
+} || uefi.Error || arch.page.PageError || param.ParseError;
 
 /// TODO: do not hardcode. Must be sync with norn.mem
 const percpu_base = 0xFFFF_FFFF_8000_0000;
@@ -89,6 +89,15 @@ fn boot() Error!void {
         .{ @intFromPtr(initramfs.ptr), @intFromPtr(initramfs.ptr) + initramfs.len },
     );
 
+    // Load params.
+    log.info("Loading boot parameters.", .{});
+    const params = try loadParams(root_dir, bs);
+    const cmdline: [*:0]allowzero const u8 = if (params.cmdline) |cmdline| blk: {
+        break :blk @ptrCast(cmdline.ptr);
+    } else blk: {
+        break :blk @ptrFromInt(0);
+    };
+
     // Clean up memory.
     try kernel_file.close();
     try root_dir.close();
@@ -127,6 +136,7 @@ fn boot() Error!void {
             .size = initramfs.len,
             .addr = @intFromPtr(initramfs.ptr),
         },
+        .cmdline = cmdline,
     };
     kernel_entry(boot_info);
 
@@ -232,6 +242,36 @@ fn debugPrintMemoryMap(map: surtr.MemoryMap) void {
             });
         } else break;
     }
+}
+
+/// Load a parameter file and construct parameters.
+fn loadParams(root: *const File, bs: *BootServices) Error!param.SurtrParams {
+    const params_file = try root.open(
+        &toUcs2("efi\\boot\\bootparams"),
+        .read,
+        .{},
+    );
+    defer params_file.close() catch {};
+
+    const params_size = try getFileSize(params_file);
+    const params_content = try allocatePool(
+        bs,
+        params_size,
+        .loader_data,
+    );
+    const num_read = try params_file.read(params_content[0..params_size]);
+    assert(num_read == params_size, "Invalid number of bytes read as params file.");
+
+    const allocator_buffer = try allocatePool(
+        bs,
+        5 * page_size,
+        .loader_data,
+    );
+    var fba = std.heap.FixedBufferAllocator.init(allocator_buffer);
+    const allocator = fba.allocator();
+
+    var parser = param.Parser.new(params_content[0..params_size], allocator);
+    return parser.parse();
 }
 
 /// Kernel ELF loader.
@@ -402,8 +442,9 @@ const BootServices = uefi.tables.BootServices;
 const MemoryDescriptor = uefi.tables.MemoryDescriptor;
 
 const surtr = @import("surtr.zig");
-const blog = @import("log.zig");
 const arch = @import("arch.zig").impl;
+const blog = @import("log.zig");
+const param = @import("param.zig");
 const MemoryType = surtr.MemoryType;
 
 const page_size = arch.page.page_size_4k;

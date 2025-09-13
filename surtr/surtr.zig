@@ -25,6 +25,10 @@ pub const BootInfo = extern struct {
     ///
     /// Located at .loader_data.
     initramfs: InitramfsInfo,
+    /// Norn command line arguments.
+    ///
+    /// Located at .boot_services_data.
+    cmdline: [*:0]allowzero const u8,
 };
 
 /// Information about initramfs.
