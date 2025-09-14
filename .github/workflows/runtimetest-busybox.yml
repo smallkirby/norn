@@ -44,6 +44,7 @@ jobs:
           zig build install \
             -Dlog_level=debug \
             -Doptimize=${{ matrix.BUILD_TYPE }} \
-            -Druntime_test=true \
-            -Dinit_binary=/bin/busybox
+            -Druntime_test=true
+          zig build update-bootparams \
+            -Dboot_params=.github/workflows/bootparams/bootparams.busybox
           bash ./scripts/runtime_test.bash /bin/busybox
