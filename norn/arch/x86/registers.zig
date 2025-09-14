@@ -275,19 +275,24 @@ pub const MsrApicBase = packed struct(u64) {
     /// APIC global enable.
     enable: bool,
     /// APIC base physical address
-    base: u40,
+    base: u20,
     /// Reserved.
-    _reserved3: u12 = 0,
+    _reserved3: u32 = 0,
 
     /// Set the physical base of the local APIC.
     /// Note that this function does not set the value to the MSR.
     pub fn setAddress(self: *MsrApicBase, phys: Phys) void {
-        self.base = phys >> 12;
+        self.base = @intCast(phys >> 12);
     }
 
     /// Get the physical base of the local APIC.
     pub fn getAddress(self: MsrApicBase) Phys {
-        return self.base << 12;
+        return @as(Phys, self.base) << 12;
+    }
+
+    /// Get the physical base of the I/O APIC.
+    pub fn getIoApicAddress(self: MsrApicBase) Phys {
+        return @as(Phys, 0xFEC0_0000) | ((self.base & 0xFF) << 12);
     }
 };
 

@@ -111,6 +111,89 @@ pub const LocalApic = struct {
     }
 };
 
+/// I/O APIC structure.
+///
+/// Accesses must be done on 4-byte boundaries.
+pub const IoApic = struct {
+    const Self = @This();
+
+    /// Offset of I/O Register Select Register.
+    const ioregsel = 0x00;
+    /// Offset of I/O Window Register.
+    const iowin = 0x10;
+
+    pub const Id = packed struct(u32) {
+        /// Reserved.
+        _reserved1: u24,
+        /// ID.
+        value: u4,
+        /// Reserved.
+        _reserved2: u4,
+    };
+
+    pub const Version = packed struct(u32) {
+        /// Version.
+        version: u8,
+        /// Reserved.
+        _reserved1: u8,
+        /// Maximum Redirection Entry.
+        max_redir_entry: u8,
+        /// Reserved.
+        _reserved2: u8,
+    };
+    const expected_version = 0x11; // for I/O APIC
+
+    /// I/O APIC registers.
+    const Register = enum(u32) {
+        /// I/O APIC ID.
+        id = 0x00,
+        /// I/O APIC version.
+        version = 0x01,
+        /// I/O APIC arbitration ID.
+        arbitration = 0x02,
+        /// Redirection Table (24 entries)
+        redtbl = 0x10,
+    };
+
+    /// Virtual address of the I/O APIC base.
+    _base: Phys,
+
+    /// Instantiate an interface to access the I/O APIC.
+    pub fn new(base: Phys) IoApic {
+        return .{ ._base = base };
+    }
+
+    /// Read a value from the I/O APIC register.
+    fn read(self: Self, reg: Register) u32 {
+        self.selector().* = @intFromEnum(reg);
+        return self.win().*;
+    }
+
+    /// Write a value to a register of the I/O APIC.
+    fn write(self: Self, reg: Register, value: u32) void {
+        self.selector().* = @intFromEnum(reg);
+        self.win().* = value;
+    }
+
+    /// Read a I/O APIC ID.
+    pub fn id(self: Self) Id {
+        return @bitCast(self.read(.id));
+    }
+
+    /// Read a I/O APIC version.
+    pub fn version(self: Self) Version {
+        return @bitCast(self.read(.version));
+    }
+
+    inline fn selector(self: Self) *volatile u32 {
+        return @ptrFromInt(self._base + ioregsel);
+    }
+
+    inline fn win(self: Self) *volatile u32 {
+        return @ptrFromInt(self._base + iowin);
+    }
+};
+
 /// Low 32-bits of Interrupt Command Register of Local APIC.
 pub const IcrLow = Partialable(packed struct(u32) {
     /// Vector number of the interrupt being sent.
