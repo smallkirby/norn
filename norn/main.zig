@@ -135,6 +135,12 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     try arch.initApic();
     log.info("Initialized APIC.", .{});
 
+    // Set serial interrupt handler.
+    try arch.setInterruptHandler(
+        @intFromEnum(norn.interrupt.VectorTable.serial),
+        norn.Serial.interruptHandler,
+    );
+
     // Initialize per-CPU data.
     try norn.pcpu.init(
         norn.acpi.getSystemInfo().num_cpus,
@@ -213,13 +219,7 @@ fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !voi
     log.debug("Initialized module system.", .{});
 
     // Enable serial interrupt.
-    {
-        try arch.setInterruptHandler(
-            @intFromEnum(norn.interrupt.VectorTable.serial),
-            norn.Serial.interruptHandler,
-        );
-        norn.drivers.serial8250.enableInterrupt(.com1);
-    }
+    norn.drivers.serial8250.enableInterrupt(.com1);
 
     // Print Norn banner.
     log.info("", .{});
