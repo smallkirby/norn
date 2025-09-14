@@ -83,8 +83,9 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     // Deep copy cmdline.
     if (@intFromPtr(boot_info.cmdline) != 0) {
         const src = norn.util.sentineledToSlice(@ptrCast(boot_info.cmdline));
-        const dest = try norn.mem.boottimeAlloc(src.len + 1);
-        @memcpy(dest[0..src.len], src);
+        const dest = try norn.mem.boottimeAlloc(src.len);
+        @memcpy(dest[0..src.len], src[0..src.len :0]);
+        dest[src.len] = 0;
         boot_info.cmdline = @ptrCast(dest.ptr);
     } else {
         boot_info.cmdline = @ptrFromInt(0);

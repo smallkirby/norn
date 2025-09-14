@@ -46,8 +46,8 @@ pub fn lenSentineled(data: [*:0]const u8) usize {
 }
 
 /// Convert a sentineled string to a slice.
-pub fn sentineledToSlice(data: [*:0]const u8) []const u8 {
-    return data[0..lenSentineled(data)];
+pub fn sentineledToSlice(data: [*:0]const u8) [:0]const u8 {
+    return data[0..lenSentineled(data) :0];
 }
 
 // =======================================
