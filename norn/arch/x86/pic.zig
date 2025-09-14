@@ -26,6 +26,62 @@ const secondary_data_port: u16 = secondary_command_port + 1;
 /// so we remap them to unused vector space to avoid conflicts in case spurious interrupts occur.
 const remap_offset: u8 = @intFromEnum(VectorTable.spurious);
 
+/// Line numbers for the PIC.
+pub const IrqLine = enum(u8) {
+    /// Timer
+    timer = 0,
+    /// Keyboard
+    keyboard = 1,
+    /// Secondary PIC
+    secondary = 2,
+    /// Serial Port 2
+    serial2 = 3,
+    /// Serial Port 1
+    serial1 = 4,
+    /// Parallel Port 2/3
+    parallel23 = 5,
+    /// Floppy Disk
+    floppy = 6,
+    /// Parallel Port 1
+    parallel1 = 7,
+    /// Real Time Clock
+    rtc = 8,
+    /// ACPI
+    acpi = 9,
+    /// Available 1
+    open1 = 10,
+    /// Available 2
+    open2 = 11,
+    /// Mouse
+    mouse = 12,
+    /// Coprocessor
+    cop = 13,
+    /// Primary ATA
+    primary_ata = 14,
+    /// Secondary ATA
+    secondary_ata = 15,
+
+    /// Return true if the IRQ belongs to the primary PIC.
+    pub fn isPrimary(self: IrqLine) bool {
+        return @intFromEnum(self) < 8;
+    }
+
+    /// Get the command port for this IRQ.
+    pub inline fn commandPort(self: IrqLine) u16 {
+        return if (self.isPrimary()) primary_command_port else secondary_command_port;
+    }
+
+    /// Get the data port for this IRQ.
+    pub inline fn dataPort(self: IrqLine) u16 {
+        return if (self.isPrimary()) primary_data_port else secondary_data_port;
+    }
+
+    /// Get the offset of the IRQ within the PIC.
+    pub fn delta(self: IrqLine) u3 {
+        return @intCast(if (self.isPrimary()) @intFromEnum(self) else (@intFromEnum(self) - 8));
+    }
+};
+
 /// Initialization command words.
 const Icw = union(icw) {
     icw1: Icw1,
@@ -154,6 +210,10 @@ fn issue(cw: anytype, port: u16) void {
 inline fn setImr(imr: u8, port: u16) void {
     issue(Ocw{ .ocw1 = .{ .imr = imr } }, port);
 }
+
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
 

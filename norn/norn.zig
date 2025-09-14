@@ -36,6 +36,7 @@ pub const is_runtime_test = option.is_runtime_test;
 pub const is_test = @import("builtin").is_test;
 pub const LogFn = klog.LogFn;
 pub const RbTree = @import("RbTree.zig").RbTree;
+pub const RingBuffer = @import("RingBuffer.zig");
 pub const Serial = @import("Serial.zig");
 pub const SpinLock = @import("SpinLock.zig");
 pub const StackCreator = @import("StackCreator.zig");

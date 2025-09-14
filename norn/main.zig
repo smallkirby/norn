@@ -128,7 +128,10 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     }
 
     // Set spurious interrupt handler.
-    try arch.setInterruptHandler(@intFromEnum(norn.interrupt.VectorTable.spurious), spriousInterruptHandler);
+    try arch.setInterruptHandler(
+        @intFromEnum(norn.interrupt.VectorTable.spurious),
+        spriousInterruptHandler,
+    );
     try arch.initApic();
     log.info("Initialized APIC.", .{});
 
@@ -181,6 +184,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 /// This thread becomes an idle task once the initialization is completed,
 /// and the initial task is launched.
 fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !void {
+    norn.rtt.expect(norn.arch.isCurrentBsp());
     norn.rtt.expectEqual(false, norn.arch.isIrqEnabled());
     norn.arch.enableIrq();
 
@@ -207,6 +211,15 @@ fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !voi
     // Initialize device system.
     try norn.device.init();
     log.debug("Initialized module system.", .{});
+
+    // Enable serial interrupt.
+    {
+        try arch.setInterruptHandler(
+            @intFromEnum(norn.interrupt.VectorTable.serial),
+            norn.Serial.interruptHandler,
+        );
+        norn.drivers.serial8250.enableInterrupt(.com1);
+    }
 
     // Print Norn banner.
     log.info("", .{});

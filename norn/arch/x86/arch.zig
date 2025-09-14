@@ -18,6 +18,13 @@ pub fn init() ArchError!void {
     defer if (ie) enableIrq();
 
     enableAvx();
+
+    // Redirect IRQs.
+    if (isCurrentBsp()) {
+        const lapic = getLocalApic();
+        const ioapic = getIoApic();
+        ioapic.setRedirection(.serial1, .serial, lapic.id());
+    }
 }
 
 /// Enable AVX instructions.
@@ -92,6 +99,14 @@ pub fn getTscFrequency() error{NotEnumerated}!u64 {
 pub fn getLocalApic() apic.LocalApic {
     const base = am.rdmsr(regs.MsrApicBase, .apic_base).getAddress();
     return apic.LocalApic.new(base);
+}
+
+/// Get the I/O APIC.
+///
+/// Assuming there's only one I/O APIC.
+fn getIoApic() apic.IoApic {
+    const apic_addr = am.rdmsr(regs.MsrApicBase, .apic_base);
+    return apic.IoApic.new(apic_addr.getIoApicAddress());
 }
 
 /// Get the per-CPU base address.

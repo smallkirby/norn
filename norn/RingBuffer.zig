@@ -48,6 +48,17 @@ pub fn consume(self: *Self, out: []u8) Error!usize {
     return range_a + range_b;
 }
 
+/// Consume a single byte from the ring buffer.
+pub fn consumeOne(self: *Self) Error!u8 {
+    if (self.isEmpty()) {
+        return Error.Empty;
+    }
+
+    const b = self.data[self.cp];
+    self.cp = (self.cp + 1) % self.data.len;
+    return b;
+}
+
 /// Produce data into the ring buffer.
 ///
 /// When the ring buffer does not have enough space, return `Error.Full` without writing any data.
@@ -70,6 +81,16 @@ pub fn produce(self: *Self, data: []const u8) Error!usize {
     self.pp = (self.pp + data.len) % self.data.len;
 
     return data.len;
+}
+
+/// Produce a single byte into the ring buffer.
+pub fn produceOne(self: *Self, b: u8) Error!void {
+    if (self.isFull()) {
+        return Error.Full;
+    }
+
+    self.data[self.pp] = b;
+    self.pp = (self.pp + 1) % self.data.len;
 }
 
 /// Check if the ring buffer is empty.

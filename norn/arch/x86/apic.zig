@@ -3,6 +3,8 @@ pub const ApicError = error{
     ApicNotAvailable,
     /// Specified value is out of range.
     ValueOutOfRange,
+    /// No usable entry found.
+    NoEntry,
 };
 
 /// Local APIC interface.
@@ -122,6 +124,7 @@ pub const IoApic = struct {
     /// Offset of I/O Window Register.
     const iowin = 0x10;
 
+    /// I/O APIC ID register.
     pub const Id = packed struct(u32) {
         /// Reserved.
         _reserved1: u24,
@@ -131,6 +134,7 @@ pub const IoApic = struct {
         _reserved2: u4,
     };
 
+    /// I/O APIC version register.
     pub const Version = packed struct(u32) {
         /// Version.
         version: u8,
@@ -143,6 +147,39 @@ pub const IoApic = struct {
     };
     const expected_version = 0x11; // for I/O APIC
 
+    /// Entry of Redirection Table.
+    pub const RedirectionTableEntry = packed struct(u64) {
+        /// Interrupt Vector.
+        ///
+        /// Ranges from 0x10 to 0xFE.
+        vector: u8,
+        /// Delivery Mode.
+        ///
+        /// Specifies how the interrupt is delivered to the processor.
+        delivery_mode: DeliveryMode = .fixed,
+        /// Destination Mode.
+        ///
+        /// Determines how the destination field is interpreted.
+        dest_mode: DestinationMode = .physical,
+        /// Delivery Status.
+        delivery_status: DeliveryStatus = .idle,
+        /// Interrupt Input Pin Polarity.
+        polarity: Polarity = .high,
+        /// Remote IRR.
+        remote_irr: bool = false,
+        /// Trigger Mode.
+        trigger_mode: TriggerMode = .edge,
+        /// Interrupt Mask.
+        mask: bool = false,
+        /// Reserved.
+        _reserved1: u39 = 0,
+        /// Destination Field.
+        ///
+        /// If the destination mode is physical, APIC ID.
+        /// If logical, potentially defines a set of processors.
+        dest: u8 = 0,
+    };
+
     /// I/O APIC registers.
     const Register = enum(u32) {
         /// I/O APIC ID.
@@ -153,6 +190,8 @@ pub const IoApic = struct {
         arbitration = 0x02,
         /// Redirection Table (24 entries)
         redtbl = 0x10,
+
+        _,
     };
 
     /// Virtual address of the I/O APIC base.
@@ -160,7 +199,7 @@ pub const IoApic = struct {
 
     /// Instantiate an interface to access the I/O APIC.
     pub fn new(base: Phys) IoApic {
-        return .{ ._base = base };
+        return .{ ._base = norn.mem.phys2virt(base) };
     }
 
     /// Read a value from the I/O APIC register.
@@ -175,6 +214,22 @@ pub const IoApic = struct {
         self.win().* = value;
     }
 
+    /// Read a redirection table entry.
+    fn readTableEntry(self: Self, index: u8) RedirectionTableEntry {
+        var buf: [2]u32 = undefined;
+        buf[0] = self.read(@enumFromInt(@intFromEnum(Register.redtbl) + index + 0));
+        buf[1] = self.read(@enumFromInt(@intFromEnum(Register.redtbl) + index + 1));
+        return @bitCast(buf);
+    }
+
+    /// Write a redirection table entry.
+    fn writeTableEntry(self: Self, index: u8, entry: RedirectionTableEntry) void {
+        var buf: [2]u32 = undefined;
+        @memcpy(std.mem.asBytes(&buf), std.mem.asBytes(&entry));
+        self.write(@enumFromInt(@intFromEnum(Register.redtbl) + index + 0), buf[0]);
+        self.write(@enumFromInt(@intFromEnum(Register.redtbl) + index + 1), buf[1]);
+    }
+
     /// Read a I/O APIC ID.
     pub fn id(self: Self) Id {
         return @bitCast(self.read(.id));
@@ -183,6 +238,17 @@ pub const IoApic = struct {
     /// Read a I/O APIC version.
     pub fn version(self: Self) Version {
         return @bitCast(self.read(.version));
+    }
+
+    /// Set a redirection entry so that the vector `src` is redirected as vector `dest`
+    /// into the local APIC with ID `lapic`.
+    pub fn setRedirection(self: Self, src: pic.IrqLine, dest: VectorTable, lapic: u8) void {
+        const entry = RedirectionTableEntry{
+            .vector = @intFromEnum(dest),
+            .dest = lapic,
+        };
+
+        self.writeTableEntry(@intFromEnum(src), entry);
     }
 
     inline fn selector(self: Self) *volatile u32 {
@@ -219,27 +285,6 @@ pub const IcrLow = Partialable(packed struct(u32) {
     dest_shorthand: DestinationShorthand,
     /// Reserved.
     _reserved3: u12 = 0,
-
-    const DeliveryMode = enum(u3) {
-        fixed = 0b000,
-        lowest_priority = 0b001,
-        smi = 0b010,
-        nmi = 0b100,
-        init = 0b101,
-        startup = 0b110,
-    };
-    const DestinationMode = enum(u1) {
-        physical = 0,
-        logical = 1,
-    };
-    const Level = enum(u1) {
-        deassert = 0,
-        assert = 1,
-    };
-    const TriggerMode = enum(u1) {
-        edge = 0,
-        level = 1,
-    };
     const DestinationShorthand = enum(u2) {
         //// Destination is specified by the dest field.
         no_shorthand = 0,
@@ -402,11 +447,55 @@ pub const Timer = struct {
 /// Delivery status of the interrupt.
 const DeliveryStatus = enum(u1) {
     /// Idle.
+    ///
     /// Indicates that there're no activity for this source, or the previous interrupt was delivered and accepted.
     idle = 0,
     /// Send Pending.
+    ///
     /// Indicates that the previous interrupt was delivered but not yet accepted.
     pending = 1,
+};
+
+const DeliveryMode = enum(u3) {
+    /// Deliver the signal on the INTR signal of all processor cores.
+    fixed = 0b000,
+    /// Deliver the signal on the INTR signal of the processor core that is executing at the lowest priority.
+    lowest_priority = 0b001,
+    /// System management interrupt.
+    smi = 0b010,
+    /// Deliver the signal on the NMI signal of all processor cores.
+    nmi = 0b100,
+    /// Deliver the signal to all processor cores listed by asserting the INIT signal.
+    init = 0b101,
+    ///
+    startup = 0b110,
+    /// Deliver the signal to the INTR signal of all processor cores listed
+    /// as an interrupt that originated in an externally connected interrupt controller.
+    external = 0b111,
+};
+
+const DestinationMode = enum(u1) {
+    /// APIC ID
+    physical = 0,
+    /// Set of processors
+    logical = 1,
+};
+
+const Polarity = enum(u1) {
+    /// Active high
+    high = 0,
+    /// Active low
+    low = 1,
+};
+
+const Level = enum(u1) {
+    deassert = 0,
+    assert = 1,
+};
+
+const TriggerMode = enum(u1) {
+    edge = 0,
+    level = 1,
 };
 
 /// Init the local APIC on this core.
@@ -431,6 +520,10 @@ pub fn init() ApicError!void {
     svr.apic_enabled = true;
     lapic.write(LocalApic.Svr, .svr, svr);
 }
+
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
 

@@ -89,8 +89,8 @@ pub fn initSerial(port: Ports, baud: u32) Functions {
 /// Enable serial console interrupt for Rx-available.
 pub fn enableInterrupt(port: Ports) void {
     var ie = inb(@intFromEnum(port) + Registers.ier);
-    ie |= 0b0000_0010; // Rx-available
-    ie &= 0b1111_1101; // Tx-empty
+    ie |= 0b0000_0010; // Enable Rx-available
+    ie &= 0b1111_1101; // Disable Tx-empty
     outb(ie, @intFromEnum(port) + Registers.ier);
 }
 
