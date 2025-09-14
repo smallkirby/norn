@@ -156,6 +156,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     } else blk: {
         break :blk &.{};
     };
+    log.info("Norn command line: {s}", .{cmdline});
     var param_parser = norn.params.Parser.new(cmdline, norn.mem.general_allocator);
     const params = try param_parser.parse();
     const norn_thread = try norn.thread.createKernelThread(
