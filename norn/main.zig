@@ -150,10 +150,21 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     try norn.sched.initThisCpu();
 
     // Enter the Norn kernel thread.
+    const cmdline = if (@intFromPtr(boot_info.cmdline) != 0) blk: {
+        const ptr: [*:0]const u8 = @ptrFromInt(norn.mem.phys2virt(boot_info.cmdline));
+        break :blk norn.util.sentineledToSlice(ptr);
+    } else blk: {
+        break :blk &.{};
+    };
+    var param_parser = norn.params.Parser.new(cmdline, norn.mem.general_allocator);
+    const params = try param_parser.parse();
     const norn_thread = try norn.thread.createKernelThread(
         "[norn]",
         nornThread,
-        .{boot_info.initramfs},
+        .{
+            boot_info.initramfs,
+            params,
+        },
     );
     norn.sched.enqueueTask(norn_thread);
     log.info("Entering Norn kernel thread...", .{});
@@ -167,7 +178,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 /// This function continues initialization of the kernel that requires the execution to have context.
 /// This thread becomes an idle task once the initialization is completed,
 /// and the initial task is launched.
-fn nornThread(initramfs: surtr.InitramfsInfo) !void {
+fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !void {
     norn.rtt.expectEqual(false, norn.arch.isIrqEnabled());
     norn.arch.enableIrq();
 
@@ -204,7 +215,7 @@ fn nornThread(initramfs: surtr.InitramfsInfo) !void {
 
     // Initialize scheduler.
     log.info("Initializing scheduler...", .{});
-    try norn.sched.setupInitialTask();
+    try norn.sched.setupInitialTask(cmdline.init);
     norn.sched.debugPrintRunQueue(log.debug);
 
     // Start timer and scheduler.

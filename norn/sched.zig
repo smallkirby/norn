@@ -130,10 +130,13 @@ pub inline fn enqueueTask(task: *Thread) void {
 }
 
 /// Create an initial task (PID 1) and set the current task to it.
-pub fn setupInitialTask() SchedError!void {
+pub fn setupInitialTask(args: ?[]const []const u8) SchedError!void {
     norn.rtt.expectEqual(0, getCurrentTask().tid);
 
-    const init_task = try thread.createInitialThread(options.init_binary);
+    // Create a task.
+    const init_task = try thread.createInitialThread(
+        @constCast(args orelse &[_][]const u8{"/sbin/init"}),
+    );
 
     // Set FS.
     init_task.fs.setRoot(getCurrentTask().fs.root);
@@ -175,7 +178,6 @@ pub fn debugPrintRunQueue(logger: anytype) void {
 
 const std = @import("std");
 const log = std.log.scoped(.sched);
-const options = @import("option");
 
 const norn = @import("norn.zig");
 const arch = norn.arch;

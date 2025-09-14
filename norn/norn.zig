@@ -38,6 +38,7 @@ pub const LogFn = klog.LogFn;
 pub const RbTree = @import("RbTree.zig").RbTree;
 pub const Serial = @import("Serial.zig");
 pub const SpinLock = @import("SpinLock.zig");
+pub const StackCreator = @import("StackCreator.zig");
 
 /// User ID.
 pub const Uid = u32;
