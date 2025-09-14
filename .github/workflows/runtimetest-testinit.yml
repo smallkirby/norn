@@ -41,5 +41,5 @@ jobs:
             -Doptimize=${{ matrix.BUILD_TYPE }} \
             -Druntime_test=true
           zig build update-bootparams \
-            -Dboot_params=.github/workflows/bootparams/bootparams.init
+            -Dbootparams=.github/workflows/bootparams/bootparams.init
           bash ./scripts/runtime_test.bash /sbin/init

@@ -46,5 +46,5 @@ jobs:
             -Doptimize=${{ matrix.BUILD_TYPE }} \
             -Druntime_test=true
           zig build update-bootparams \
-            -Dboot_params=.github/workflows/bootparams/bootparams.busybox
+            -Dbootparams=.github/workflows/bootparams/bootparams.busybox
           bash ./scripts/runtime_test.bash /bin/busybox

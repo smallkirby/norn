@@ -22,7 +22,7 @@ zig build test --summary all -Druntime_test=true
 
 | Option | Type | Description | Default |
 |---|---|---|---|
-| `boot_params` | Path | Path to the Surtr boot parameters file. | `assets/boot/bootparams` |
+| `bootparams` | Path | Path to the Surtr boot parameters file. | `assets/boot/bootparams` |
 | `debug_exit` | Flag | Add `isa-debug-exit` device. When enabled, Norn can terminate QEMU with arbitrary exit code. | `false` |
 | `debug_intr` | Flag | Print all interrupts and exceptions for debugging. | `false` |
 | `debug_syscall` | Flag | Print context for the unhandled or ignored syscalls. | `false` |
