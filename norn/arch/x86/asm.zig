@@ -11,8 +11,7 @@ pub fn inb(port: u16) u8 {
         \\inb %[port], %[ret]
         : [ret] "={al}" (-> u8),
         : [port] "{dx}" (port),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 pub fn inw(port: u16) u16 {
@@ -20,8 +19,7 @@ pub fn inw(port: u16) u16 {
         \\inw %[port], %[ret]
         : [ret] "={ax}" (-> u16),
         : [port] "{dx}" (port),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 pub fn inl(port: u16) u32 {
@@ -29,8 +27,7 @@ pub fn inl(port: u16) u32 {
         \\inl %[port], %[ret]
         : [ret] "={eax}" (-> u32),
         : [port] "{dx}" (port),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 pub fn invlpg(addr: norn.mem.Virt) void {
@@ -38,8 +35,7 @@ pub fn invlpg(addr: norn.mem.Virt) void {
         \\invlpg %[addr]
         :
         : [addr] "m" (addr),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 pub inline fn lgdt(gdtr: u64) void {
@@ -80,8 +76,7 @@ pub fn outb(value: u8, port: u16) void {
         :
         : [value] "{al}" (value),
           [port] "{dx}" (port),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 pub fn outw(value: u16, port: u16) void {
@@ -90,8 +85,7 @@ pub fn outw(value: u16, port: u16) void {
         :
         : [value] "{ax}" (value),
           [port] "{dx}" (port),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 pub fn outl(value: u32, port: u16) void {
@@ -100,8 +94,7 @@ pub fn outl(value: u32, port: u16) void {
         :
         : [value] "{eax}" (value),
           [port] "{dx}" (port),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 pub inline fn readCr0() regs.Cr0 {
@@ -144,8 +137,7 @@ pub export fn readRflags() regs.Rflags {
         \\pop %[rflags]
         : [rflags] "=r" (-> u64),
         :
-        : .{ .memory = true, .cc = true, .rflags = true }
-    ));
+        : .{ .memory = true, .cc = true, .rflags = true }));
 }
 
 /// Pause the CPU for a short period of time.
@@ -161,8 +153,7 @@ pub fn rdmsr(T: type, comptime msr: Msr) T {
         : [eax] "={eax}" (eax),
           [edx] "={edx}" (edx),
         : [msr] "{ecx}" (@intFromEnum(msr)),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 
     const value = bits.concat(u64, edx, eax);
     return switch (@typeInfo(T)) {
@@ -189,8 +180,7 @@ pub fn sgdt() u80 {
         \\sgdt %[gdtr]
         : [gdtr] "=m" (gdtr),
         :
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
     return gdtr;
 }
 
@@ -228,8 +218,7 @@ pub fn wrmsr(comptime msr: Msr, value: anytype) void {
         : [msr] "{ecx}" (comptime @intFromEnum(msr)),
           [eax] "{eax}" (eax),
           [edx] "{edx}" (edx),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 pub fn xgetbv(index: u32) u64 {
@@ -240,8 +229,7 @@ pub fn xgetbv(index: u32) u64 {
         : [eax] "={eax}" (eax),
           [edx] "={edx}" (edx),
         : [index] "{ecx}" (index),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
     return bits.concat(u64, edx, eax);
 }
 
@@ -254,8 +242,7 @@ pub fn xsetbv(index: u32, value: u64) void {
         : [index] "{ecx}" (index),
           [eax] "{eax}" (eax),
           [edx] "{edx}" (edx),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 // =============================================================

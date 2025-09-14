@@ -227,8 +227,7 @@ fn loadKernelDs() void {
             .rpl = 0,
             .index = kernel_ds_index,
           }))),
-        : .{ .di = true }
-    );
+        : .{ .di = true });
 }
 
 /// Load the kernel code segment selector.
@@ -251,8 +250,7 @@ fn loadKernelCs() void {
             .rpl = 0,
             .index = kernel_cs_index,
           }))),
-        : .{ .rax = true }
-    );
+        : .{ .rax = true });
 }
 
 /// Load the kernel TSS selector to TR.
@@ -265,8 +263,7 @@ fn loadKernelTss() void {
             .rpl = 0,
             .index = kernel_tss_index,
           }))),
-        : .{ .di = true }
-    );
+        : .{ .di = true });
 }
 
 /// Segment Descriptor Entry.
@@ -582,8 +579,7 @@ fn testEarlyTss() void {
             \\str %[tr]
             : [tr] "={ax}" (-> u16),
             :
-            : .{ .rax = true }
-        ));
+            : .{ .rax = true }));
         rtt.expectEqual(SegmentSelector{
             .index = kernel_tss_index,
             .ti = .gdt,

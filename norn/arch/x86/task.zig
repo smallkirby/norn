@@ -125,8 +125,7 @@ noinline fn kernelThreadArchEntry() noreturn {
         :
         : [args] "r" (cpu_context.r9),
           [entry] "r" (cpu_context.r8),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 
     unreachable; // TODO
 }

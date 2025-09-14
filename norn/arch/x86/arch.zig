@@ -100,8 +100,7 @@ pub fn getPerCpuBase() Virt {
         \\rdfsbase %[base]
         : [base] "={rax}" (-> Phys),
         :
-        : .{ .rax = true }
-    );
+        : .{ .rax = true });
 }
 
 /// Halt the current CPU.
@@ -130,8 +129,7 @@ pub fn read8(addr: IoAddr) u8 {
         \\mov (%[addr]), %[result]
         : [result] "=r" (-> u8),
         : [addr] "r" (addr._virt),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 /// Read a word from a MMIO address.
@@ -140,8 +138,7 @@ pub fn read16(addr: IoAddr) u16 {
         \\mov (%[addr]), %[result]
         : [result] "=r" (-> u16),
         : [addr] "r" (addr._virt),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 /// Read a dword from a MMIO address.
@@ -150,8 +147,7 @@ pub fn read32(addr: IoAddr) u32 {
         \\mov (%[addr]), %[result]
         : [result] "=r" (-> u32),
         : [addr] "r" (addr._virt),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 /// Read a qword from a MMIO address.
@@ -160,8 +156,7 @@ pub fn read64(addr: IoAddr) u64 {
         \\mov (%[addr]), %[result]
         : [result] "=r" (-> u64),
         : [addr] "r" (addr._virt),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 /// Write a byte to a MMIO address.
@@ -171,8 +166,7 @@ pub fn write8(addr: IoAddr, value: u8) void {
         :
         : [value] "r" (value),
           [addr] "r" (addr._virt),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 /// Write a word to a MMIO address.
@@ -182,8 +176,7 @@ pub fn write16(addr: IoAddr, value: u16) void {
         :
         : [value] "r" (value),
           [addr] "r" (addr._virt),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 /// Write a dword to a MMIO address.
@@ -193,8 +186,7 @@ pub fn write32(addr: IoAddr, value: u32) void {
         :
         : [value] "r" (value),
           [addr] "r" (addr._virt),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 /// Write a qword to a MMIO address.
@@ -204,8 +196,7 @@ pub fn write64(addr: IoAddr, value: u64) void {
         :
         : [value] "r" (value),
           [addr] "r" (addr._virt),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 /// Initialize boot-time GDT.

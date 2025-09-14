@@ -20,8 +20,7 @@ pub inline fn flushTlbSingle(virt: u64) void {
         \\invlpg (%[virt])
         :
         : [virt] "r" (virt),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
 }
 
 pub fn rdmsr(T: type, comptime msr: u64) T {
@@ -32,8 +31,7 @@ pub fn rdmsr(T: type, comptime msr: u64) T {
         : [eax] "={eax}" (eax),
           [edx] "={edx}" (edx),
         : [msr] "{ecx}" (msr),
-        : .{ .eax = true, .edx = true, .ecx = true }
-    );
+        : .{ .eax = true, .edx = true, .ecx = true });
 
     const value = (@as(u64, edx) << 32) | eax;
     return switch (@typeInfo(T)) {
@@ -57,6 +55,5 @@ pub fn wrmsr(comptime msr: u64, value: anytype) void {
         : [msr] "{ecx}" (msr),
           [eax] "{eax}" (eax),
           [edx] "{edx}" (edx),
-        : .{ .eax = true, .edx = true, .ecx = true }
-    );
+        : .{ .eax = true, .edx = true, .ecx = true });
 }
