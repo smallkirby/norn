@@ -13,6 +13,8 @@ var event_queue: RingBuffer(Event) = undefined;
 var wait_queue: WaitQueue = .{};
 /// Spin lock.
 var lock: SpinLock = .{};
+/// Worker thread  is initialized or not.
+var initialized: bool = false;
 
 /// Size of the event queue.
 const queue_size = 512;
@@ -28,11 +30,19 @@ pub fn init(allocator: Allocator) (norn.thread.ThreadError || Allocator.Error)!v
         nworker,
         .{},
     );
+
     norn.sched.enqueueTask(thread);
+
+    initialized = true;
 }
 
 /// Push an event to the worker event queue.
 pub fn pushEvent(event: Event) norn.ring_buffer.Error!void {
+    if (!initialized) {
+        @branchHint(.cold);
+        return;
+    }
+
     const ie = lock.lockDisableIrq();
     defer lock.unlockRestoreIrq(ie);
 
