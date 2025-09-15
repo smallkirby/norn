@@ -69,7 +69,7 @@ pub fn schedule() void {
     const cur: *Thread = getCurrentTask();
 
     // Find the next task to run.
-    const next: *Thread = rq.pop() orelse {
+    const next: *Thread = rq.popFirst() orelse {
         // No task to run.
         norn.rtt.expect(cur.tid == 0); // must be idle task
 
@@ -124,9 +124,8 @@ inline fn getRunQueue() *ThreadList {
 }
 
 /// Append a new task to the tail of the run queue.
-pub inline fn enqueueTask(task: *Thread) void {
+pub fn enqueueTask(task: *Thread) void {
     getRunQueue().append(task);
-    log.debug("Num of tasks: {d}", .{getRunQueue().len});
 }
 
 /// Create an initial task (PID 1) and set the current task to it.
