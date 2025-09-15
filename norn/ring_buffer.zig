@@ -1,8 +1,6 @@
 pub const Error = error{
     /// Buffer is full.
     Full,
-    /// Buffer is empty.
-    Empty,
 };
 
 /// Ring buffer.
@@ -32,7 +30,7 @@ pub fn RingBuffer(T: type) type {
         ///
         /// Returns the number of bytes consumed.
         /// The return size can be less than `out.len` when the ring buffer has less data.
-        pub fn consume(self: *Self, out: []T) Error!usize {
+        pub fn consume(self: *Self, out: []T) usize {
             const range_a, const range_b = self.consumableRange(out.len);
 
             @memcpy(
@@ -49,9 +47,9 @@ pub fn RingBuffer(T: type) type {
         }
 
         /// Consume a single byte from the ring buffer.
-        pub fn consumeOne(self: *Self) Error!T {
+        pub fn consumeOne(self: *Self) ?T {
             if (self.isEmpty()) {
-                return Error.Empty;
+                return null;
             }
 
             const b = self.data[self.cp];
@@ -162,7 +160,7 @@ test "RingBuffer(u8)" {
     try testing.expectEqual(false, rb.isEmpty());
     try testing.expectEqual(false, rb.isFull());
 
-    try testing.expectEqual(3, try rb.consume(out[0..3]));
+    try testing.expectEqual(3, rb.consume(out[0..3]));
     try testing.expectEqualStrings("ABC", out[0..3]);
     try testing.expectEqual(2, rb.len());
     try testing.expectEqual(26 - 2, rb.space());
@@ -171,7 +169,7 @@ test "RingBuffer(u8)" {
     try testing.expectEqual(false, rb.isFull());
 
     // Consume when producer is ahead of consumer.
-    try testing.expectEqual(2, try rb.consume(out[0..10]));
+    try testing.expectEqual(2, rb.consume(out[0..10]));
     try testing.expectEqualStrings("DE", out[0..2]);
     try testing.expectEqual(0, rb.len());
     try testing.expectEqual(26, rb.space());
@@ -188,7 +186,7 @@ test "RingBuffer(u8)" {
     try testing.expectEqual(false, rb.isFull());
 
     // Consume when producer is at the end of the buffer.
-    try testing.expectEqual(3, try rb.consume(out[0..3]));
+    try testing.expectEqual(3, rb.consume(out[0..3]));
     try testing.expectEqualStrings("FGH", out[0..3]);
     try testing.expectEqual(18, rb.len());
     try testing.expectEqual(8, rb.space());
@@ -205,7 +203,7 @@ test "RingBuffer(u8)" {
     try testing.expectEqual(false, rb.isFull());
 
     // Consume when producer is behind consumer.
-    try testing.expectEqual(10, try rb.consume(out[0..10]));
+    try testing.expectEqual(10, rb.consume(out[0..10]));
     try testing.expectEqualStrings("IJKLMNOPQR", out[0..10]);
     try testing.expectEqual(11, rb.len());
     try testing.expectEqual(15, rb.space());
@@ -214,7 +212,7 @@ test "RingBuffer(u8)" {
     try testing.expectEqual(false, rb.isFull());
 
     // Consume all.
-    try testing.expectEqual(11, try rb.consume(out[0..26]));
+    try testing.expectEqual(11, rb.consume(out[0..26]));
     try testing.expectEqualStrings("STUVWXYZabc", out[0..11]);
     try testing.expectEqual(0, rb.len());
     try testing.expectEqual(26, rb.space());
@@ -249,8 +247,8 @@ test "RingBuffer(struct)" {
     try testing.expectEqual(6, rb.len());
 
     // Consume.
-    try testing.expectEqual(S{ .a = 10, .b = 20, .c = 30 }, try rb.consumeOne());
-    try testing.expectEqual(3, try rb.consume(out[0..3]));
+    try testing.expectEqual(S{ .a = 10, .b = 20, .c = 30 }, rb.consumeOne());
+    try testing.expectEqual(3, rb.consume(out[0..3]));
     try testing.expectEqual(S{ .a = 11, .b = 21, .c = 31 }, out[0]);
     try testing.expectEqual(S{ .a = 12, .b = 22, .c = 32 }, out[1]);
     try testing.expectEqual(S{ .a = 13, .b = 23, .c = 33 }, out[2]);

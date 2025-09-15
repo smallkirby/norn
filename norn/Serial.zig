@@ -79,6 +79,11 @@ pub fn interruptHandler(_: *norn.interrupt.Context) void {
         };
     }
 
+    norn.worker.pushEvent(.{
+        .f = &norn.drivers.tty.eventHandler,
+        .args = &.{},
+    }) catch {}; // ignore error
+
     s.lock.unlockRestoreIrq(ie);
     norn.arch.getLocalApic().eoi();
 }

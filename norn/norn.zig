@@ -30,6 +30,7 @@ pub const time = @import("time.zig");
 pub const timer = @import("timer.zig");
 pub const util = @import("util.zig");
 pub const typing = @import("typing.zig");
+pub const worker = @import("worker.zig");
 
 /// Whether the module is built with runtime tests enabled.
 pub const is_runtime_test = option.is_runtime_test;

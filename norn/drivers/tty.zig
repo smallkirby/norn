@@ -15,8 +15,24 @@ comptime {
     device.staticRegisterDevice(init, "tty");
 }
 
+/// Wait queue for TTY read.
+var wait_queue: WaitQueue = .{};
+/// TTY instance.
+var tty: Tty = undefined;
+
+/// Event handler called when a character is received on the serial port.
+pub fn eventHandler(_: *const anyopaque) void {
+    const rb = &norn.getSerial().rb;
+    while (true) {
+        const c = rb.consumeOne() orelse break;
+        tty.putc(c);
+    }
+}
+
 /// Module init function.
 fn init() callconv(.c) void {
+    tty = Tty.new(norn.mem.general_allocator) catch @panic("tty.init");
+
     device.registerCharDev(tty_dev) catch |err| {
         std.log.err("Failed to register TTY device: {s}", .{@errorName(err)});
     };
@@ -29,9 +45,12 @@ fn iterate(file: *fs.File, allocator: Allocator) fs.FsError![]fs.File.IterResult
     norn.unimplemented("tty.iterate");
 }
 
-/// TODO: not implemented.
-fn read(_: *fs.File, _: []u8, _: fs.Offset) fs.FsError!usize {
-    return fs.FsError.TryAgain;
+/// Read from serial console.
+fn read(_: *fs.File, buf: []u8, _: fs.Offset) fs.FsError!usize {
+    return tty.read(buf) catch |err| {
+        log.err("Failed to read from TTY: {s}", .{@errorName(err)});
+        @panic("Aborting.");
+    };
 }
 
 /// Write to serial console.
@@ -175,6 +194,7 @@ fn ioctl(_: *fs.File, command: u64, args: *anyopaque) fs.FsError!i64 {
             output.* = std.mem.zeroInit(Termios, .{});
             output.iflag.ignore_parity = true;
             output.lflag.echo = true;
+            output.lflag.canonical = true;
             return 0;
         },
         .tiocgpgrp => {
@@ -198,6 +218,69 @@ fn ioctl(_: *fs.File, command: u64, args: *anyopaque) fs.FsError!i64 {
     };
 }
 
+/// TTY.
+const Tty = struct {
+    /// Max buffer size.
+    const buffer_size = 1024;
+
+    /// Ring buffer.
+    ring: RingBuffer(u8),
+    /// Ready to return data.
+    ready: bool = false,
+
+    /// Create a new TTY.
+    pub fn new(allocator: Allocator) Allocator.Error!Tty {
+        const buf = try allocator.alloc(u8, buffer_size);
+        return .{
+            .ring = .init(buf),
+        };
+    }
+
+    /// Put a character to the TTY.
+    ///
+    /// If newline is inserted, the TTY is marked as ready
+    /// and any task waiting on the TTY is woken up.
+    pub fn putc(self: *Tty, c: u8) void {
+        if (self.ring.isFull()) {
+            return;
+        }
+
+        // Convert CR to NL.
+        const b = if (c == '\r') '\n' else c;
+
+        // Echo input.
+        // TODO: should check if ECHO is enabled.
+        const serial = norn.getSerial();
+        serial.write(b);
+
+        self.ring.produceOne(b) catch {
+            return;
+        };
+
+        // If newline is inserted, mark as ready and wake up waiters.
+        // TODO: check if CANONICAL is enabled.
+        if ((b == '\n') or self.ring.isFull()) {
+            self.ready = true;
+            norn.sched.wakeup(&wait_queue);
+        }
+    }
+
+    /// Read from the TTY.
+    ///
+    /// If no data is available, the current task is blocked until data is available.
+    pub fn read(self: *Tty, buf: []u8) !usize {
+        while (!self.ready) {
+            norn.sched.waitOn(&wait_queue, norn.sched.getCurrentTask());
+        }
+
+        const len = @min(buf.len, self.ring.len());
+        const n = self.ring.consume(buf[0..len]);
+        self.ready = false;
+
+        return n;
+    }
+};
+
 // =============================================================
 // Imports
 // =============================================================
@@ -210,3 +293,5 @@ const norn = @import("norn");
 const fs = norn.fs;
 const device = norn.device;
 const CharDev = device.CharDev;
+const RingBuffer = norn.ring_buffer.RingBuffer;
+const WaitQueue = norn.sched.WaitQueue;

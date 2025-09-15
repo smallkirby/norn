@@ -1,4 +1,5 @@
 pub const serial8250 = @import("drivers/serial8250.zig");
+pub const tty = @import("drivers/tty.zig");
 pub const usb = @import("drivers/usb.zig");
 
 comptime {

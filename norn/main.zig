@@ -231,6 +231,9 @@ fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !voi
     // Initialize scheduler.
     log.info("Initializing scheduler...", .{});
     try norn.sched.setupInitialTask(cmdline.init);
+
+    // Initialize nworker.
+    try norn.worker.init(norn.mem.general_allocator);
     norn.sched.debugPrintRunQueue(log.debug);
 
     // Start timer and scheduler.
@@ -262,9 +265,12 @@ fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !voi
     norn.sched.unlock();
     norn.sched.schedule();
 
-    // Unreachable.
-    norn.unimplemented("Reached unreachable Norn EOL.");
-    unreachable;
+    // Idle task.
+    while (true) {
+        norn.arch.enableIrq();
+        norn.arch.halt();
+        norn.sched.schedule();
+    }
 }
 
 /// Validate the BootInfo passed by the bootloader.

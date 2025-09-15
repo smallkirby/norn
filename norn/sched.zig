@@ -1,6 +1,13 @@
 /// Error.
 pub const SchedError = arch.ArchError || mem.MemError || thread.ThreadError;
 
+/// Wait queue type.
+///
+/// Threads waiting for an specific event are managed in a wait queue.
+/// Scheduler does not manage the wait queue.
+/// Each subsystem must manage their own wait queue and wake up threads when the event occurs.
+pub const WaitQueue = ThreadList;
+
 /// Run queue of this CPU.
 ///
 /// This variable manages a list of tasks that are ready to run.
@@ -19,6 +26,8 @@ var current_task: *Thread linksection(pcpu.section) = undefined;
 var is_initialized: bool linksection(pcpu.section) = false;
 /// True once main thread first called `schedule()` function.
 var unlocked: bool linksection(pcpu.section) = false;
+/// Idle task.
+var idle_task: *Thread linksection(pcpu.section) = undefined;
 
 /// Initialize the scheduler for this CPU.
 ///
@@ -44,7 +53,9 @@ pub fn runInitialKernelThread() noreturn {
     norn.rtt.expectEqual(1, getRunQueue().len);
 
     const init = getRunQueue().pop() orelse unreachable;
+    init.state = .running;
     pcpu.set(&current_task, init);
+    pcpu.set(&idle_task, init);
 
     norn.arch.task.initialSwitchTo(init);
 }
@@ -69,36 +80,38 @@ pub fn schedule() void {
     const cur: *Thread = getCurrentTask();
 
     // Find the next task to run.
-    const next: *Thread = rq.popFirst() orelse {
-        // No task to run.
-        norn.rtt.expect(cur.tid == 0); // must be idle task
-
-        if (norn.is_runtime_test) {
-            log.info("No task to run. Terminating QEMU...", .{});
-            norn.terminateQemu(0);
-        }
-
-        arch.enableIrq();
-        return;
+    const next: *Thread = rq.popFirst() orelse blk: {
+        // No task to run. Run the idle task.
+        break :blk pcpu.get(&idle_task);
     };
-
-    // Skip if the next task is the idle task.
-    // TODO: should switch to the next of the idle task.
-    if (next.tid == 0) {
-        rq.append(next);
-        arch.enableIrq();
+    if (next.tid == 0 and cur.tid == 0) {
         return;
     }
+    norn.rtt.expectEqual(.ready, next.state);
 
     // Update the current task.
     switch (cur.state) {
+        .blocked => {
+            // Managed in the wait queue.
+        },
         .running => {
             // Insert the current task into the tail of the queue.
-            rq.append(cur);
+            if (cur.tid != 0) {
+                rq.append(cur);
+            } else {
+                @branchHint(.cold);
+            }
         },
         .dead => {
             // TODO: Destroy the task.
             norn.unimplemented("Destroy the task.");
+        },
+        else => {
+            log.err(
+                "Unexpected current task state (TID={d}): {s}",
+                .{ cur.tid, @tagName(cur.state) },
+            );
+            @panic("Scheduler panic.");
         },
     }
     pcpu.set(&current_task, next);
@@ -110,6 +123,8 @@ pub fn schedule() void {
     next.cpu_time.updateEnterUser(tsc);
 
     // Switch the context.
+    cur.state = if (cur.state == .running) .ready else cur.state;
+    next.state = .running;
     norn.arch.task.switchTo(cur, next);
 }
 
@@ -125,7 +140,24 @@ inline fn getRunQueue() *ThreadList {
 
 /// Append a new task to the tail of the run queue.
 pub fn enqueueTask(task: *Thread) void {
+    task.state = .ready;
     getRunQueue().append(task);
+}
+
+/// Block the current task and wait on the specified wait queue.
+pub fn waitOn(queue: *WaitQueue, task: *Thread) void {
+    task.state = .blocked;
+    queue.append(task);
+
+    schedule();
+}
+
+/// Wake up a task waiting on the specified wait queue.
+pub fn wakeup(queue: *WaitQueue) void {
+    const task = queue.popFirst() orelse return;
+    task.state = .ready;
+
+    enqueueTask(task);
 }
 
 /// Create an initial task (PID 1) and set the current task to it.
@@ -143,20 +175,6 @@ pub fn setupInitialTask(args: ?[]const []const u8) SchedError!void {
 
     // Enqueue the initial task to the run queue.
     enqueueTask(init_task);
-}
-
-/// Create an idle task and append it to the run queue.
-fn setupIdleTask() SchedError!void {
-    const idle_task = try thread.createKernelThread("[idle]", idleTask);
-    enqueueTask(idle_task);
-}
-
-/// Idle task that waits for interrupts endlessly.
-fn idleTask() noreturn {
-    while (true) {
-        arch.enableIrq();
-        arch.halt();
-    }
 }
 
 /// Print the list of threads in the run queue of this CPU.

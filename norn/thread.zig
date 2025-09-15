@@ -14,8 +14,12 @@ pub const ThreadList = InlineDoublyLinkedList(Thread, "list_head");
 
 /// Thread state.
 pub const State = enum {
+    /// Can be scheduled.
+    ready,
     /// Thread is running.
     running,
+    /// Waiting for an event.
+    blocked,
     /// Thread has finished execution and is waiting to be destroyed.
     dead,
 };
