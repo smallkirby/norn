@@ -8,7 +8,7 @@ lock: SpinLock = SpinLock{},
 /// Whether the serial console has been initialized.
 inited: atomic.Value(bool) = atomic.Value(bool).init(false),
 /// Ring buffer for RX.
-rb: RingBuffer = undefined,
+rb: RingBuffer(u8) = undefined,
 /// Backing buffer for the ring buffer.
 _buffer: [4096]u8 = undefined,
 /// Pointer to the writer function.
@@ -52,7 +52,7 @@ pub fn init(self: *Self) void {
     const ie = self.lock.lockDisableIrq();
     defer self.lock.unlockRestoreIrq(ie);
 
-    self.rb = RingBuffer.init(self._buffer[0..]);
+    self.rb = RingBuffer(u8).init(self._buffer[0..]);
 
     const functions = serial8250.initSerial(.com1, 115200);
     self._write_fn = functions.write;
@@ -93,5 +93,5 @@ const atomic = std.atomic;
 const norn = @import("norn");
 const arch = norn.arch;
 const serial8250 = norn.drivers.serial8250;
-const RingBuffer = norn.RingBuffer;
+const RingBuffer = norn.ring_buffer.RingBuffer;
 const SpinLock = norn.SpinLock;
