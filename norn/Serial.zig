@@ -38,6 +38,15 @@ pub noinline fn writeString(self: *Self, s: []const u8) void {
     }
 }
 
+/// Write a string to the serial console without taking a lock.
+///
+/// This function is unsafe.
+pub noinline fn writeStringUnsafeNoLock(self: *Self, s: []const u8) void {
+    for (s) |c| {
+        self.writeNoLock(c);
+    }
+}
+
 /// Try to read a character from the serial console without taking a lock.
 ///
 /// Returns null if no character is available in Rx-buffer.

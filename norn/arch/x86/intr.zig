@@ -74,56 +74,87 @@ pub fn setHandler(vector: u8, handler: Handler) IntrError!void {
     handlers[vector] = handler;
 }
 
+/// Serial writer that does not take a lock to prevent deadlock.
+const UnsafeWriter = struct {
+    writer: std.Io.Writer = .{
+        .vtable = &writer_vtable,
+        .buffer = &.{},
+    },
+
+    const writer_vtable = std.Io.Writer.VTable{
+        .drain = drain,
+    };
+
+    fn drain(_: *std.Io.Writer, data: []const []const u8, _: usize) !usize {
+        var written: usize = 0;
+        for (data) |bytes| {
+            norn.getSerial().writeStringUnsafeNoLock(bytes);
+            written += bytes.len;
+        }
+        return written;
+    }
+
+    pub fn new() UnsafeWriter {
+        return .{};
+    }
+
+    pub fn log(self: *UnsafeWriter, comptime fmt: []const u8, args: anytype) void {
+        self.writer.print(fmt ++ "\n", args) catch {};
+    }
+};
+
 fn unhandledHandler(context: *Context) void {
     @branchHint(.cold);
 
+    var writer = UnsafeWriter.new();
+
     const exception: Exception = @enumFromInt(context.spec1.vector);
-    log.err("============ Oops! ===================", .{});
+    writer.log("============ Oops! ===================", .{});
     const cpuid = norn.arch.getLocalApic().id();
-    log.err("Core#{d:0>2}: Unhandled interrupt: {s} ({})", .{
+    writer.log("Core#{d:0>2}: Unhandled interrupt: {s} ({})", .{
         cpuid,
         exception.name(),
         context.spec1.vector,
     });
-    log.err("Error Code: 0x{X}", .{context.spec2.error_code});
-    log.err("RIP    : 0x{X:0>16}", .{context.rip});
-    log.err("RFLAGS : 0x{X:0>16}", .{context.rflags});
-    log.err("RAX    : 0x{X:0>16}", .{context.rax});
-    log.err("RBX    : 0x{X:0>16}", .{context.rbx});
-    log.err("RCX    : 0x{X:0>16}", .{context.rcx});
-    log.err("RDX    : 0x{X:0>16}", .{context.rdx});
-    log.err("RSI    : 0x{X:0>16}", .{context.rsi});
-    log.err("RDI    : 0x{X:0>16}", .{context.rdi});
-    log.err("RBP    : 0x{X:0>16}", .{context.rbp});
-    log.err("R8     : 0x{X:0>16}", .{context.r8});
-    log.err("R9     : 0x{X:0>16}", .{context.r9});
-    log.err("R10    : 0x{X:0>16}", .{context.r10});
-    log.err("R11    : 0x{X:0>16}", .{context.r11});
-    log.err("R12    : 0x{X:0>16}", .{context.r12});
-    log.err("R13    : 0x{X:0>16}", .{context.r13});
-    log.err("R14    : 0x{X:0>16}", .{context.r14});
-    log.err("R15    : 0x{X:0>16}", .{context.r15});
-    log.err("CS     : 0x{X:0>4}", .{context.cs});
+    writer.log("Error Code: 0x{X}", .{context.spec2.error_code});
+    writer.log("RIP    : 0x{X:0>16}", .{context.rip});
+    writer.log("RFLAGS : 0x{X:0>16}", .{context.rflags});
+    writer.log("RAX    : 0x{X:0>16}", .{context.rax});
+    writer.log("RBX    : 0x{X:0>16}", .{context.rbx});
+    writer.log("RCX    : 0x{X:0>16}", .{context.rcx});
+    writer.log("RDX    : 0x{X:0>16}", .{context.rdx});
+    writer.log("RSI    : 0x{X:0>16}", .{context.rsi});
+    writer.log("RDI    : 0x{X:0>16}", .{context.rdi});
+    writer.log("RBP    : 0x{X:0>16}", .{context.rbp});
+    writer.log("R8     : 0x{X:0>16}", .{context.r8});
+    writer.log("R9     : 0x{X:0>16}", .{context.r9});
+    writer.log("R10    : 0x{X:0>16}", .{context.r10});
+    writer.log("R11    : 0x{X:0>16}", .{context.r11});
+    writer.log("R12    : 0x{X:0>16}", .{context.r12});
+    writer.log("R13    : 0x{X:0>16}", .{context.r13});
+    writer.log("R14    : 0x{X:0>16}", .{context.r14});
+    writer.log("R15    : 0x{X:0>16}", .{context.r15});
+    writer.log("CS     : 0x{X:0>4}", .{context.cs});
     if (context.isFromUserMode()) {
-        log.err("SS     : 0x{X:0>4}", .{context.ss});
-        log.err("RSP    : 0x{X:0>16}", .{context.rsp});
+        writer.log("SS     : 0x{X:0>4}", .{context.ss});
+        writer.log("RSP    : 0x{X:0>16}", .{context.rsp});
     }
 
     const cr0: u64 = @bitCast(am.readCr0());
     const cr2: u64 = @bitCast(am.readCr2());
     const cr3: u64 = @bitCast(am.readCr3());
     const cr4: u64 = @bitCast(am.readCr4());
-    log.err("CR0    : 0x{X:0>16}", .{cr0});
-    log.err("CR2    : 0x{X:0>16}", .{cr2});
-    log.err("CR3    : 0x{X:0>16}", .{cr3});
-    log.err("CR4    : 0x{X:0>16}", .{cr4});
+    writer.log("CR0    : 0x{X:0>16}", .{cr0});
+    writer.log("CR2    : 0x{X:0>16}", .{cr2});
+    writer.log("CR3    : 0x{X:0>16}", .{cr3});
+    writer.log("CR4    : 0x{X:0>16}", .{cr4});
 
     if (norn.pcpu.isThisCpuInitialized(cpuid) and context.isFromUserMode()) {
-        log.err("Memory map of the current task:", .{});
+        writer.log("Memory map of the current task:", .{});
         const task = norn.sched.getCurrentTask();
         var node: ?*norn.mm.VmArea = task.mm.vm_areas.first;
         while (node) |area| : (node = area.list_head.next) {
-            log.err(
+            writer.log(
                 "  {X}-{X} {s}",
                 .{ area.start, area.end, area.flags.toString() },
             );
@@ -136,22 +167,22 @@ fn unhandledHandler(context: *Context) void {
         const kstack = current.kernel_stack;
         const kstack_guard_start = @intFromPtr(kstack.ptr);
         if (kstack_guard_start <= context.rsp and context.rsp < (kstack_guard_start + norn.mem.size_4kib)) {
-            log.err("", .{});
-            log.err("!!! This might be a kernel stack overflow !!!", .{});
+            writer.log("", .{});
+            writer.log("!!! This might be a kernel stack overflow !!!", .{});
         }
     }
 
     // Print the stack trace.
-    log.err("", .{});
+    writer.log("", .{});
     var it = std.debug.StackIterator.init(null, context.rbp);
     var ix: usize = 0;
-    log.err("=== Stack Trace =====================", .{});
+    writer.log("=== Stack Trace =====================", .{});
     while (it.next()) |frame| : (ix += 1) {
-        log.err("#{d:0>2}: 0x{X:0>16}", .{ ix, frame });
+        writer.log("#{d:0>2}: 0x{X:0>16}", .{ ix, frame });
     }
 
-    log.err("=====================================", .{});
-    log.err("Halting...", .{});
+    writer.log("=====================================", .{});
+    writer.log("Halting...", .{});
     norn.endlessHalt();
 }
 
