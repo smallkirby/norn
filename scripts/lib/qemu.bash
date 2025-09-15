@@ -30,6 +30,8 @@ DEVICES=(
 )
 
 declare -g _qemu_monitor_socket
+declare -g _qemu_timeout
+declare -g _qemu_start_time
 
 function qemu_print_version
 {
@@ -54,7 +56,7 @@ function qemu_start()
   local efi_root_dir="$1"
   _qemu_monitor_socket="$2"
   local log_file="$3"
-  local timeout="$4"
+  _qemu_timeout="$4"
 
   local device_string=""
   for dev in "${DEVICES[@]}"; do
@@ -65,11 +67,11 @@ function qemu_start()
   echo_normal "  EFI directory  : $efi_root_dir"
   echo_normal "  Monitor socket : $_qemu_monitor_socket"
   echo_normal "  Log file       : $log_file"
-  echo_normal "  Timeout        : $timeout seconds"
+  echo_normal "  Timeout        : $_qemu_timeout seconds"
   echo_normal "  CPU model      : $CPU_MODEL"
   echo_normal "  CPU features   : ${CPU_FEATURES[*]}"
 
-  timeout --foreground "$timeout" \
+  tee "$log_file" < <(
     "$QEMU" \
       -m "$MEMORY" \
       -bios "$BIOS" \
@@ -82,8 +84,12 @@ function qemu_start()
       -smp "$NUM_CORES" \
       -d guest_errors \
       $device_string \
-    2>&1 | tee "$log_file" &
-  QEMU_PID=$!
+    2>&1 &
+    echo $! > "$log_file.pid"
+    wait
+  ) &
+  QEMU_PID=$(cat "$log_file.pid")
+  _qemu_start_time=$(date +%s)
 
   sleep 1
 
@@ -105,6 +111,12 @@ function qemu_sendkey()
   echo "sendkey $key" | socat - "$_qemu_monitor_socket"
 }
 
+# Send NMI command to QEMU.
+function qemu_nmi()
+{
+  echo "nmi" | socat - "$_qemu_monitor_socket"
+}
+
 # Exit QEMU gracefully.
 #
 # If QEMU is not running, this function does nothing.
@@ -120,10 +132,35 @@ function qemu_exit()
 }
 
 # Wait for QEMU to finish and capture its exit code.
+# If timeout is reached, send NMI command to print stack traces.
 #
 # The exit code will be stored in the global variable QEMU_RETVAL.
 function qemu_wait()
 {
+  local sleep_interval=1
+  local timed_out=0
+
+  while kill -0 "$QEMU_PID" 2>/dev/null; do
+    local current_time=$(date +%s)
+    local elapsed=$(( current_time - _qemu_start_time ))
+
+    if [ $elapsed -ge "$_qemu_timeout" ]; then
+      echo_normal "Timeout reached (${elapsed}s). Sending NMI command..."
+      qemu_nmi
+      timed_out=1
+      sleep 1
+      qemu_exit
+      break
+    fi
+    sleep $sleep_interval
+  done
+
   wait "$QEMU_PID" || true
+  # TODO: This retval is not QEMU's one.
   QEMU_RETVAL=$?
+
+  # Set timeout exit code if we timed out
+  if [ $timed_out -eq 1 ]; then
+    QEMU_RETVAL=124
+  fi
 }
