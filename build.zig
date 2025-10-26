@@ -297,7 +297,8 @@ pub fn build(b: *std.Build) !void {
     };
 
     {
-        const command = b.addSystemCommand(&[_][]const u8{
+        // Copy bootparams into the disk image.
+        const command1 = b.addSystemCommand(&[_][]const u8{
             "mcopy",
             "-i",
             b.fmt("{s}/{s}@@{d}", .{ b.install_prefix, diskimg_name, start_mib * 1024 * 1024 }),
@@ -306,12 +307,18 @@ pub fn build(b: *std.Build) !void {
             path_bootparams,
             "::efi/boot/bootparams",
         });
+        // Copy bootparams into the disk image directory, so that next creation of the image uses the updated bootparams.
+        const command2 = b.addInstallFile(
+            b.path(path_bootparams),
+            b.fmt("{s}/efi/boot/bootparams", .{outdir_name}),
+        );
 
         const cmd_update_bootparams = b.step(
             "update-bootparams",
             "Update boot parameters.",
         );
-        cmd_update_bootparams.dependOn(&command.step);
+        cmd_update_bootparams.dependOn(&command1.step);
+        cmd_update_bootparams.dependOn(&command2.step);
     }
 
     // =============================================================
