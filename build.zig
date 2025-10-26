@@ -86,6 +86,11 @@ pub fn build(b: *std.Build) !void {
         "debug_exit",
         "Add isa-debug-exit device.",
     ) orelse is_runtime_test;
+    const debug_sched = b.option(
+        bool,
+        "debug_sched",
+        "Print debug log for scheduler.",
+    ) orelse false;
     const debug_syscall = b.option(
         bool,
         "debug_syscall",
@@ -125,6 +130,7 @@ pub fn build(b: *std.Build) !void {
     options.addOption([]const u8, "sha", try getGitSha(b));
     options.addOption([]const u8, "version", norn_version);
     options.addOption(bool, "debug_syscall", debug_syscall);
+    options.addOption(bool, "debug_sched", debug_sched);
     options.addOption(u32, "rtt_hid_wait", rtt_hid_wait);
     options.addOption(u64, "sched_freq", sched_freq);
 

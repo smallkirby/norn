@@ -115,6 +115,10 @@ pub fn schedule() void {
     }
     pcpu.set(&current_task, next);
 
+    if (@import("option").debug_sched) {
+        log.debug("Switching task: {d} -> {d}", .{ cur.tid, next.tid });
+    }
+
     // Update the CPU time.
     // TODO: properly record user/kernel -CPU time.
     const tsc = timer.getTimestamp();
