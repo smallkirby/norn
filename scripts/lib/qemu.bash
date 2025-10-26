@@ -4,7 +4,7 @@
 readonly H_GUARD_QEMU=1
 
 export QEMU_PID
-export QEMU_RETVAL
+export QEMU_RETVAL=0
 
 source "$(dirname "$0")/lib/util.bash"
 
@@ -32,6 +32,7 @@ DEVICES=(
 declare -g _qemu_monitor_socket
 declare -g _qemu_timeout
 declare -g _qemu_start_time
+declare -g _log_file
 
 function qemu_print_version
 {
@@ -55,7 +56,7 @@ function qemu_start()
 
   local diskimg="$1"
   _qemu_monitor_socket="$2"
-  local log_file="$3"
+  _log_file="$3"
   _qemu_timeout="$4"
 
   local device_string=""
@@ -66,33 +67,27 @@ function qemu_start()
   echo_normal "Starting QEMU..."
   echo_normal "  Disk image     : $diskimg"
   echo_normal "  Monitor socket : $_qemu_monitor_socket"
-  echo_normal "  Log file       : $log_file"
+  echo_normal "  Log file       : $_log_file"
   echo_normal "  Timeout        : $_qemu_timeout seconds"
   echo_normal "  CPU model      : $CPU_MODEL"
   echo_normal "  CPU features   : ${CPU_FEATURES[*]}"
 
-  tee "$log_file" < <(
-    "$QEMU" \
-      -m "$MEMORY" \
-      -bios "$BIOS" \
-      -drive file="$diskimg",format=raw,if=virtio,media=disk \
-      -nographic \
-      -serial mon:stdio \
-      -monitor unix:"$_qemu_monitor_socket",server,nowait \
-      -no-reboot \
-      -cpu "$CPU_MODEL","$(IFS=,; echo "${CPU_FEATURES[*]}")" \
-      -smp "$NUM_CORES" \
-      -d guest_errors \
-      $device_string \
-    2>&1 &
-    echo $! > "$log_file.pid"
-    wait
-  ) &
+  "$QEMU" \
+    -m "$MEMORY" \
+    -bios "$BIOS" \
+    -drive file="$diskimg",format=raw,if=virtio,media=disk \
+    -nographic \
+    -serial mon:stdio \
+    -monitor unix:"$_qemu_monitor_socket",server,nowait \
+    -no-reboot \
+    -cpu "$CPU_MODEL","$(IFS=,; echo "${CPU_FEATURES[*]}")" \
+    -smp "$NUM_CORES" \
+    -d guest_errors \
+    $device_string \
+  2>&1 | tee "$_log_file" &
+  QEMU_PID=$!
 
-  while [ ! -f "$log_file.pid" ]; do
-    sleep 0.1
-  done
-  QEMU_PID=$(cat "$log_file.pid")
+  echo_normal "  QEMU PID       : $QEMU_PID"
   _qemu_start_time=$(date +%s)
 
   sleep 1
@@ -144,9 +139,10 @@ function qemu_wait()
   local sleep_interval=1
   local timed_out=0
 
+  # Loop until QEMU process exits or timeout is reached.
   while kill -0 "$QEMU_PID" 2>/dev/null; do
-    local current_time=$(date +%s)
-    local elapsed=$(( current_time - _qemu_start_time ))
+    current_time=$(date +%s)
+    elapsed=$(( current_time - _qemu_start_time ))
 
     if [ $elapsed -ge "$_qemu_timeout" ]; then
       echo_normal "Timeout reached (${elapsed}s). Sending NMI command..."
@@ -159,9 +155,9 @@ function qemu_wait()
     sleep $sleep_interval
   done
 
-  wait "$QEMU_PID" || true
-  # TODO: This retval is not QEMU's one.
-  QEMU_RETVAL=$?
+  # Wait for QEMU to finish and capture its exit code.
+  echo_normal "Fetching QEMU exit code..."
+  wait "$QEMU_PID" || QEMU_RETVAL=$?
 
   # Set timeout exit code if we timed out
   if [ $timed_out -eq 1 ]; then
