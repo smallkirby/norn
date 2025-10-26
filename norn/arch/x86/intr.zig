@@ -116,38 +116,38 @@ fn unhandledHandler(context: *Context) void {
         exception.name(),
         context.spec1.vector,
     });
-    writer.log("Error Code: 0x{X}", .{context.spec2.error_code});
-    writer.log("RIP    : 0x{X:0>16}", .{context.rip});
-    writer.log("RFLAGS : 0x{X:0>16}", .{context.rflags});
-    writer.log("RAX    : 0x{X:0>16}", .{context.rax});
-    writer.log("RBX    : 0x{X:0>16}", .{context.rbx});
-    writer.log("RCX    : 0x{X:0>16}", .{context.rcx});
-    writer.log("RDX    : 0x{X:0>16}", .{context.rdx});
-    writer.log("RSI    : 0x{X:0>16}", .{context.rsi});
-    writer.log("RDI    : 0x{X:0>16}", .{context.rdi});
-    writer.log("RBP    : 0x{X:0>16}", .{context.rbp});
-    writer.log("R8     : 0x{X:0>16}", .{context.r8});
-    writer.log("R9     : 0x{X:0>16}", .{context.r9});
-    writer.log("R10    : 0x{X:0>16}", .{context.r10});
-    writer.log("R11    : 0x{X:0>16}", .{context.r11});
-    writer.log("R12    : 0x{X:0>16}", .{context.r12});
-    writer.log("R13    : 0x{X:0>16}", .{context.r13});
-    writer.log("R14    : 0x{X:0>16}", .{context.r14});
-    writer.log("R15    : 0x{X:0>16}", .{context.r15});
-    writer.log("CS     : 0x{X:0>4}", .{context.cs});
+    writer.log("Error Code : 0x{X}", .{context.spec2.error_code});
+    writer.log("RIP        : 0x{X:0>16}", .{context.rip});
+    writer.log("RFLAGS     : 0x{X:0>16}", .{context.rflags});
+    writer.log("RAX        : 0x{X:0>16}", .{context.rax});
+    writer.log("RBX        : 0x{X:0>16}", .{context.rbx});
+    writer.log("RCX        : 0x{X:0>16}", .{context.rcx});
+    writer.log("RDX        : 0x{X:0>16}", .{context.rdx});
+    writer.log("RSI        : 0x{X:0>16}", .{context.rsi});
+    writer.log("RDI        : 0x{X:0>16}", .{context.rdi});
+    writer.log("RBP        : 0x{X:0>16}", .{context.rbp});
+    writer.log("R8         : 0x{X:0>16}", .{context.r8});
+    writer.log("R9         : 0x{X:0>16}", .{context.r9});
+    writer.log("R10        : 0x{X:0>16}", .{context.r10});
+    writer.log("R11        : 0x{X:0>16}", .{context.r11});
+    writer.log("R12        : 0x{X:0>16}", .{context.r12});
+    writer.log("R13        : 0x{X:0>16}", .{context.r13});
+    writer.log("R14        : 0x{X:0>16}", .{context.r14});
+    writer.log("R15        : 0x{X:0>16}", .{context.r15});
+    writer.log("CS         : 0x{X:0>4}", .{context.cs});
     if (context.isFromUserMode()) {
-        writer.log("SS     : 0x{X:0>4}", .{context.ss});
-        writer.log("RSP    : 0x{X:0>16}", .{context.rsp});
+        writer.log("SS         : 0x{X:0>4}", .{context.ss});
+        writer.log("RSP        : 0x{X:0>16}", .{context.rsp});
     }
 
     const cr0: u64 = @bitCast(am.readCr0());
     const cr2: u64 = @bitCast(am.readCr2());
     const cr3: u64 = @bitCast(am.readCr3());
     const cr4: u64 = @bitCast(am.readCr4());
-    writer.log("CR0    : 0x{X:0>16}", .{cr0});
-    writer.log("CR2    : 0x{X:0>16}", .{cr2});
-    writer.log("CR3    : 0x{X:0>16}", .{cr3});
-    writer.log("CR4    : 0x{X:0>16}", .{cr4});
+    writer.log("CR0        : 0x{X:0>16}", .{cr0});
+    writer.log("CR2        : 0x{X:0>16}", .{cr2});
+    writer.log("CR3        : 0x{X:0>16}", .{cr3});
+    writer.log("CR4        : 0x{X:0>16}", .{cr4});
 
     if (norn.pcpu.isThisCpuInitialized(cpuid) and context.isFromUserMode()) {
         writer.log("Memory map of the current task:", .{});
