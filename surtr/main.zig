@@ -62,7 +62,7 @@ fn boot() Error!void {
     // Open kernel file.
     log.info("Opening kernel file.", .{});
     const kernel_file = try root_dir.open(
-        &toUcs2("norn.elf"),
+        &toUcs2("efi\\boot\\norn.elf"),
         .read,
         .{},
     );

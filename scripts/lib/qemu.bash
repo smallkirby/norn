@@ -53,7 +53,7 @@ function qemu_start()
     return 1
   fi
 
-  local efi_root_dir="$1"
+  local diskimg="$1"
   _qemu_monitor_socket="$2"
   local log_file="$3"
   _qemu_timeout="$4"
@@ -64,7 +64,7 @@ function qemu_start()
   done
 
   echo_normal "Starting QEMU..."
-  echo_normal "  EFI directory  : $efi_root_dir"
+  echo_normal "  Disk image     : $diskimg"
   echo_normal "  Monitor socket : $_qemu_monitor_socket"
   echo_normal "  Log file       : $log_file"
   echo_normal "  Timeout        : $_qemu_timeout seconds"
@@ -75,7 +75,7 @@ function qemu_start()
     "$QEMU" \
       -m "$MEMORY" \
       -bios "$BIOS" \
-      -drive file=fat:rw:"$efi_root_dir",format=raw \
+      -drive file="$diskimg",format=raw,if=virtio,media=disk \
       -nographic \
       -serial mon:stdio \
       -monitor unix:"$_qemu_monitor_socket",server,nowait \

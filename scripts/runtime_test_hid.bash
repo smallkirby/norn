@@ -102,7 +102,7 @@ function main()
   qemu_print_version
 
   qemu_start \
-    "$(pwd)/zig-out/img" \
+    "$(pwd)/zig-out/diskimg" \
     "$MONITOR_SOCKET" \
     "$TMPFILE" \
     "$TIMEOUT"

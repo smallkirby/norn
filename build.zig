@@ -45,6 +45,7 @@ pub fn build(b: *std.Build) !void {
     // =============================================================
     // Options
     // =============================================================
+
     const s_log_level = b.option(
         []const u8,
         "log_level",
@@ -101,6 +102,12 @@ pub fn build(b: *std.Build) !void {
         "Enable QEMU graphics.",
     ) orelse false;
 
+    const path_bootparams = b.option(
+        []const u8,
+        "bootparams",
+        "Path to Surtr boot parameters file.",
+    ) orelse "assets/boot/bootprarams";
+
     const rtt_hid_wait = b.option(
         u32,
         "rtt_hid_wait",
@@ -118,63 +125,81 @@ pub fn build(b: *std.Build) !void {
     // =============================================================
     // Modules
     // =============================================================
-    const surtr_module = b.createModule(.{
-        .root_source_file = b.path("surtr/surtr.zig"),
-    });
-    surtr_module.addOptions("option", options);
 
-    const norn_module = b.createModule(.{
-        .root_source_file = b.path("norn/norn.zig"),
-    });
-    norn_module.addImport("norn", norn_module);
-    norn_module.addImport("surtr", surtr_module);
-    norn_module.addOptions("option", options);
+    const surtr_module = blk: {
+        const module = b.createModule(.{
+            .root_source_file = b.path("surtr/surtr.zig"),
+        });
+        module.addOptions("option", options);
+
+        break :blk module;
+    };
+
+    const norn_module = blk: {
+        const module = b.createModule(.{
+            .root_source_file = b.path("norn/norn.zig"),
+        });
+        module.addImport("norn", module);
+        module.addImport("surtr", surtr_module);
+        module.addOptions("option", options);
+
+        break :blk module;
+    };
 
     // =============================================================
     // Surtr Executable
     // =============================================================
-    const surtr = b.addExecutable(.{
-        .name = "BOOTX64.EFI",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("surtr/main.zig"),
-            .target = b.resolveTargetQuery(.{
-                .cpu_arch = .x86_64,
-                .os_tag = .uefi,
+
+    const surtr = blk: {
+        const exe = b.addExecutable(.{
+            .name = "BOOTX64.EFI",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("surtr/main.zig"),
+                .target = b.resolveTargetQuery(.{
+                    .cpu_arch = .x86_64,
+                    .os_tag = .uefi,
+                }),
+                .optimize = optimize,
             }),
-            .optimize = optimize,
-        }),
-        .linkage = .static,
-        .use_llvm = true,
-    });
-    surtr.root_module.addOptions("option", options);
-    b.installArtifact(surtr);
+            .linkage = .static,
+            .use_llvm = true,
+        });
+        exe.root_module.addOptions("option", options);
+
+        break :blk exe;
+    };
 
     // =============================================================
     // Norn Executable
     // =============================================================
-    const norn = b.addExecutable(.{
-        .name = "norn.elf",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("norn/main.zig"),
-            .target = target, // Freestanding x64 ELF executable
-            .optimize = optimize, // You can choose the optimization level.
-            .code_model = .kernel,
-        }),
-        .linkage = .static,
-        .use_llvm = true,
-    });
-    norn.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
-    norn.entry = .{ .symbol_name = "kernelEntry" };
-    norn.linker_script = b.path("norn/linker.ld");
-    norn.root_module.addImport("surtr", surtr_module);
-    norn.root_module.addImport("norn", norn_module);
-    norn.root_module.addOptions("option", options);
-    norn.want_lto = false; // NOTE: LTO dead-strips exported functions in Zig file. cf: https://github.com/ziglang/zig/issues/22234
-    b.installArtifact(norn);
+
+    const norn = blk: {
+        const exe = b.addExecutable(.{
+            .name = "norn.elf",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("norn/main.zig"),
+                .target = target, // Freestanding x64 ELF executable
+                .optimize = optimize, // You can choose the optimization level.
+                .code_model = .kernel,
+            }),
+            .linkage = .static,
+            .use_llvm = true,
+        });
+        exe.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
+        exe.entry = .{ .symbol_name = "kernelEntry" };
+        exe.linker_script = b.path("norn/linker.ld");
+        exe.root_module.addImport("surtr", surtr_module);
+        exe.root_module.addImport("norn", norn_module);
+        exe.root_module.addOptions("option", options);
+        exe.want_lto = false; // NOTE: LTO dead-strips exported functions in Zig file. cf: https://github.com/ziglang/zig/issues/22234
+
+        break :blk exe;
+    };
 
     // =============================================================
     // Init Executable
     // =============================================================
+
     const init = b.addExecutable(.{
         .name = "init",
         .root_module = b.createModule(.{
@@ -184,150 +209,226 @@ pub fn build(b: *std.Build) !void {
         }),
         .linkage = .static,
     });
-    b.installArtifact(init);
 
     // =============================================================
     // initramfs
     // =============================================================
-    const make_initramfs = b.addSystemCommand(&[_][]const u8{
-        "bash",
-        "-c",
-        "scripts/make_initramfs.bash",
-    });
-    make_initramfs.step.dependOn(&norn.step);
-    b.getInstallStep().dependOn(&make_initramfs.step);
 
-    const install_init = b.addInstallFile(
-        init.getEmittedBin(),
-        "rootfs/sbin/init",
-    );
-    make_initramfs.step.dependOn(&install_init.step);
+    const initramfs = blk: {
+        const make_initramfs = b.addSystemCommand(&[_][]const u8{
+            "bash",
+            "-c",
+            "scripts/make_initramfs.bash",
+        });
 
-    // =============================================================
-    // EFI directory
-    // =============================================================
-    const out_dir_name = "img";
-    const install_surtr = b.addInstallFile(
-        surtr.getEmittedBin(),
-        b.fmt("{s}/efi/boot/{s}", .{ out_dir_name, surtr.name }),
-    );
-    install_surtr.step.dependOn(&surtr.step);
-    b.getInstallStep().dependOn(&install_surtr.step);
+        const install_init = b.addInstallFile(
+            init.getEmittedBin(),
+            "rootfs/sbin/init",
+        );
+        make_initramfs.step.dependOn(&install_init.step);
 
-    const install_norn = b.addInstallFile(
-        norn.getEmittedBin(),
-        b.fmt("{s}/{s}", .{ out_dir_name, norn.name }),
-    );
-    install_norn.step.dependOn(&norn.step);
-    b.getInstallStep().dependOn(&install_norn.step);
+        const install_busybox = b.addInstallFile(
+            b.path("vendor/busybox/busybox"),
+            "rootfs/bin/busybox",
+        );
+        make_initramfs.step.dependOn(&install_busybox.step);
+
+        break :blk make_initramfs;
+    };
 
     // =============================================================
-    // Boot parameters
+    // FAT32 disk image
     // =============================================================
-    const path_bootparams = b.option(
-        []const u8,
-        "bootparams",
-        "Path to Surtr boot parameters file.",
-    ) orelse "assets/boot/bootprarams";
-    const update_bootparams = b.addInstallFile(
-        b.path(path_bootparams),
-        b.fmt("{s}/efi/boot/bootparams", .{out_dir_name}),
-    );
-    const cmd_update_bootparams = b.step("update-bootparams", "Update boot parameters.");
-    cmd_update_bootparams.dependOn(&update_bootparams.step);
+
+    const outdir_name = "img";
+    const diskimg_name = "diskimg";
+
+    const update_bootparams = blk: {
+        const bp = b.addInstallFile(
+            b.path(path_bootparams),
+            b.fmt("{s}/efi/boot/bootparams", .{outdir_name}),
+        );
+
+        break :blk bp;
+    };
+
+    const install_surtr = blk: {
+        const install = b.addInstallFile(
+            surtr.getEmittedBin(),
+            b.fmt(
+                "{s}/efi/boot/{s}",
+                .{ outdir_name, surtr.name },
+            ),
+        );
+        install.step.dependOn(&surtr.step);
+
+        break :blk install;
+    };
+
+    const install_norn = blk: {
+        const install = b.addInstallFile(
+            norn.getEmittedBin(),
+            b.fmt(
+                "{s}/efi/boot/{s}",
+                .{ outdir_name, norn.name },
+            ),
+        );
+        install.step.dependOn(&norn.step);
+
+        break :blk install;
+    };
+
+    const start_mib = 1;
+    const size_mib = 64;
+    const create_disk = blk: {
+        const command = b.addSystemCommand(&[_][]const u8{
+            "scripts/create_disk.bash",
+            b.fmt("{s}/{s}", .{ b.install_path, outdir_name }), // copy source
+            b.fmt("{s}/{s}", .{ b.install_prefix, diskimg_name }), // output image
+            b.fmt("{d}", .{start_mib}), // start MiB
+            b.fmt("{d}", .{size_mib}), // size MiB
+        });
+        command.step.dependOn(&update_bootparams.step);
+        command.step.dependOn(&initramfs.step);
+        command.step.dependOn(&install_surtr.step);
+        command.step.dependOn(&install_norn.step);
+
+        break :blk command;
+    };
+
+    {
+        const command = b.addSystemCommand(&[_][]const u8{
+            "mcopy",
+            "-i",
+            b.fmt("{s}/{s}@@{d}", .{ b.install_prefix, diskimg_name, start_mib * 1024 * 1024 }),
+            "-o",
+            "-s",
+            path_bootparams,
+            "::efi/boot/bootparams",
+        });
+
+        const cmd_update_bootparams = b.step(
+            "update-bootparams",
+            "Update boot parameters.",
+        );
+        cmd_update_bootparams.dependOn(&command.step);
+    }
+
+    // =============================================================
+    // Install
+    // =============================================================
+
+    b.installArtifact(norn);
+    b.installArtifact(surtr);
+    b.installArtifact(init);
+    b.getInstallStep().dependOn(&create_disk.step);
 
     // =============================================================
     // QEMU
     // =============================================================
-    const qemu_cpu_feats = "+fsgsbase,+invtsc,+avx,+avx2,+xsave,+xsaveopt,+bmi1";
-    var qemu_args = std.array_list.Aligned([]const u8, null).empty;
-    defer qemu_args.deinit(b.allocator);
-    try qemu_args.appendSlice(b.allocator, &.{
-        "qemu-system-x86_64",
-        "-m",
-        "512M",
-        "-bios",
-        "/usr/share/ovmf/OVMF.fd", // TODO: Make this configurable
-        "-drive",
-        b.fmt("file=fat:rw:{s}/{s},format=raw", .{ b.install_path, out_dir_name }),
-        "-device",
-        "nec-usb-xhci,id=xhci",
-        "-device",
-        "usb-kbd",
-        "-serial",
-        "mon:stdio",
-        "-no-reboot",
-        "-smp",
-        "3",
-        "-s",
-        "-d",
-        "guest_errors",
-    });
-    if (wait_qemu) try qemu_args.append(b.allocator, "-S");
-    if (debug_intr) {
-        try qemu_args.appendSlice(b.allocator, &.{
-            "-cpu",
-            "qemu64," ++ qemu_cpu_feats,
-            "-d",
-            "int",
-        });
-    } else if (no_kvm) {
-        try qemu_args.appendSlice(b.allocator, &.{
-            "-cpu",
-            "qemu64," ++ qemu_cpu_feats,
-        });
-    } else {
-        try qemu_args.appendSlice(b.allocator, &.{
-            "-cpu",
-            "host,+invtsc",
-            "-enable-kvm",
-        });
-    }
-    if (debug_exit) try qemu_args.appendSlice(b.allocator, &.{
-        "-device",
-        "isa-debug-exit,iobase=0xF0,iosize=0x01",
-    });
-    if (!graphics) try qemu_args.appendSlice(b.allocator, &.{
-        "-nographic",
-    });
-    const qemu_cmd = b.addSystemCommand(qemu_args.items);
-    qemu_cmd.step.dependOn(b.getInstallStep());
 
-    const run_qemu_cmd = b.step("run", "Run QEMU");
-    run_qemu_cmd.dependOn(&qemu_cmd.step);
+    {
+        const qemu_cpu_feats = "+fsgsbase,+invtsc,+avx,+avx2,+xsave,+xsaveopt,+bmi1";
+
+        var qemu_args = std.array_list.Aligned([]const u8, null).empty;
+        defer qemu_args.deinit(b.allocator);
+        try qemu_args.appendSlice(b.allocator, &.{
+            "qemu-system-x86_64",
+            "-m",
+            "512M",
+            "-bios",
+            "/usr/share/ovmf/OVMF.fd", // TODO: Make this configurable
+            "-drive",
+            b.fmt("file={s}/{s},format=raw,if=virtio,media=disk", .{ b.install_path, diskimg_name }),
+            "-device",
+            "nec-usb-xhci,id=xhci",
+            "-device",
+            "usb-kbd",
+            "-serial",
+            "mon:stdio",
+            "-no-reboot",
+            "-smp",
+            "3",
+            "-s",
+            "-d",
+            "guest_errors",
+        });
+
+        if (wait_qemu) {
+            try qemu_args.append(b.allocator, "-S");
+        }
+
+        if (debug_intr) {
+            try qemu_args.appendSlice(b.allocator, &.{
+                "-cpu",
+                "qemu64," ++ qemu_cpu_feats,
+                "-d",
+                "int",
+            });
+        } else if (no_kvm) {
+            try qemu_args.appendSlice(b.allocator, &.{
+                "-cpu",
+                "qemu64," ++ qemu_cpu_feats,
+            });
+        } else {
+            try qemu_args.appendSlice(b.allocator, &.{
+                "-cpu",
+                "host,+invtsc",
+                "-enable-kvm",
+            });
+        }
+
+        if (debug_exit) try qemu_args.appendSlice(b.allocator, &.{
+            "-device",
+            "isa-debug-exit,iobase=0xF0,iosize=0x01",
+        });
+
+        if (!graphics) try qemu_args.appendSlice(b.allocator, &.{
+            "-nographic",
+        });
+
+        const qemu_cmd = b.addSystemCommand(qemu_args.items);
+        qemu_cmd.step.dependOn(b.getInstallStep());
+
+        const run_qemu_cmd = b.step("run", "Run QEMU");
+        run_qemu_cmd.dependOn(&qemu_cmd.step);
+    }
 
     // =============================================================
     // Unit Tests
     // =============================================================
-    const norn_unit_test = b.addTest(.{
-        .name = "Norn Unit Test",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("norn/norn.zig"),
-            .target = userland_target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-        .use_llvm = true,
-    });
-    norn_unit_test.addAssemblyFile(b.path("norn/tests/mock.S"));
-    norn_unit_test.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
-    norn_unit_test.root_module.addImport("norn", norn_unit_test.root_module);
-    norn_unit_test.root_module.addImport("surtr", surtr_module);
-    norn_unit_test.root_module.addOptions("option", options);
-    const run_norn_unit_tests = b.addRunArtifact(norn_unit_test);
 
-    const surtr_unit_test = b.addTest(.{
-        .name = "Surtr Unit Test",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("surtr/surtr.zig"),
-            .target = userland_target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-    });
-    const run_surtr_unit_tests = b.addRunArtifact(surtr_unit_test);
+    {
+        const norn_unit_test = b.addTest(.{
+            .name = "Norn Unit Test",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("norn/norn.zig"),
+                .target = userland_target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+            .use_llvm = true,
+        });
+        norn_unit_test.addAssemblyFile(b.path("norn/tests/mock.S"));
+        norn_unit_test.addAssemblyFile(b.path("norn/arch/x86/mp.S"));
+        norn_unit_test.root_module.addImport("norn", norn_unit_test.root_module);
+        norn_unit_test.root_module.addImport("surtr", surtr_module);
+        norn_unit_test.root_module.addOptions("option", options);
+        const run_norn_unit_tests = b.addRunArtifact(norn_unit_test);
 
-    const unit_test_step = b.step("test", "Run unit tests");
-    unit_test_step.dependOn(&run_norn_unit_tests.step);
-    unit_test_step.dependOn(&run_surtr_unit_tests.step);
+        const surtr_unit_test = b.addTest(.{
+            .name = "Surtr Unit Test",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("surtr/surtr.zig"),
+                .target = userland_target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+        });
+        const run_surtr_unit_tests = b.addRunArtifact(surtr_unit_test);
+
+        const unit_test_step = b.step("test", "Run unit tests");
+        unit_test_step.dependOn(&run_norn_unit_tests.step);
+        unit_test_step.dependOn(&run_surtr_unit_tests.step);
+    }
 }
