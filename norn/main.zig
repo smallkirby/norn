@@ -267,9 +267,8 @@ fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !voi
 
     // Idle task.
     while (true) {
-        norn.arch.enableIrq();
-        norn.arch.halt();
-        norn.sched.schedule();
+        norn.rtt.expect(!arch.isIrqEnabled());
+        norn.sched.schedule(); // TODO: should HLT
     }
 }
 
