@@ -85,7 +85,7 @@ pub fn build(b: *std.Build) !void {
         bool,
         "debug_exit",
         "Add isa-debug-exit device.",
-    ) orelse false;
+    ) orelse is_runtime_test;
     const debug_syscall = b.option(
         bool,
         "debug_syscall",
