@@ -88,6 +88,10 @@ function qemu_start()
     echo $! > "$log_file.pid"
     wait
   ) &
+
+  while [ ! -f "$log_file.pid" ]; do
+    sleep 0.1
+  done
   QEMU_PID=$(cat "$log_file.pid")
   _qemu_start_time=$(date +%s)
 
