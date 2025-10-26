@@ -101,6 +101,11 @@ pub fn build(b: *std.Build) !void {
         "graphics",
         "Enable QEMU graphics.",
     ) orelse false;
+    const sched_freq = b.option(
+        u64,
+        "sched_freq",
+        "Scheduler timer frequency in Hz.",
+    ) orelse if (no_kvm) @as(u64, 100) else @as(u64, 250);
 
     const path_bootparams = b.option(
         []const u8,
@@ -121,6 +126,7 @@ pub fn build(b: *std.Build) !void {
     options.addOption([]const u8, "version", norn_version);
     options.addOption(bool, "debug_syscall", debug_syscall);
     options.addOption(u32, "rtt_hid_wait", rtt_hid_wait);
+    options.addOption(u64, "sched_freq", sched_freq);
 
     // =============================================================
     // Modules
@@ -354,6 +360,7 @@ pub fn build(b: *std.Build) !void {
             "-serial",
             "mon:stdio",
             "-no-reboot",
+            "-no-shutdown",
             "-smp",
             "3",
             "-s",
@@ -370,7 +377,7 @@ pub fn build(b: *std.Build) !void {
                 "-cpu",
                 "qemu64," ++ qemu_cpu_feats,
                 "-d",
-                "int",
+                "int,cpu_reset",
             });
         } else if (no_kvm) {
             try qemu_args.appendSlice(b.allocator, &.{

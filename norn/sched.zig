@@ -69,7 +69,6 @@ pub fn unlock() void {
 /// Schedule the next task.
 pub fn schedule() void {
     _ = arch.disableIrq();
-    arch.getLocalApic().eoi();
 
     if (!pcpu.get(&unlocked)) {
         @branchHint(.unlikely);

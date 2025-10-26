@@ -4,7 +4,7 @@ pub const TimerError = error{
 } || arch.ArchError || norn.acpi.AcpiError;
 
 /// Frequency of the timer interrupt in Hz.
-const freq_hz = 250;
+const freq_hz = @import("option").sched_freq;
 
 /// Number of jiffies since boot.
 var jiffies: u64 = 0;
@@ -74,9 +74,10 @@ fn calibrateTsc() TimerError!u64 {
 /// Timer interrupt handler.
 fn timer(_: *norn.interrupt.Context) void {
     jiffies += 1;
-    arch.getLocalApic().eoi();
 
     sched.schedule();
+
+    arch.getLocalApic().eoi();
 }
 
 // =============================================================
