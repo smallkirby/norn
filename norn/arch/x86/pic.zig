@@ -24,7 +24,7 @@ const secondary_data_port: u16 = secondary_command_port + 1;
 /// Offset to remap the interrupt vectors.
 /// We don't want any interrupts from the old PIC,
 /// so we remap them to unused vector space to avoid conflicts in case spurious interrupts occur.
-const remap_offset: u8 = @intFromEnum(VectorTable.spurious);
+const remap_offset: u8 = @intFromEnum(Vector.spurious);
 
 /// Line numbers for the PIC.
 pub const IrqLine = enum(u8) {
@@ -217,6 +217,6 @@ inline fn setImr(imr: u8, port: u16) void {
 
 const std = @import("std");
 
-const VectorTable = @import("norn").interrupt.VectorTable;
+const Vector = @import("norn").interrupt.Vector;
 
 const am = @import("asm.zig");

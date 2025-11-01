@@ -1,7 +1,8 @@
 pub const TimerError = error{
     /// Required feature is not supported.
     NotSupported,
-} || arch.ArchError || norn.acpi.AcpiError;
+} ||
+    arch.ArchError || norn.acpi.AcpiError || norn.interrupt.IntrError;
 
 /// Frequency of the timer interrupt in Hz.
 const freq_hz = @import("option").sched_freq;
@@ -15,10 +16,7 @@ var tsc_freq_khz: u64 = undefined;
 /// Start the periodic timer service.
 pub fn init() TimerError!void {
     // Set up timer interrupt handler.
-    try arch.setInterruptHandler(
-        @intFromEnum(norn.interrupt.VectorTable.timer),
-        timer,
-    );
+    try norn.interrupt.setHandler(.timer, timer);
 
     // Get the TSC frequency.
     tsc_freq_khz = try calibrateTsc();
@@ -34,7 +32,7 @@ pub fn init() TimerError!void {
 
     const interval_ns = 1000 * 1000 * 1000 / freq_hz;
     try lapic_timer.startPeriodic(
-        @intFromEnum(norn.interrupt.VectorTable.timer),
+        @intFromEnum(norn.interrupt.Vector.timer),
         interval_ns,
         lapic_freq,
     );

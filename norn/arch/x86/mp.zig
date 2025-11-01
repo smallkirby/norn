@@ -315,5 +315,5 @@ const am = @import("asm.zig");
 const apic = @import("apic.zig");
 const arch = @import("arch.zig");
 const gdt = @import("gdt.zig");
-const intr = @import("intr.zig");
+const intr = @import("interrupt.zig");
 const pg = @import("page.zig");

@@ -26,15 +26,12 @@ pub fn init(pci_device: *pci.Device, allocator: Allocator) UsbError!void {
     norn.rtt.expect(arch.isIrqEnabled());
 
     // Register interrupt handler.
-    try arch.setInterruptHandler(
-        @intFromEnum(VectorTable.usb),
-        interruptHandler,
-    );
+    try norn.interrupt.setHandler(.usb, interruptHandler);
 
     // Setup MSI.
     const lapic = arch.getLocalApic();
     const lapic_id = lapic.id();
-    try pci_device.initMsi(lapic_id, @intFromEnum(VectorTable.usb));
+    try pci_device.initMsi(lapic_id, @intFromEnum(Vector.usb));
     log.debug("Initialized MSI for core#{d}.", .{lapic_id});
 
     // Setup the controller.
@@ -70,11 +67,11 @@ fn interruptHandler(_: *norn.interrupt.Context) void {
 const std = @import("std");
 const log = std.log.scoped(.usb);
 const Allocator = std.mem.Allocator;
+const Vector = norn.interrupt.Vector;
 
 const norn = @import("norn");
 const arch = norn.arch;
 const mem = norn.mem;
 const pci = norn.pci;
-const VectorTable = norn.interrupt.VectorTable;
 
 const Xhc = @import("usb/Xhc.zig");

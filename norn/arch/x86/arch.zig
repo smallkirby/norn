@@ -7,10 +7,13 @@ pub const Context = regs.CpuContext;
 pub const LocalApic = apic.LocalApic;
 
 // Architecture-specific error type.
-pub const ArchError = apic.ApicError || intr.IntrError || pg.PageError || syscall.Error;
+pub const ArchError = apic.ApicError || pg.PageError || syscall.Error;
 
 /// Saved registers for system call handlers.
 pub const SyscallContext = regs.CpuContext;
+
+/// Number of interrupts available.
+pub const max_num_interrupts = intr.max_num_gates;
 
 /// Initialize the architecture-specific components.
 pub fn init() ArchError!void {
@@ -295,11 +298,6 @@ pub fn setFs(base: u64) void {
     );
 }
 
-/// Set the interrupt handler.
-pub fn setInterruptHandler(vector: u8, handler: interrupt.Handler) error{AlreadyRegistered}!void {
-    return intr.setHandler(vector, handler);
-}
-
 /// Set the per-CPU base address.
 pub fn setPerCpuBase(base: Virt) void {
     // Check if fsgsbase is supported
@@ -415,7 +413,7 @@ const am = @import("asm.zig");
 const apic = @import("apic.zig");
 const cpuid = @import("cpuid.zig");
 const gdt = @import("gdt.zig");
-const intr = @import("intr.zig");
+const intr = @import("interrupt.zig");
 const isr = @import("isr.zig");
 const pg = @import("page.zig");
 const regs = @import("registers.zig");

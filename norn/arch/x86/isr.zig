@@ -160,6 +160,6 @@ export fn isrCommon() callconv(.naked) void {
 const std = @import("std");
 const log = std.log.scoped(.isr);
 
-const intr = @import("intr.zig");
+const intr = @import("interrupt.zig");
 const regs = @import("registers.zig");
 const CpuContext = regs.CpuContext;

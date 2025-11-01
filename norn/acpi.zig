@@ -532,6 +532,8 @@ const Gas = extern struct {
 };
 
 /// System information that can be obtained from ACPI.
+///
+/// TODO: This struct is arch-specific.
 const SystemInfo = struct {
     /// Number of CPUS in the system.
     num_cpus: usize,

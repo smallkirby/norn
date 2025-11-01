@@ -242,7 +242,7 @@ pub const IoApic = struct {
 
     /// Set a redirection entry so that the vector `src` is redirected as vector `dest`
     /// into the local APIC with ID `lapic`.
-    pub fn setRedirection(self: Self, src: pic.IrqLine, dest: VectorTable, lapic: u8) void {
+    pub fn setRedirection(self: Self, src: pic.IrqLine, dest: Vector, lapic: u8) void {
         const entry = RedirectionTableEntry{
             .vector = @intFromEnum(dest),
             .dest = lapic,
@@ -386,7 +386,7 @@ pub const Timer = struct {
 
         // Start timer
         const lvt = Lvt{
-            .vector = @intFromEnum(VectorTable.spurious),
+            .vector = @intFromEnum(Vector.spurious),
             .mask = false,
             .mode = .oneshot,
         };
@@ -516,7 +516,7 @@ pub fn init() ApicError!void {
     // Enable the local APIC.
     const lapic = LocalApic.new(apic_addr.getAddress());
     var svr = lapic.read(LocalApic.Svr, .svr);
-    svr.vector = comptime @intFromEnum(VectorTable.spurious);
+    svr.vector = comptime @intFromEnum(Vector.spurious);
     svr.apic_enabled = true;
     lapic.write(LocalApic.Svr, .svr, svr);
 }
@@ -532,7 +532,7 @@ const acpi = norn.acpi;
 const mem = norn.mem;
 const Partialable = norn.typing.Partialable;
 const Phys = mem.Phys;
-const VectorTable = norn.interrupt.VectorTable;
+const Vector = norn.interrupt.Vector;
 
 const am = @import("asm.zig");
 const arch = @import("arch.zig");

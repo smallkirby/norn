@@ -126,16 +126,16 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     // Set spurious interrupt handler.
     {
         log.info("Initializing APIC.", .{});
-        try arch.setInterruptHandler(
-            @intFromEnum(norn.interrupt.VectorTable.spurious),
+        try norn.interrupt.setHandler(
+            .spurious,
             spriousInterruptHandler,
         );
         try arch.initApic();
     }
 
     // Set serial interrupt handler.
-    try arch.setInterruptHandler(
-        @intFromEnum(norn.interrupt.VectorTable.serial),
+    try norn.interrupt.setHandler(
+        .serial,
         norn.Serial.interruptHandler,
     );
 
