@@ -1,5 +1,6 @@
 /// CPUID Leaf.
-/// SDM Vol2A Chapter 3.3 Table 3-8.
+///
+/// cf. SDM Vol2A Chapter 3.3 Table 3-8.
 pub const Leaf = enum(u32) {
     /// Maximum input value for basic CPUID.
     maximum_input = 0x0,
@@ -14,9 +15,10 @@ pub const Leaf = enum(u32) {
     /// Output depends on the ECX input value.
     ext_enumeration = 0xD,
     /// Maximum input value for extended function CPUID information.
-    ext_func = 0x80000000,
+    ext_func = 0x8000_0000,
     /// EAX: Extended processor signature and feature bits.
-    ext_proc_signature = 0x80000001,
+    ext_proc_signature = 0x8000_0001,
+
     /// Unimplemented
     _,
 
