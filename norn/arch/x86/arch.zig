@@ -214,14 +214,16 @@ pub fn write64(addr: IoAddr, value: u64) void {
         : .{ .memory = true });
 }
 
+/// Arch-specific global startup phase 1.
+///
 /// Initialize boot-time GDT.
-pub fn initEarlyGdt() void {
-    return gdt.init();
+pub fn startup1() void {
+    gdt.globalInit();
 }
 
-/// Setup GDT for the current CPU.
-pub fn initGdtThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
-    return gdt.setupThisCpu(allocator);
+/// Arch-specific initialization for each CPU.
+pub fn loclalInit(allocator: PageAllocator) PageAllocator.Error!void {
+    try gdt.localInit(allocator);
 }
 
 /// Initialize interrupt and exception handling.

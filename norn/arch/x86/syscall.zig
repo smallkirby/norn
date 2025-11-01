@@ -16,12 +16,12 @@ pub fn init() Error!void {
     const lstar = regs.MsrLstar{ .rip = @intFromPtr(&syscallEntry) };
     am.wrmsr(.lstar, lstar);
     const star = regs.MsrStar{
-        .syscall_cs_ss = @bitCast(gdt.SegmentSelector{
-            .index = gdt.kernel_cs_index,
+        .syscall_cs_ss = @bitCast(gdt.SegSel{
+            .index = .kernel_cs,
             .rpl = 0, // RPL is ignored by HW.
         }),
-        .sysret_cs_ss = @bitCast(gdt.SegmentSelector{
-            .index = gdt.user_cs32_index,
+        .sysret_cs_ss = @bitCast(gdt.SegSel{
+            .index = .user_cs32,
             .rpl = 3,
         }),
     };
@@ -41,9 +41,9 @@ export fn dispatchSyscall(nr: u64, ctx: *CpuContext) callconv(.c) i64 {
         \\mov %[kernel_ds], %dx
         \\mov %%dx, %%ds
         :
-        : [kernel_ds] "n" (@as(u16, @bitCast(gdt.SegmentSelector{
+        : [kernel_ds] "n" (@as(u16, @bitCast(gdt.SegSel{
             .rpl = 0,
-            .index = gdt.kernel_ds_index,
+            .index = .kernel_ds,
           }))),
     );
 
@@ -62,9 +62,9 @@ export fn dispatchSyscall(nr: u64, ctx: *CpuContext) callconv(.c) i64 {
         \\mov %[user_ds], %dx
         \\mov %%dx, %%ds
         :
-        : [user_ds] "n" (@as(u16, @bitCast(gdt.SegmentSelector{
+        : [user_ds] "n" (@as(u16, @bitCast(gdt.SegSel{
             .rpl = 3,
-            .index = gdt.user_ds_index,
+            .index = .user_ds,
           }))),
     );
 
@@ -218,12 +218,12 @@ export fn syscallEntry() callconv(.naked) void {
             \\swapgs
             \\sysretq
         , .{
-            .user_stack_offset = @offsetOf(gdt.TaskStateSegment, "rsp1"),
-            .kernel_stack_offset = @offsetOf(gdt.TaskStateSegment, "rsp0"),
+            .user_stack_offset = @offsetOf(gdt.Tss, "rsp1"),
+            .kernel_stack_offset = @offsetOf(gdt.Tss, "rsp0"),
         })
         :
-        : [ss] "i" (gdt.SegmentSelector{ .index = gdt.user_ds_index, .rpl = 3 }),
-          [cs] "i" (gdt.SegmentSelector{ .index = gdt.user_cs_index, .rpl = 3 }),
+        : [ss] "i" (gdt.SegSel{ .index = .user_ds, .rpl = 3 }),
+          [cs] "i" (gdt.SegSel{ .index = .user_cs, .rpl = 3 }),
     );
 }
 

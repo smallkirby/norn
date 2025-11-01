@@ -28,7 +28,7 @@ pub fn init() void {
     inline for (0..max_num_gates) |i| {
         const gate = GateDescriptor.new(
             @intFromPtr(&isr.generateIsr(i)),
-            gdt.kernel_cs_index << 3,
+            .kernel_cs,
             .interrupt_gate,
             0,
         );
@@ -282,13 +282,13 @@ pub const GateDescriptor = packed struct(u128) {
 
     pub fn new(
         offset: u64,
-        seg_selector: u16,
+        index: gdt.SegIndex,
         gate_type: Type,
         dpl: u2,
     ) GateDescriptor {
         return GateDescriptor{
             .offset_low = @truncate(offset),
-            .seg_selector = seg_selector,
+            .seg_selector = @intFromEnum(index) << 3,
             .gate_type = gate_type,
             .dpl = dpl,
             .offset_middle = @truncate(offset >> 16),
@@ -308,7 +308,9 @@ const IdtRegister = packed struct {
     base: *[max_num_gates]GateDescriptor,
 };
 
-// ====================================================
+// =============================================================
+// Tests
+// =============================================================
 
 const testing = std.testing;
 
@@ -320,7 +322,9 @@ test "IDT size" {
     try testing.expectEqual(4096, @sizeOf(@TypeOf(idt)));
 }
 
-// ====================================================
+// =============================================================
+// Imports
+// =============================================================
 
 const std = @import("std");
 const log = std.log.scoped(.intr);

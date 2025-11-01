@@ -308,4 +308,4 @@ const isr = @import("isr.zig");
 const regs = @import("registers.zig");
 const syscall = @import("syscall.zig");
 const CpuContext = regs.CpuContext;
-const TaskStateSegment = gdt.TaskStateSegment;
+const TaskStateSegment = gdt.Tss;

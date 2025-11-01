@@ -1,6 +1,4 @@
-// =============================================================
-// Main entry point of the Norn kernel.
-// =============================================================
+//! Main entry points of the Norn kernel.
 
 /// Override the standard options.
 pub const std_options = std.Options{
@@ -15,6 +13,7 @@ pub const panic = @import("panic.zig").panic_fn;
 extern const __early_stack_bottom: [*]const u8;
 
 /// Entry point from the bootloader.
+///
 /// BSP starts here with its early stack.
 export fn kernelEntry() callconv(.naked) noreturn {
     asm volatile (
@@ -26,6 +25,7 @@ export fn kernelEntry() callconv(.naked) noreturn {
 }
 
 /// Trampoline function to call the main kernel function.
+///
 /// This function is intended to convert the calling convention from .Win64 to Zig.
 export fn kernelTrampoline(boot_info: BootInfo) callconv(.winapi) noreturn {
     kernelMain(boot_info) catch |err| {
@@ -39,13 +39,15 @@ export fn kernelTrampoline(boot_info: BootInfo) callconv(.winapi) noreturn {
 /// Kernel main function in Zig calling convention.
 fn kernelMain(early_boot_info: BootInfo) !void {
     // Init kernel logger.
-    klog.init();
-    log.info("Booting Norn kernel...", .{});
+    {
+        klog.init();
+        log.info("Booting Norn kernel...", .{});
+    }
 
     // Init runtime testing.
     if (norn.is_runtime_test) {
+        log.info("Initializing runtime testing.", .{});
         norn.rtt.init();
-        log.info("Initialized runtime testing.", .{});
     }
 
     // Validate the boot info.
@@ -54,18 +56,24 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         return error.InvalidBootInfo;
     };
 
-    // Initialize GDT.
-    arch.initEarlyGdt();
-    log.info("Initialized GDT.", .{});
+    // Arch-specific startup 1.
+    {
+        log.info("Arch-specific startup phase 1.", .{});
+        arch.startup1();
+    }
 
-    // Initialize IDT.
-    arch.initInterrupt();
-    arch.enableIrq();
-    log.info("Initialized IDT.", .{});
+    // Initialize interrupts.
+    {
+        log.info("Initializing interrupts.", .{});
+        arch.initInterrupt();
+        arch.enableIrq();
+    }
 
     // Initialize bootstrap allocator.
-    norn.mem.initBootstrapAllocator(early_boot_info.memory_map);
-    log.info("Initialized bootstrap allocator.", .{});
+    {
+        log.info("Initializing bootstrap allocator.", .{});
+        norn.mem.initBootstrapAllocator(early_boot_info.memory_map);
+    }
 
     // Copy boot_info into Norn's stack since it becomes inaccessible soon.
     // `var` is to avoid the copy from being delayed.
@@ -149,7 +157,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     norn.pcpu.initThisCpu(norn.arch.getLocalApic().id());
 
     // Do per-CPU initialization.
-    try arch.initGdtThisCpu(norn.mem.page_allocator);
+    try arch.loclalInit(norn.mem.page_allocator);
 
     // Boot APs.
     log.info("Booting APs...", .{});

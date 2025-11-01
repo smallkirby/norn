@@ -1,5 +1,15 @@
 //! This file provides a miscellaneous utilities.
 
+/// Check if the given value is aligned to the given alignment.
+pub fn isAligned(value: anytype, alignment: usize) bool {
+    const v = switch (@typeInfo(@TypeOf(value))) {
+        .comptime_int => @as(usize, value),
+        .pointer => @intFromPtr(value),
+        else => value,
+    };
+    return (v & (alignment - 1)) == 0;
+}
+
 /// Round up the value to the given alignment.
 ///
 /// If the type of `value` is a comptime integer, it's regarded as `usize`.
@@ -53,6 +63,17 @@ pub fn sentineledToSlice(data: [*:0]const u8) [:0]const u8 {
 // =======================================
 
 const testing = std.testing;
+
+test "isAligned" {
+    try testing.expect(isAligned(0, 4));
+    try testing.expect(!isAligned(1, 4));
+    try testing.expect(!isAligned(2, 4));
+    try testing.expect(!isAligned(3, 4));
+    try testing.expect(isAligned(4, 4));
+    try testing.expect(!isAligned(5, 4));
+    try testing.expect(isAligned(0x1000, 0x1000));
+    try testing.expect(!isAligned(0x1001, 0x1000));
+}
 
 test "roundup" {
     try testing.expectEqual(0, roundup(0, 4));

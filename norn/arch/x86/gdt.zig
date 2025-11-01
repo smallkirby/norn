@@ -1,147 +1,104 @@
-/// Maximum number of GDT entries.
-const max_num_gdt = 0x10;
-
-/// Descriptor table type.
-const DescriptorTable = [max_num_gdt]SegmentDescriptor;
-/// Interrupt stack table type.
-const Ist = [mem.size_4kib]u8;
-
-/// Boot-time GDT.
-var early_gdt: DescriptorTable = [_]SegmentDescriptor{
-    SegmentDescriptor.newNull(),
-} ** max_num_gdt;
-
-/// Boot-time TSS.
-///
-/// This provides only IST1.
-/// This does not provide RSPx.
-var early_tss: TaskStateSegment align(mem.size_4kib) = .{
-    // (Initialized at runtime.)
-};
-/// Boot-time interrupt stack.
-var early_istack: Ist align(mem.size_4kib) = [_]u8{0} ** @sizeOf(Ist);
-
 /// GDT is initialized and differentiated for this CPU.
-var gdt_initialized: bool linksection(pcpu.section) = false;
+var initialized: bool linksection(pcpu.section) = false;
 
-/// Index of the kernel 32-bit code segment.
-/// Not used in Norn.
-pub const kernel_cs32_index: u16 = 0x01;
-/// Index of the kernel code segment.
-pub const kernel_cs_index: u16 = 0x02;
-/// Index of the kernel data segment.
-pub const kernel_ds_index: u16 = 0x03;
-/// Index of the user 32-bit code segment.
-/// Not used in Norn.
-pub const user_cs32_index: u16 = 0x04;
-/// Index of the user data segment.
-pub const user_ds_index: u16 = 0x05;
-/// Index of the user code segment.
-pub const user_cs_index: u16 = 0x06;
-/// Index of the kernel TSS.
-/// Note that TSS descriptor occupies two GDT entries.
-pub const kernel_tss_index: u16 = 0x08;
-/// Last index of the GDT.
-pub const sentinel_gdt_index: u16 = 0x0A;
+/// Boot-time variables.
+const early = struct {
+    /// Boot-time GDT.
+    var gdt: Gdt align(aligns.gdt) = undefined;
 
-comptime {
-    if (sentinel_gdt_index >= max_num_gdt) {
-        @compileError("Too many GDT entries");
-    }
-    if (@sizeOf(DescriptorTable) > mem.size_4kib) {
-        @compileError("GDT is too large");
-    }
-}
+    /// Boot-time TSS.
+    ///
+    /// This provides only IST1.
+    /// This does not provide RSPx.
+    var tss: Tss align(aligns.tss) = undefined;
 
-const null_descriptor =
-    SegmentDescriptor.newNull();
-const kernel_ds = SegmentDescriptor.new(
-    0,
-    std.math.maxInt(u20),
-    .{ .app = .{
-        .wr = true,
-        .dc = false,
-        .code = false,
-    } },
-    .app,
-    0,
-    .kbyte,
-);
-const kernel_cs = SegmentDescriptor.new(
-    0,
-    std.math.maxInt(u20),
-    .{ .app = .{
-        .wr = false,
-        .dc = false,
-        .code = true,
-    } },
-    .app,
-    0,
-    .kbyte,
-);
-const user_ds = SegmentDescriptor.new(
-    0,
-    std.math.maxInt(u20),
-    .{ .app = .{
-        .wr = true,
-        .dc = false,
-        .code = false,
-    } },
-    .app,
-    3,
-    .kbyte,
-);
-const user_cs = SegmentDescriptor.new(
-    0,
-    std.math.maxInt(u20),
-    .{ .app = .{
-        .wr = false,
-        .dc = false,
-        .code = true,
-    } },
-    .app,
-    3,
-    .kbyte,
-);
+    /// Boot-time interrupt stack.
+    var istack: Istack align(aligns.ist) = [_]u8{0} ** @sizeOf(Istack);
+};
 
-/// Initialize boot-time GDT.
-pub fn init() void {
-    // Construct GDT entries.
-    early_gdt[0] = null_descriptor;
-    early_gdt[kernel_ds_index] = kernel_ds;
-    early_gdt[kernel_cs_index] = kernel_cs;
-    early_gdt[user_ds_index] = user_ds;
-    early_gdt[user_cs_index] = user_cs;
+/// Alignments required.
+const aligns = struct {
+    const gdt = mem.size_4kib;
+    const tss = mem.size_4kib;
+    const ist = mem.size_4kib;
+};
 
-    // Load GDTR.
-    const early_gdtr = GdtRegister{
-        .limit = @sizeOf(DescriptorTable) - 1,
-        // BUG: Zig 0.14.0: https://github.com/ziglang/zig/issues/23101
-        .base = @ptrFromInt(@intFromPtr(&early_gdt)),
+/// Size in bytes of interrupt stack.
+const istack_size = 2 * mem.size_4kib;
+/// Interrupt stack type.
+const Istack = [istack_size]u8;
+
+/// Segment descriptor index in GDT.
+///
+/// The ordering is enforced by hardware.
+pub const SegIndex = enum(u13) {
+    /// Null segment.
+    null = 0,
+    /// Kernel 32-bit code segment.
+    ///
+    /// Not used in Norn.
+    kernel_cs32 = 0x01,
+    /// Kernel code segment.
+    kernel_cs = 0x02,
+    /// Kernel data segment.
+    kernel_ds = 0x03,
+    /// User 32-bit code segment.
+    user_cs32 = 0x04,
+    /// User data segment.
+    user_ds = 0x05,
+    /// User code segment.
+    user_cs = 0x06,
+    /// Kernel TSS.
+    ///
+    /// TSS descriptor occupies two entries.
+    kernel_tss = 0x08,
+};
+
+/// Segment selector.
+pub const SegSel = packed struct(u16) {
+    /// Requested Privilege Level.
+    rpl: u2,
+    /// Table Indicator.
+    ti: TableIndicator = .gdt,
+    /// Index.
+    index: SegIndex,
+
+    const TableIndicator = enum(u1) {
+        gdt = 0,
+        ldt = 1,
     };
-    loadKernelGdt(early_gdtr);
+
+    pub fn from(val: anytype) SegSel {
+        return @bitCast(@as(u16, @truncate(val)));
+    }
+};
+
+/// Initialize boot-time GDT and TSS.
+pub fn globalInit() void {
+    // Load GDTR.
+    early.gdt.init();
+    early.gdt.load();
 
     // Load TR.
-    early_tss.ist1 = @intFromPtr(&early_istack) + @sizeOf(Ist);
-    const tss_desc = TssDescriptor.new(
-        @intFromPtr(&early_tss),
-        std.math.maxInt(u20),
-    );
-    @as(*TssDescriptor, @ptrCast(@alignCast(&early_gdt[kernel_tss_index]))).* = tss_desc;
-    loadKernelTss();
+    early.tss.init();
+    early.tss.setIst(1, @intFromPtr(&early.istack) + @sizeOf(Istack));
+    early.tss.load(&early.gdt);
 
     // Testing
-    testGdtEntries();
-    testEarlyTssDescriptor(@intFromPtr(&early_tss));
-    testEarlyTss();
+    tests.gdtEntries();
+    tests.earlyTssDesc(@intFromPtr(&early.tss));
+    tests.earlyTss();
 }
 
 /// Differentiate a GDT for this CPU.
-pub fn setupThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
+///
+/// Copies the majority of the boot-time GDT,
+/// Then, allocates and sets up a new TSS that has its own IST1-3 and RSP0.
+pub fn localInit(allocator: PageAllocator) PageAllocator.Error!void {
     const ie = norn.arch.disableIrq();
     defer if (ie) norn.arch.enableIrq();
 
-    if (pcpu.get(&gdt_initialized) and norn.is_runtime_test) {
+    if (pcpu.get(&initialized) and norn.is_runtime_test) {
         @panic("GDT is being initialized twice.");
     }
 
@@ -150,56 +107,42 @@ pub fn setupThisCpu(allocator: PageAllocator) PageAllocator.Error!void {
     errdefer allocator.freePages(page);
 
     // Construct GDT entries.
-    const ptr: [*]SegmentDescriptor = @ptrCast(@alignCast(page.ptr));
-    const gdt = ptr[0..max_num_gdt];
-    gdt[0] = null_descriptor;
-    gdt[kernel_ds_index] = kernel_ds;
-    gdt[kernel_cs_index] = kernel_cs;
-    gdt[user_ds_index] = user_ds;
-    gdt[user_cs_index] = user_cs;
+    const gdt = Gdt.from(page.ptr);
+    gdt.init();
 
     // Create TSS.
     const tss_page = try allocator.allocPages(1, .normal);
-    const tss: *TaskStateSegment = @ptrCast(tss_page.ptr);
-    tss.* = .{};
-    const tss_desc = TssDescriptor.new(
-        @intFromPtr(tss_page.ptr),
-        std.math.maxInt(u20),
-    );
-    @as(*TssDescriptor, @ptrCast(@alignCast(&gdt[kernel_tss_index]))).* = tss_desc;
+    errdefer allocator.freePages(tss_page);
+
+    const tss = Tss.from(tss_page.ptr);
+    tss.init();
 
     // Set RSP0
-    const rsp0 = try allocator.allocPages(1, .normal);
-    tss.rsp0 = @intFromPtr(rsp0.ptr) + @sizeOf(Ist);
+    const rps0_page_num = istack_size / mem.size_4kib;
+    const rsp0 = try allocator.allocPages(rps0_page_num, .normal);
+    errdefer allocator.freePages(rsp0);
+    tss.setRsp(0, @intFromPtr(rsp0.ptr) + @sizeOf(Istack));
 
     // Set IST1 ~ IST3.
     for (0..3) |i| {
-        const ist = try allocator.allocPages(1, .normal);
-        @memset(ist[0..@sizeOf(Ist)], 0);
-        switch (i) {
-            0 => tss.ist1 = @intFromPtr(ist.ptr) + @sizeOf(Ist),
-            1 => tss.ist2 = @intFromPtr(ist.ptr) + @sizeOf(Ist),
-            2 => tss.ist3 = @intFromPtr(ist.ptr) + @sizeOf(Ist),
-            else => unreachable,
-        }
+        const ist_page_num = istack_size / mem.size_4kib;
+        const ist = try allocator.allocPages(ist_page_num, .normal);
+        errdefer allocator.freePages(ist);
+        @memset(ist[0..@sizeOf(Istack)], 0);
+
+        tss.setIst(i + 1, @intFromPtr(ist.ptr) + @sizeOf(Istack));
     }
 
     // Load GDTR and segment selectors.
-    const gdtr = GdtRegister{
-        .limit = @sizeOf(DescriptorTable) - 1,
-        .base = @ptrCast(gdt.ptr),
-    };
-    loadKernelGdt(gdtr);
-
-    // Load TR.
-    loadKernelTss();
+    gdt.load();
+    tss.load(gdt);
 
     // Mark as initialized.
-    pcpu.set(&gdt_initialized, true);
+    pcpu.set(&initialized, true);
 }
 
 /// Load kernel segment selectors.
-fn loadKernelGdt(gdtr: GdtRegister) void {
+fn loadKernelGdt(gdtr: Gdtr) void {
     am.lgdt(@intFromPtr(&gdtr));
 
     // Changing the entries in the GDT, or setting GDTR
@@ -210,11 +153,12 @@ fn loadKernelGdt(gdtr: GdtRegister) void {
 }
 
 /// Get GDTR of the current CPU.
-fn getKernelGdt() GdtRegister {
+fn getKernelGdt() Gdtr {
     return @bitCast(am.sgdt());
 }
 
 /// Load the kernel data segment selector.
+///
 /// This function flushes the changes of DS in the GDT.
 fn loadKernelDs() void {
     asm volatile (
@@ -223,15 +167,16 @@ fn loadKernelDs() void {
         \\mov %%di, %%es
         \\mov %%di, %%ss
         :
-        : [kernel_ds] "n" (@as(u16, @bitCast(SegmentSelector{
+        : [kernel_ds] "n" (@as(u16, @bitCast(SegSel{
             .rpl = 0,
-            .index = kernel_ds_index,
+            .index = .kernel_ds,
           }))),
         : .{ .di = true });
 }
 
 /// Load the kernel code segment selector.
-/// This function flushes the changes of CS in the GDT.
+///
+/// This flushes the change of CS in the GDT.
 /// CS cannot be loaded directly by MOV, so we use far-return.
 fn loadKernelCs() void {
     asm volatile (
@@ -246,9 +191,9 @@ fn loadKernelCs() void {
         \\1:
         \\
         :
-        : [kernel_cs] "n" (@as(u16, @bitCast(SegmentSelector{
+        : [kernel_cs] "n" (@as(u16, @bitCast(SegSel{
             .rpl = 0,
-            .index = kernel_cs_index,
+            .index = .kernel_cs,
           }))),
         : .{ .rax = true });
 }
@@ -259,16 +204,17 @@ fn loadKernelTss() void {
         \\mov %[kernel_tss], %%di
         \\ltr %%di
         :
-        : [kernel_tss] "n" (@as(u16, @bitCast(SegmentSelector{
+        : [kernel_tss] "n" (@as(u16, @bitCast(SegSel{
             .rpl = 0,
-            .index = kernel_tss_index,
+            .index = .kernel_tss,
           }))),
         : .{ .di = true });
 }
 
 /// Segment Descriptor Entry.
-/// SDM Vol.3A 3.4.5
-pub const SegmentDescriptor = packed struct(u64) {
+///
+/// ref: SDM Vol.3A 3.4.5
+pub const SegDesc = packed struct(u64) {
     /// Lower 16 bits of the segment limit.
     limit_low: u16,
     /// Lower 24 bits of the base address.
@@ -288,6 +234,7 @@ pub const SegmentDescriptor = packed struct(u64) {
     /// Available for use by system software.
     avl: u1 = 0,
     /// 64-bit code segment.
+    ///
     /// If set to true, the code segment contains native 64-bit code.
     /// If set to false, the code segment contains code executed in compatibility mode.
     /// For data segments, this bit must be cleared to 0.
@@ -295,12 +242,16 @@ pub const SegmentDescriptor = packed struct(u64) {
     /// Size flag.
     db: u1,
     /// Granularity.
+    ///
     /// If set to .Byte, the segment limit is interpreted in byte units.
     /// Otherwise, the limit is interpreted in 4-KByte units.
     /// This field is ignored in 64-bit mode.
     granularity: Granularity,
     /// Upper 8 bits of the base address.
     base_high: u8,
+
+    /// Empty segment descriptor.
+    pub const empty: SegDesc = @bitCast(@as(u64, 0));
 
     /// Descriptor Type.
     pub const DescriptorType = enum(u1) {
@@ -350,7 +301,7 @@ pub const SegmentDescriptor = packed struct(u64) {
     };
 
     /// Create a null segment selector.
-    pub fn newNull() SegmentDescriptor {
+    pub fn newNull() SegDesc {
         return @bitCast(@as(u64, 0));
     }
 
@@ -358,22 +309,22 @@ pub const SegmentDescriptor = packed struct(u64) {
     pub fn new(
         base: u32,
         limit: u20,
-        typ: AccessType,
+        @"type": AccessType,
         desc_type: DescriptorType,
         dpl: u2,
         granularity: Granularity,
-    ) SegmentDescriptor {
-        return SegmentDescriptor{
+    ) SegDesc {
+        return SegDesc{
             .limit_low = @truncate(limit),
             .base_low = @truncate(base),
-            .type = typ,
+            .type = @"type",
             .desc_type = desc_type,
             .dpl = dpl,
             .present = true,
             .limit_high = @truncate(limit >> 16),
             .avl = 0,
-            .long = if (typ.app.code) true else false,
-            .db = if (typ.app.code) 0 else 1,
+            .long = if (@"type".app.code) true else false,
+            .db = if (@"type".app.code) 0 else 1,
             .granularity = granularity,
             .base_high = @truncate(base >> 24),
         };
@@ -383,19 +334,21 @@ pub const SegmentDescriptor = packed struct(u64) {
 /// TSS Descriptor in 64-bit mode.
 ///
 /// Note that the descriptor is 16 bytes long and occupies two GDT entries.
+///
 /// cf. SDM Vol.3A Figure 8-4.
-const TssDescriptor = packed struct(u128) {
+const TssDesc = packed struct(u128) {
     /// Lower 16 bits of the segment limit.
     limit_low: u16,
     /// Lower 24 bits of the base address.
     base_low: u24,
 
     /// Type: TSS.
-    type: u4 = @intFromEnum(SegmentDescriptor.AccessType.System.tss_available),
+    type: u4 = @intFromEnum(SegDesc.AccessType.System.tss_available),
     /// Descriptor type: System.
-    desc_type: SegmentDescriptor.DescriptorType = .system,
+    desc_type: SegDesc.DescriptorType = .system,
     /// Descriptor Privilege Level.
     dpl: u2 = 0,
+    /// Present.
     present: bool = true,
 
     /// Upper 4 bits of the segment limit.
@@ -407,46 +360,167 @@ const TssDescriptor = packed struct(u128) {
     /// Size flag.
     db: u1 = 0,
     /// Granularity.
-    granularity: SegmentDescriptor.Granularity = .kbyte,
+    granularity: SegDesc.Granularity = .kbyte,
     /// Upper 40 bits of the base address.
     base_high: u40,
     /// Reserved.
     _reserved: u32 = 0,
 
     /// Create a new 64-bit TSS descriptor.
-    pub fn new(base: Virt, limit: u20) TssDescriptor {
-        return TssDescriptor{
-            .limit_low = @truncate(limit),
-            .base_low = @truncate(base),
-            .limit_high = @truncate(limit >> 16),
-            .base_high = @truncate(base >> 24),
+    pub fn new(tss: Virt) TssDesc {
+        return TssDesc{
+            .limit_low = std.math.maxInt(u16),
+            .base_low = @truncate(tss),
+            .limit_high = std.math.maxInt(u4),
+            .base_high = @truncate(tss >> 24),
         };
     }
 };
 
-/// Segment selector.
-pub const SegmentSelector = packed struct(u16) {
-    /// Requested Privilege Level.
-    rpl: u2,
-    /// Table Indicator.
-    ti: TableIndicator = .gdt,
-    /// Index.
-    index: u13,
+/// Global descriptor table.
+const Gdt = extern struct {
+    const Self = @This();
 
-    const TableIndicator = enum(u1) {
-        gdt = 0,
-        ldt = 1,
-    };
+    /// Descriptor table type.
+    const DescriptorTable = [num_gdt]SegDesc;
 
-    pub fn from(val: anytype) SegmentSelector {
-        return @bitCast(@as(u16, @truncate(val)));
+    /// Maximum number of GDT entries.
+    const num_gdt = 0x10;
+
+    /// Segment descriptor table.
+    _data: DescriptorTable,
+
+    /// Cast a given pointer to a GDT.
+    pub fn from(ptr: anytype) *Gdt {
+        const self: *Self = @ptrCast(@alignCast(ptr));
+
+        rtt.expect(util.isAligned(self, aligns.gdt));
+
+        return self;
+    }
+
+    /// Initialize this GDT with default values.
+    pub fn init(self: *Self) void {
+        rtt.expect(util.isAligned(self, aligns.gdt));
+
+        // Set empty descriptors.
+        @memset(self._data[0..], .empty);
+
+        // Set pre-defined descriptors.
+        self.set(.null, null_descriptor);
+        self.set(.kernel_ds, kernel_ds);
+        self.set(.kernel_cs, kernel_cs);
+        self.set(.user_ds, user_ds);
+        self.set(.user_cs, user_cs);
+    }
+
+    /// Set a segment descriptor at the given index.
+    pub fn set(self: *Self, index: SegIndex, desc: SegDesc) void {
+        self._data[@intFromEnum(index)] = desc;
+    }
+
+    /// Get a copy of segment descriptor at the given index.
+    pub fn get(self: *Self, index: SegIndex) SegDesc {
+        return self._data[@intFromEnum(index)];
+    }
+
+    /// Get a copy of TSS descriptor at the given index.
+    pub fn getTss(self: *Self, index: SegIndex) TssDesc {
+        const desc: *TssDesc = @ptrCast(@alignCast(&self._data[@intFromEnum(index)]));
+        return desc.*;
+    }
+
+    /// Set a TSS descriptor at the given index.
+    pub fn setTss(self: *Self, index: SegIndex, tss: TssDesc) void {
+        const to: *TssDesc = @ptrCast(@alignCast(&self._data[@intFromEnum(index)]));
+        to.* = tss;
+    }
+
+    /// Load this GDT into GDTR.
+    pub fn load(self: *Self) void {
+        loadKernelGdt(.{
+            .limit = @sizeOf(DescriptorTable) - 1,
+            .base = &self._data,
+        });
+    }
+
+    /// Null segment descriptor.
+    const null_descriptor = SegDesc.newNull();
+
+    /// Kernel data segment descriptor.
+    const kernel_ds = SegDesc.new(
+        0,
+        std.math.maxInt(u20),
+        .{ .app = .{
+            .wr = true,
+            .dc = false,
+            .code = false,
+        } },
+        .app,
+        0,
+        .kbyte,
+    );
+
+    /// Kernel code segment descriptor.
+    const kernel_cs = SegDesc.new(
+        0,
+        std.math.maxInt(u20),
+        .{ .app = .{
+            .wr = false,
+            .dc = false,
+            .code = true,
+        } },
+        .app,
+        0,
+        .kbyte,
+    );
+
+    /// User data segment descriptor.
+    const user_ds = SegDesc.new(
+        0,
+        std.math.maxInt(u20),
+        .{ .app = .{
+            .wr = true,
+            .dc = false,
+            .code = false,
+        } },
+        .app,
+        3,
+        .kbyte,
+    );
+
+    /// User code segment descriptor.
+    const user_cs = SegDesc.new(
+        0,
+        std.math.maxInt(u20),
+        .{ .app = .{
+            .wr = false,
+            .dc = false,
+            .code = true,
+        } },
+        .app,
+        3,
+        .kbyte,
+    );
+
+    comptime {
+        norn.comptimeAssert(
+            @sizeOf(DescriptorTable) <= mem.size_4kib,
+            "GDT is too large: {d} bytes",
+            .{@sizeOf(DescriptorTable)},
+        );
+        norn.comptimeAssert(
+            @sizeOf(DescriptorTable) == @sizeOf(Gdt),
+            "Invalid size of GDT: {d} bytes",
+            .{@sizeOf(Gdt)},
+        );
     }
 };
 
 /// GDTR.
-const GdtRegister = packed struct(u80) {
+const Gdtr = packed struct(u80) {
     limit: u16,
-    base: *DescriptorTable,
+    base: *Gdt.DescriptorTable,
 };
 
 /// Task State Segment.
@@ -454,17 +528,22 @@ const GdtRegister = packed struct(u80) {
 /// This structure should be exported (e.g. Used by syscall entry point).
 ///
 /// cf. SDM Vol.3A Figure 8-11.
-pub const TaskStateSegment = extern struct {
+pub const Tss = extern struct {
+    const Self = @This();
+
     /// Reserved.
     _reserved1: u32 align(1) = 0,
     /// RSP0.
-    /// In Norn, this field is used to store kernel stack pointer for privilege level change from ring-3 to ring-0.
+    ///
+    /// This field is used to store kernel stack pointer for privilege level change from ring-3 to ring-0.
     rsp0: u64 align(1) = 0,
     /// RSP1.
-    /// In Norn, this field is used to store user stack pointer.
+    ///
+    /// This field is used to store user stack pointer.
     rsp1: u64 align(1) = 0,
     /// RSP2.
-    /// In Norn, this field is not used.
+    ///
+    /// This field is not used.
     rsp2: u64 align(1) = 0,
     /// Reserved.
     _reserved2: u64 align(1) = 0,
@@ -491,10 +570,64 @@ pub const TaskStateSegment = extern struct {
 
     comptime {
         norn.comptimeAssert(
-            @sizeOf(TaskStateSegment) == 104,
+            @sizeOf(Tss) == 104,
             "Invalid size of TaskStateSegment: {d}",
-            .{@sizeOf(TaskStateSegment)},
+            .{@sizeOf(Tss)},
         );
+    }
+
+    /// Cast a given pointer to a TSS.
+    pub fn from(ptr: anytype) *Tss {
+        const self: *Self = @ptrCast(@alignCast(ptr));
+
+        rtt.expect(util.isAligned(self, aligns.tss));
+
+        return self;
+    }
+
+    /// Initialize this TSS with default values.
+    pub fn init(self: *Self) void {
+        rtt.expect(util.isAligned(self, aligns.tss));
+
+        self.* = .{};
+    }
+
+    /// Set IST<n> to the given address.
+    pub fn setIst(self: *Self, index: usize, addr: Virt) void {
+        rtt.expect(0 < index and index <= 7);
+        rtt.expect(util.isAligned(addr, 0x10));
+
+        switch (index) {
+            1 => self.ist1 = addr,
+            2 => self.ist2 = addr,
+            3 => self.ist3 = addr,
+            4 => self.ist4 = addr,
+            5 => self.ist5 = addr,
+            6 => self.ist6 = addr,
+            7 => self.ist7 = addr,
+            else => unreachable,
+        }
+    }
+
+    /// Set RSP<n> to the given address.
+    pub fn setRsp(self: *Self, index: usize, addr: Virt) void {
+        rtt.expect(0 <= index and index <= 2);
+        rtt.expect(util.isAligned(addr, 0x10));
+
+        switch (index) {
+            0 => self.rsp0 = addr,
+            1 => self.rsp1 = addr,
+            2 => self.rsp2 = addr,
+            else => unreachable,
+        }
+    }
+
+    /// Set this TSS into GDT and load TR.
+    pub fn load(self: *const Self, gdt: *Gdt) void {
+        const tss_desc = TssDesc.new(@intFromPtr(self));
+        gdt.setTss(.kernel_tss, tss_desc);
+
+        loadKernelTss();
     }
 };
 
@@ -502,91 +635,88 @@ pub const TaskStateSegment = extern struct {
 // Tests
 // =============================================================
 
-const rtt = norn.rtt;
+const tests = struct {
+    fn gdtEntries() void {
+        if (norn.is_runtime_test) {
+            const bits = norn.bits;
+            const accessed_bit = 40;
 
-fn testGdtEntries() void {
-    if (norn.is_runtime_test) {
-        const bits = norn.bits;
-        const accessed_bit = 40;
+            // GDT entries for kernel.
+            const expected_kernel_ds = bits.unset(u64, 0x00_CF_93_000000_FFFF, accessed_bit);
+            const expected_kernel_cs = bits.unset(u64, 0x00_AF_99_000000_FFFF, accessed_bit);
+            rtt.expectEqual(
+                expected_kernel_ds,
+                bits.unset(u64, @bitCast(early.gdt.get(.kernel_ds)), accessed_bit),
+            );
+            rtt.expectEqual(
+                expected_kernel_cs,
+                bits.unset(u64, @bitCast(early.gdt.get(.kernel_cs)), accessed_bit),
+            );
 
-        // GDT entries for kernel.
-        const expected_kernel_ds = bits.unset(u64, 0x00_CF_93_000000_FFFF, accessed_bit);
-        const expected_kernel_cs = bits.unset(u64, 0x00_AF_99_000000_FFFF, accessed_bit);
-        rtt.expectEqual(
-            expected_kernel_ds,
-            bits.unset(u64, @bitCast(early_gdt[kernel_ds_index]), accessed_bit),
-        );
-        rtt.expectEqual(
-            expected_kernel_cs,
-            bits.unset(u64, @bitCast(early_gdt[kernel_cs_index]), accessed_bit),
-        );
-
-        // GDT entries for user.
-        const expected_user_ds = bits.unset(u64, 0x00_CF_F3_000000_FFFF, accessed_bit);
-        const expected_user_cs = bits.unset(u64, 0x00_AF_F9_000000_FFFF, accessed_bit);
-        rtt.expectEqual(
-            expected_user_ds,
-            bits.unset(u64, @bitCast(early_gdt[user_ds_index]), accessed_bit),
-        );
-        rtt.expectEqual(
-            expected_user_cs,
-            bits.unset(u64, @bitCast(early_gdt[user_cs_index]), accessed_bit),
-        );
+            // GDT entries for user.
+            const expected_user_ds = bits.unset(u64, 0x00_CF_F3_000000_FFFF, accessed_bit);
+            const expected_user_cs = bits.unset(u64, 0x00_AF_F9_000000_FFFF, accessed_bit);
+            rtt.expectEqual(
+                expected_user_ds,
+                bits.unset(u64, @bitCast(early.gdt.get(.user_ds)), accessed_bit),
+            );
+            rtt.expectEqual(
+                expected_user_cs,
+                bits.unset(u64, @bitCast(early.gdt.get(.user_cs)), accessed_bit),
+            );
+        }
     }
-}
 
-fn testEarlyTssDescriptor(base: Virt) void {
-    if (norn.is_runtime_test) {
-        const bits = norn.bits;
+    fn earlyTssDesc(base: Virt) void {
+        if (norn.is_runtime_test) {
+            const bits = norn.bits;
 
-        const base_low: u24 = @truncate(base >> 0);
-        const base_med: u8 = @truncate(base >> 24);
-        const base_high: u32 = @truncate(base >> 32);
+            const base_low: u24 = @truncate(base >> 0);
+            const base_med: u8 = @truncate(base >> 24);
+            const base_high: u32 = @truncate(base >> 32);
 
-        const expected_tss_low = bits.concatMany(u64, .{
-            base_med, // base med
-            @as(u16, 0xAF_8B), // other fields
-            base_low, // base low
-            @as(u16, 0xFFFF), // limit
-        });
-        const expected_tss_high = bits.concatMany(u64, .{
-            @as(u32, 0), // reserved
-            base_high, // base high
-        });
+            const expected_tss_low = bits.concatMany(u64, .{
+                base_med, // base med
+                @as(u16, 0xAF_8B), // other fields
+                base_low, // base low
+                @as(u16, 0xFFFF), // limit
+            });
+            const expected_tss_high = bits.concatMany(u64, .{
+                @as(u32, 0), // reserved
+                base_high, // base high
+            });
 
-        rtt.expectEqual(
-            expected_tss_low,
-            @as(u64, @bitCast(early_gdt[kernel_tss_index + 0])),
-        );
-        rtt.expectEqual(
-            expected_tss_high,
-            @as(u64, @bitCast(early_gdt[kernel_tss_index + 1])),
-        );
+            const tss = early.gdt.getTss(.kernel_tss);
+            const tss_low: u64 = @truncate(@as(u128, @bitCast(tss)));
+            const tss_high: u64 = @truncate(@as(u128, @bitCast(tss)) >> 64);
+            rtt.expectEqual(expected_tss_low, tss_low);
+            rtt.expectEqual(expected_tss_high, tss_high);
+        }
     }
-}
 
-fn testEarlyTss() void {
-    if (norn.is_runtime_test) {
-        // Check if IST1 is set correctly.
-        const tss_ptr: *u64 = @ptrCast(&early_tss);
-        const tss_ist1_low_ptr: *u32 = @ptrFromInt(@intFromPtr(tss_ptr) + 0x24);
-        const tss_ist1_high_ptr: *u32 = @ptrFromInt(@intFromPtr(tss_ptr) + 0x28);
-        const tss_ist1 = norn.bits.concat(u64, tss_ist1_high_ptr.*, tss_ist1_low_ptr.*);
-        rtt.expectEqual(@intFromPtr(&early_istack) + @sizeOf(Ist), tss_ist1);
+    fn earlyTss() void {
+        if (norn.is_runtime_test) {
+            // Check if IST1 is set correctly.
+            const tss_ptr: *u64 = @ptrCast(&early.tss);
+            const tss_ist1_low_ptr: *u32 = @ptrFromInt(@intFromPtr(tss_ptr) + 0x24);
+            const tss_ist1_high_ptr: *u32 = @ptrFromInt(@intFromPtr(tss_ptr) + 0x28);
+            const tss_ist1 = norn.bits.concat(u64, tss_ist1_high_ptr.*, tss_ist1_low_ptr.*);
+            rtt.expectEqual(@intFromPtr(&early.istack) + @sizeOf(Istack), tss_ist1);
 
-        // Check if TR is set correctly.
-        const tr: SegmentSelector = @bitCast(asm volatile (
-            \\str %[tr]
-            : [tr] "={ax}" (-> u16),
-            :
-            : .{ .rax = true }));
-        rtt.expectEqual(SegmentSelector{
-            .index = kernel_tss_index,
-            .ti = .gdt,
-            .rpl = 0,
-        }, tr);
+            // Check if TR is set correctly.
+            const tr: SegSel = @bitCast(asm volatile (
+                \\str %[tr]
+                : [tr] "={ax}" (-> u16),
+                :
+                : .{ .rax = true }));
+            rtt.expectEqual(SegSel{
+                .index = .kernel_tss,
+                .ti = .gdt,
+                .rpl = 0,
+            }, tr);
+        }
     }
-}
+};
 
 // =============================================================
 // Imports
@@ -597,6 +727,8 @@ const std = @import("std");
 const norn = @import("norn");
 const mem = norn.mem;
 const pcpu = norn.pcpu;
+const rtt = norn.rtt;
+const util = norn.util;
 
 const am = @import("asm.zig");
 

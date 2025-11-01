@@ -194,7 +194,7 @@ export fn apTrampolineToMain() callconv(.c) noreturn {
     norn.pcpu.initThisCpu(lapic.id());
 
     // Setup GDT.
-    gdt.setupThisCpu(mem.page_allocator) catch {
+    gdt.localInit(mem.page_allocator) catch {
         @panic("Failed to setup GDT for AP");
     };
 
