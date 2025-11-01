@@ -4,7 +4,7 @@ set -eu
 
 ZIGOUT=zig-out
 IMGDIR=$ZIGOUT/img
-OUTFILE=$(realpath "$IMGDIR/rootfs.cpio")
+OUTFILE=$(realpath $IMGDIR)/rootfs.cpio
 
 RESOURCEDIR=$(realpath "assets/rootfs")
 COPY_SOURCE=$(realpath "$ZIGOUT/rootfs")

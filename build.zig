@@ -300,7 +300,13 @@ pub fn build(b: *std.Build) !void {
             b.fmt("{d}", .{start_mib}), // start MiB
             b.fmt("{d}", .{size_mib}), // size MiB
         });
-        command.step.dependOn(&update_bootparams.step);
+
+        _ = std.fs.cwd().statFile(b.fmt(
+            "{s}/{s}/efi/boot/bootparams",
+            .{ b.install_prefix, outdir_name },
+        )) catch {
+            command.step.dependOn(&update_bootparams.step);
+        };
         command.step.dependOn(&initramfs.step);
         command.step.dependOn(&install_surtr.step);
         command.step.dependOn(&install_norn.step);
