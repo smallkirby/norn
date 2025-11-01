@@ -1,62 +1,38 @@
+//! Interrupt handling for x86_64 architecture.
+//!
+//! This module manages entries in IDT and interrupt handlers.
+
 pub const IntrError = error{
     /// Handler is already registered for the vector.
     AlreadyRegistered,
 };
 
-/// Maximum number of gates in the IDT.
-pub const max_num_gates = 256;
 /// Interrupt Descriptor Table.
-var idt: [max_num_gates]GateDescriptor align(mem.page_size) = [_]GateDescriptor{std.mem.zeroes(GateDescriptor)} ** max_num_gates;
-/// IDT Register.
-var idtr = IdtRegister{
-    .limit = @sizeOf(@TypeOf(idt)) - 1,
-    .base = &idt,
-};
-
-/// Norn provides 3 ISTs (IST1~3).
-const num_ists = 3;
-
-/// Index of IST for #DF.
-const df_ist_index = 1;
+///
+/// Shared among all CPUs.
+var idt: Idt = undefined;
 
 /// Interrupt handlers.
 var handlers: [max_num_gates]Handler = [_]Handler{unhandledHandler} ** max_num_gates;
 
+/// Maximum number of gates in the IDT.
+const max_num_gates = 256;
+
+/// Index within IST array for each exception.
+const IstIndex = enum(u3) {
+    double_fault = 1,
+};
+
 /// Initialize the IDT.
-pub fn init() void {
-    // Set ISR stubs for all gates.
-    inline for (0..max_num_gates) |i| {
-        const gate = GateDescriptor.new(
-            @intFromPtr(&isr.generateIsr(i)),
-            .kernel_cs,
-            .interrupt_gate,
-            0,
-        );
-        setGate(i, gate);
-    }
+pub fn globalInit() void {
+    idt.init();
 
     // Set IST for #DF and #PF.
-    idt[@intFromEnum(Exception.double_fault)].ist = df_ist_index;
-    idt[@intFromEnum(Exception.page_fault)].ist = df_ist_index;
+    idt.setIstack(.df, .double_fault);
+    idt.setIstack(.pf, .double_fault);
 
-    // Load IDTR.
-    idtr.base = &idt;
-    loadKernelIdt();
-}
-
-/// Load the IDT.
-///
-/// Caller must ensure that the IDT is initialized.
-pub fn loadKernelIdt() void {
-    am.lidt(@intFromPtr(&idtr));
-}
-
-/// Set a gate descriptor in the IDT.
-fn setGate(
-    index: usize,
-    gate: GateDescriptor,
-) void {
-    idt[index] = gate;
+    // Load to IDTR.
+    idt.load();
 }
 
 /// Dispatches the interrupt to the appropriate handler.
@@ -67,6 +43,8 @@ pub fn dispatch(context: *Context) void {
 }
 
 /// Set an interrupt handler for the given vector.
+///
+/// Fails if a handler is already registered for the vector.
 pub fn setHandler(vector: u8, handler: Handler) IntrError!void {
     if (handlers[vector] != unhandledHandler) {
         return IntrError.AlreadyRegistered;
@@ -74,39 +52,125 @@ pub fn setHandler(vector: u8, handler: Handler) IntrError!void {
     handlers[vector] = handler;
 }
 
-/// Serial writer that does not take a lock to prevent deadlock.
-const UnsafeWriter = struct {
-    writer: std.Io.Writer = .{
-        .vtable = &writer_vtable,
-        .buffer = &.{},
-    },
+/// Interrupt Descriptor Table (IDT).
+const Idt = extern struct {
+    const Self = @This();
 
-    const writer_vtable = std.Io.Writer.VTable{
-        .drain = drain,
+    /// Alignment of the IDT.
+    const idt_align = mem.size_4kib;
+
+    /// IDT entries.
+    _data: [max_num_gates]GateDesc align(idt_align),
+
+    /// Initialize the IDT by setting all entries to ISR stubs.
+    pub fn init(self: *Self) void {
+        rtt.expect(util.isAligned(self, idt_align));
+
+        // Zero-clear the IDT.
+        @memset(self._data[0..], @bitCast(@as(u128, 0)));
+
+        // Set ISR stubs for all gates.
+        inline for (0..max_num_gates) |i| {
+            self.initEntry(i);
+        }
+    }
+
+    /// Set a gate descriptor at the given index.
+    fn initEntry(self: *Self, comptime index: usize) void {
+        rtt.expect(index < max_num_gates);
+
+        const gate = GateDesc.new(
+            @intFromPtr(&isr.generateIsr(index)),
+            .kernel_cs,
+            .interrupt_gate,
+            0,
+        );
+
+        self._data[index] = gate;
+    }
+
+    /// Set the interrupt stack for the given exception.
+    pub fn setIstack(self: *Self, index: Exception, ist_index: IstIndex) void {
+        self._data[@intFromEnum(index)].ist = @intFromEnum(ist_index);
+    }
+
+    /// Load this IDT into the IDTR.
+    pub fn load(self: *Self) void {
+        am.lidt(@intFromPtr(&IdtRegister{
+            .limit = @sizeOf(@TypeOf(self._data)) - 1,
+            .base = &self._data,
+        }));
+    }
+};
+
+/// 64 bit Mode Gate descriptor.
+pub const GateDesc = packed struct(u128) {
+    /// Lower 16 bits of the offset to the ISR.
+    offset_low: u16,
+    /// Segment Selector that must point to a valid code segment in the GDT.
+    seg_selector: u16,
+    /// Interrupt Stack Table.
+    /// If set to 0, the processor does not switch stacks.
+    ist: u3 = 0,
+    /// Reserved.
+    _reserved1: u5 = 0,
+    /// Gate Type.
+    gate_type: Type,
+    /// Reserved.
+    _reserved2: u1 = 0,
+    /// Descriptor Privilege Level is the required CPL to call the ISR via the INT inst.
+    /// Hardware interrupts ignore this field.
+    dpl: u2,
+    /// Present flag. Must be 1.
+    present: bool = true,
+    /// Middle 16 bits of the offset to the ISR.
+    offset_middle: u16,
+    /// Higher 32 bits of the offset to the ISR.
+    offset_high: u32,
+    /// Reserved.
+    _reserved3: u32 = 0,
+
+    /// Type of gate descriptor.
+    const Type = enum(u4) {
+        call_gate = 0b1100,
+        interrupt_gate = 0b1110,
+        trap_gate = 0b1111,
+
+        _,
     };
 
-    fn drain(_: *std.Io.Writer, data: []const []const u8, _: usize) !usize {
-        var written: usize = 0;
-        for (data) |bytes| {
-            norn.getSerial().writeStringUnsafeNoLock(bytes);
-            written += bytes.len;
-        }
-        return written;
+    pub fn new(
+        offset: u64,
+        index: gdt.SegIndex,
+        gate_type: Type,
+        dpl: u2,
+    ) GateDesc {
+        return GateDesc{
+            .offset_low = @truncate(offset),
+            .seg_selector = @intFromEnum(index) << 3,
+            .gate_type = gate_type,
+            .dpl = dpl,
+            .offset_middle = @truncate(offset >> 16),
+            .offset_high = @truncate(offset >> 32),
+        };
     }
 
-    pub fn new() UnsafeWriter {
-        return .{};
+    /// Get the offset.
+    pub fn getOffset(self: GateDesc) u64 {
+        return @as(u64, self.offset_high) << 32 | @as(u64, self.offset_middle) << 16 | @as(u64, self.offset_low);
     }
+};
 
-    pub fn log(self: *UnsafeWriter, comptime fmt: []const u8, args: anytype) void {
-        self.writer.print(fmt ++ "\n", args) catch {};
-    }
+/// IDT Register.
+const IdtRegister = packed struct {
+    limit: u16,
+    base: *[max_num_gates]GateDesc,
 };
 
 fn unhandledHandler(context: *Context) void {
     @branchHint(.cold);
 
-    var writer = UnsafeWriter.new();
+    var writer = norn.UnsafeWriter.new();
 
     const exception: Exception = @enumFromInt(context.spec1.vector);
     writer.log("============ Oops! ===================", .{});
@@ -187,125 +251,62 @@ fn unhandledHandler(context: *Context) void {
 }
 
 /// Protected-Mode Exceptions.
+///
 /// cf. SDM Vol.3A Table 6.1
 const Exception = enum(usize) {
     pub const num_reserved_exceptions = 32;
 
-    divide_by_zero = 0,
-    debug = 1,
+    de = 0,
+    db = 1,
     nmi = 2,
-    breakpoint = 3,
-    overflow = 4,
-    bound_range_exceeded = 5,
-    invalid_opcode = 6,
-    device_not_available = 7,
-    double_fault = 8,
-    coprocessor_segment_overrun = 9,
-    invalid_tss = 10,
-    segment_not_present = 11,
-    stack_segment_fault = 12,
-    general_protection_fault = 13,
-    page_fault = 14,
-    floating_point_exception = 16,
-    alignment_check = 17,
-    machine_check = 18,
-    simd_exception = 19,
-    virtualization_exception = 20,
-    control_protection_exception = 21,
+    bp = 3,
+    of = 4,
+    br = 5,
+    ud = 6,
+    nm = 7,
+    df = 8,
+    co = 9,
+    ts = 10,
+    np = 11,
+    ss = 12,
+    gp = 13,
+    pf = 14,
+    mf = 16,
+    ac = 17,
+    mc = 18,
+    xm = 19,
+    ve = 20,
+    cp = 21,
 
     _,
 
     /// Get the name of an exception.
-    pub inline fn name(self: Exception) []const u8 {
+    pub fn name(self: Exception) []const u8 {
         return switch (self) {
-            .divide_by_zero => "#DE: Divide by zero",
-            .debug => "#DB: Debug",
+            .de => "#DE: Divide by zero",
+            .db => "#DB: Debug",
             .nmi => "NMI: Non-maskable interrupt",
-            .breakpoint => "#BP: Breakpoint",
-            .overflow => "#OF: Overflow",
-            .bound_range_exceeded => "#BR: Bound range exceeded",
-            .invalid_opcode => "#UD: Invalid opcode",
-            .device_not_available => "#NM: Device not available",
-            .double_fault => "#DF: Double fault",
-            .coprocessor_segment_overrun => "Coprocessor segment overrun",
-            .invalid_tss => "#TS: Invalid TSS",
-            .segment_not_present => "#NP: Segment not present",
-            .stack_segment_fault => "#SS: Stack-segment fault",
-            .general_protection_fault => "#GP: General protection fault",
-            .page_fault => "#PF: Page fault",
-            .floating_point_exception => "#MF: Floating-point exception",
-            .alignment_check => "#AC: Alignment check",
-            .machine_check => "#MC: Machine check",
-            .simd_exception => "#XM: SIMD exception",
-            .virtualization_exception => "#VE: Virtualization exception",
-            .control_protection_exception => "#CP: Control protection exception",
+            .bp => "#BP: Breakpoint",
+            .of => "#OF: Overflow",
+            .br => "#BR: Bound range exceeded",
+            .ud => "#UD: Invalid opcode",
+            .nm => "#NM: Device not available",
+            .df => "#DF: Double fault",
+            .co => "Coprocessor segment overrun",
+            .ts => "#TS: Invalid TSS",
+            .np => "#NP: Segment not present",
+            .ss => "#SS: Stack-segment fault",
+            .gp => "#GP: General protection fault",
+            .pf => "#PF: Page fault",
+            .mf => "#MF: Floating-point exception",
+            .ac => "#AC: Alignment check",
+            .mc => "#MC: Machine check",
+            .xm => "#XM: SIMD exception",
+            .ve => "#VE: Virtualization exception",
+            .cp => "#CP: Control protection exception",
             _ => "Unknown exception",
         };
     }
-};
-
-/// 64bit-Mode Gate descriptor.
-pub const GateDescriptor = packed struct(u128) {
-    /// Lower 16 bits of the offset to the ISR.
-    offset_low: u16,
-    /// Segment Selector that must point to a valid code segment in the GDT.
-    seg_selector: u16,
-    /// Interrupt Stack Table.
-    /// If set to 0, the processor does not switch stacks.
-    ist: u3 = 0,
-    /// Reserved.
-    _reserved1: u5 = 0,
-    /// Gate Type.
-    gate_type: Type,
-    /// Reserved.
-    _reserved2: u1 = 0,
-    /// Descriptor Privilege Level is the required CPL to call the ISR via the INT inst.
-    /// Hardware interrupts ignore this field.
-    dpl: u2,
-    /// Present flag. Must be 1.
-    present: bool = true,
-    /// Middle 16 bits of the offset to the ISR.
-    offset_middle: u16,
-    /// Higher 32 bits of the offset to the ISR.
-    offset_high: u32,
-    /// Reserved.
-    _reserved3: u32 = 0,
-
-    /// Type of gate descriptor.
-    const Type = enum(u4) {
-        call_gate = 0b1100,
-        interrupt_gate = 0b1110,
-        trap_gate = 0b1111,
-
-        _,
-    };
-
-    pub fn new(
-        offset: u64,
-        index: gdt.SegIndex,
-        gate_type: Type,
-        dpl: u2,
-    ) GateDescriptor {
-        return GateDescriptor{
-            .offset_low = @truncate(offset),
-            .seg_selector = @intFromEnum(index) << 3,
-            .gate_type = gate_type,
-            .dpl = dpl,
-            .offset_middle = @truncate(offset >> 16),
-            .offset_high = @truncate(offset >> 32),
-        };
-    }
-
-    /// Get the offset.
-    pub fn getOffset(self: GateDescriptor) u64 {
-        return @as(u64, self.offset_high) << 32 | @as(u64, self.offset_middle) << 16 | @as(u64, self.offset_low);
-    }
-};
-
-/// IDT Register.
-const IdtRegister = packed struct {
-    limit: u16,
-    base: *[max_num_gates]GateDescriptor,
 };
 
 // =============================================================
@@ -332,6 +333,8 @@ const log = std.log.scoped(.intr);
 const norn = @import("norn");
 const mem = norn.mem;
 const interrupt = norn.interrupt;
+const rtt = norn.rtt;
+const util = norn.util;
 
 const am = @import("asm.zig");
 const arch = @import("arch.zig");

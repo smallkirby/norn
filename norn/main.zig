@@ -64,8 +64,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 
     // Initialize interrupts.
     {
-        log.info("Initializing interrupts.", .{});
-        arch.initInterrupt();
+        log.info("Enabling exceptions.", .{});
         arch.enableIrq();
     }
 
@@ -76,72 +75,63 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     }
 
     // Copy boot_info into Norn's stack since it becomes inaccessible soon.
-    // `var` is to avoid the copy from being delayed.
-    // (If the copy is performed after the mapping reconstruction, we cannot access the original boot_info and results in #PF).
-    var boot_info: BootInfo = undefined;
-    boot_info = early_boot_info;
-    // Deep copy the initramfs from .loader_data to Norn memory.
-    {
-        const src = boot_info.initramfs;
-        const dest = try norn.mem.boottimeAlloc(src.size);
-        const src_ptr: [*]const u8 = @ptrFromInt(src.addr);
-        @memcpy(dest[0..src.size], src_ptr[0..src.size]);
-        boot_info.initramfs.addr = @intFromPtr(dest.ptr);
-    }
-    // Deep copy cmdline.
-    if (@intFromPtr(boot_info.cmdline) != 0) {
-        const src = norn.util.sentineledToSlice(@ptrCast(boot_info.cmdline));
-        const dest = try norn.mem.boottimeAlloc(src.len);
-        @memcpy(dest[0..src.len], src[0..src.len :0]);
-        dest[src.len] = 0;
-        boot_info.cmdline = @ptrCast(dest.ptr);
-    } else {
-        boot_info.cmdline = @ptrFromInt(0);
-    }
-    // Copy memory map.
-    try boot_info.memory_map.deepCopy(norn.mem.getLimitedBoottimeAllocator());
+    var boot_info = try cloneBootInfo(early_boot_info);
 
     // Reconstruct memory mapping from the one provided by UEFI and Sutr.
-    log.info("Reconstructing memory mapping...", .{});
-    try norn.mem.reconstructMapping();
-    log.info("Memory mapping is reconstructed.", .{});
+    {
+        log.info("Reconstructing memory mapping.", .{});
+        try norn.mem.reconstructMapping();
+    }
 
-    norn.mem.initBuddyAllocator(boot_info.memory_map, log.debug);
-    log.info("Initialized buddy allocator.", .{});
+    // Initialize page allocator.
+    {
+        log.info("Initializing buddy allocator.", .{});
+        norn.mem.initBuddyAllocator(boot_info.memory_map, log.debug);
+    }
 
     // Initialize general allocator.
-    norn.mem.initGeneralAllocator();
-    log.info("Initialized general allocator.", .{});
+    {
+        log.info("Initializing general allocator.", .{});
+        norn.mem.initGeneralAllocator();
+    }
 
     // Initialize resource map.
-    try norn.mem.resource.init(boot_info.memory_map, norn.mem.general_allocator);
+    try norn.mem.resource.init(
+        boot_info.memory_map,
+        norn.mem.general_allocator,
+    );
 
     // Deactivate the memory map.
     // We can no longer use the memory map.
     {
+        log.debug("Deactivating memory map provided by Surtr.", .{});
         const buffer = boot_info.memory_map.getInternalBuffer(norn.mem.phys2virt);
         try norn.mem.page_allocator.freePagesRaw(
             @intFromPtr(buffer.ptr),
             buffer.len / norn.mem.size_4kib,
         );
     }
-    log.debug("Deactivated memory map provided by Surtr.", .{});
+    arch.fence(.full);
 
     // Initialize ACPI.
-    try norn.acpi.init(boot_info.rsdp, norn.mem.general_allocator);
-    log.info("Initialized ACPI.", .{});
-    log.info("Number of available CPUs: {d}", .{norn.acpi.getSystemInfo().num_cpus});
-    if (norn.is_runtime_test) {
-        try norn.acpi.spinForUsec(1000); // test if PM timer is working
+    {
+        log.info("Initializing ACPI.", .{});
+        try norn.acpi.init(boot_info.rsdp, norn.mem.general_allocator);
+        log.info("Number of available CPUs: {d}", .{norn.acpi.getSystemInfo().num_cpus});
+        if (norn.is_runtime_test) {
+            try norn.acpi.spinForUsec(1000); // test if PM timer is working
+        }
     }
 
     // Set spurious interrupt handler.
-    try arch.setInterruptHandler(
-        @intFromEnum(norn.interrupt.VectorTable.spurious),
-        spriousInterruptHandler,
-    );
-    try arch.initApic();
-    log.info("Initialized APIC.", .{});
+    {
+        log.info("Initializing APIC.", .{});
+        try arch.setInterruptHandler(
+            @intFromEnum(norn.interrupt.VectorTable.spurious),
+            spriousInterruptHandler,
+        );
+        try arch.initApic();
+    }
 
     // Set serial interrupt handler.
     try arch.setInterruptHandler(
@@ -157,7 +147,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     norn.pcpu.initThisCpu(norn.arch.getLocalApic().id());
 
     // Do per-CPU initialization.
-    try arch.loclalInit(norn.mem.page_allocator);
+    try arch.localInit(norn.mem.page_allocator);
 
     // Boot APs.
     log.info("Booting APs...", .{});
@@ -285,6 +275,43 @@ fn validateBootInfo(boot_info: BootInfo) !void {
     if (boot_info.magic != surtr.magic) {
         return error.InvalidMagic;
     }
+}
+
+/// Deep-copy BootInfo.
+///
+/// This copies the given boot info converting physical addresses to virtual addresses.
+///
+/// Caller can access the returned BootInfo directly
+/// even after the memory mapping is reconstructed and the original info becomes inaccessible.
+fn cloneBootInfo(boot_info: BootInfo) !BootInfo {
+    var new = boot_info;
+
+    // Deep copy the initramfs from .loader_data to Norn memory.
+    {
+        const src = new.initramfs;
+        const dest = try norn.mem.boottimeAlloc(src.size);
+        const src_ptr: [*]const u8 = @ptrFromInt(src.addr);
+        @memcpy(dest[0..src.size], src_ptr[0..src.size]);
+        new.initramfs.addr = @intFromPtr(dest.ptr);
+    }
+
+    // Deep copy cmdline.
+    if (@intFromPtr(new.cmdline) != 0) {
+        const src = norn.util.sentineledToSlice(@ptrCast(new.cmdline));
+        const dest = try norn.mem.boottimeAlloc(src.len);
+        @memcpy(dest[0..src.len], src[0..src.len :0]);
+        dest[src.len] = 0;
+        new.cmdline = @ptrCast(dest.ptr);
+    } else {
+        new.cmdline = @ptrFromInt(0);
+    }
+
+    // Copy memory map.
+    try new.memory_map.deepCopy(norn.mem.getLimitedBoottimeAllocator());
+
+    arch.fence(.full);
+
+    return new;
 }
 
 /// Interrupt handler for spurious interrupts.

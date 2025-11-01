@@ -63,6 +63,37 @@ pub const rtt_hid_wait = option.rtt_hid_wait;
 
 var serial = Serial{};
 
+/// Serial writer that does not take a lock to prevent deadlock.
+///
+/// This writer must be used only in unrecoverable situations such as panic handlers.
+pub const UnsafeWriter = struct {
+    writer: std.Io.Writer = .{
+        .vtable = &writer_vtable,
+        .buffer = &.{},
+    },
+
+    const writer_vtable = std.Io.Writer.VTable{
+        .drain = drain,
+    };
+
+    fn drain(_: *std.Io.Writer, data: []const []const u8, _: usize) !usize {
+        var written: usize = 0;
+        for (data) |bytes| {
+            getSerial().writeStringUnsafeNoLock(bytes);
+            written += bytes.len;
+        }
+        return written;
+    }
+
+    pub fn new() UnsafeWriter {
+        return .{};
+    }
+
+    pub fn log(self: *UnsafeWriter, comptime fmt: []const u8, args: anytype) void {
+        self.writer.print(fmt ++ "\n", args) catch {};
+    }
+};
+
 /// Print an unimplemented message and halt the CPU indefinitely.
 ///
 /// - `msg`: Message to print.

@@ -214,22 +214,34 @@ pub fn write64(addr: IoAddr, value: u64) void {
         : .{ .memory = true });
 }
 
+/// Memory fence type.
+const Fence = enum {
+    load,
+    store,
+    full,
+};
+
+/// Execute a memory fence.
+pub inline fn fence(kind: Fence) void {
+    switch (kind) {
+        .load => asm volatile ("lfence" ::: .{ .memory = true }),
+        .store => asm volatile ("sfence" ::: .{ .memory = true }),
+        .full => asm volatile ("mfence" ::: .{ .memory = true }),
+    }
+}
+
 /// Arch-specific global startup phase 1.
 ///
-/// Initialize boot-time GDT.
+/// - Initialize boot-time GDT.
+/// - Initialize IDT.
 pub fn startup1() void {
     gdt.globalInit();
+    intr.globalInit();
 }
 
 /// Arch-specific initialization for each CPU.
-pub fn loclalInit(allocator: PageAllocator) PageAllocator.Error!void {
+pub fn localInit(allocator: PageAllocator) PageAllocator.Error!void {
     try gdt.localInit(allocator);
-}
-
-/// Initialize interrupt and exception handling.
-/// Note that this function does not enable interrupts.
-pub fn initInterrupt() void {
-    intr.init();
 }
 
 /// Initialize APIC.
