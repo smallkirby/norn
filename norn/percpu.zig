@@ -38,7 +38,7 @@ var percpu_initialized: bool = false;
 var percpu_thiscpu_initialized: [norn.num_max_cpu]bool = [_]bool{false} ** norn.num_max_cpu;
 
 /// Initialize per-CPU data.
-pub fn init(num_cpus: usize, percpu_base: Virt) PageAllocator.Error!void {
+pub fn globalInit(num_cpus: usize, percpu_base: Virt) PageAllocator.Error!void {
     norn.rtt.expect(mem.isPgtblInitialized());
 
     const per_cpu_size = @intFromPtr(&__per_cpu_end) - @intFromPtr(&__per_cpu_start);
@@ -67,7 +67,7 @@ pub fn init(num_cpus: usize, percpu_base: Virt) PageAllocator.Error!void {
 }
 
 /// Initialize per-CPU data for this core.
-pub fn initThisCpu(cpu: usize) void {
+pub fn localInit(cpu: usize) void {
     norn.rtt.expect(percpu_initialized);
     norn.rtt.expect(!percpu_thiscpu_initialized[cpu]);
 
@@ -118,7 +118,7 @@ pub const mock_for_testing = struct {
 
     pub const section = ".data..percpu";
 
-    pub fn initThisCpu(_: usize) void {}
+    pub fn localInit(_: usize) void {}
 
     pub fn isThisCpuInitialized(_: usize) bool {
         return false;

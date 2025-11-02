@@ -22,6 +22,7 @@ const secondary_command_port: u16 = 0xA0;
 const secondary_data_port: u16 = secondary_command_port + 1;
 
 /// Offset to remap the interrupt vectors.
+///
 /// We don't want any interrupts from the old PIC,
 /// so we remap them to unused vector space to avoid conflicts in case spurious interrupts occur.
 const remap_offset: u8 = @intFromEnum(Vector.spurious);

@@ -499,6 +499,7 @@ const TriggerMode = enum(u1) {
 };
 
 /// Init the local APIC on this core.
+///
 /// This function disables the old PIC, then enables the local APIC.
 pub fn init() ApicError!void {
     // Check if APIC is available.

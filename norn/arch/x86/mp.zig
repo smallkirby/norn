@@ -181,28 +181,25 @@ fn apEntry64() callconv(.c) noreturn {
 }
 
 /// Final function before entering the AP main function.
+///
 /// AP uses its own stack here. The only shared resource is the lock.
 export fn apTrampolineToMain() callconv(.c) noreturn {
     // Unlock the lock for BSP to continue booting other APs.
     lock.unlock();
 
-    // Initialize APIC.
-    arch.initApic() catch @panic("Failed to initialize APIC");
-    const lapic = apic.LocalApic.new(acpi.getSystemInfo().local_apic_address);
-
     // Initialize per-CPU data.
-    norn.pcpu.initThisCpu(lapic.id());
+    const id = arch.getCpuId();
+    norn.pcpu.localInit(id);
 
-    // Setup GDT.
-    gdt.localInit(mem.page_allocator) catch {
-        @panic("Failed to setup GDT for AP");
+    // Arch-specific CPU initialization.
+    arch.localInit(mem.page_allocator) catch {
+        @panic("Failed to initialize CPU for AP");
     };
 
     // Greeting
-    const lapic_id = lapic.id();
-    log.info("AP #{d} has been booted.", .{lapic_id});
+    log.info("AP #{d} has been booted.", .{id});
 
-    // TODO jump to AP main
+    // TODO: jump to AP main
     while (true) am.hlt();
 
     unreachable;

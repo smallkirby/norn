@@ -26,6 +26,13 @@ pub const Context = arch.Context;
 /// Interrupt handler function signature.
 pub const Handler = *const fn (*Context) void;
 
+/// Initialize the interrupt subsystem globally.
+pub fn globalInit() IntrError!void {
+    try setHandler(.spurious, spuriousInterruptHandler);
+
+    arch.enableIrq();
+}
+
 /// Set an interrupt handler for the given vector.
 ///
 /// Fails if a handler is already registered for the vector.
@@ -39,6 +46,12 @@ pub fn setHandler(vector: Vector, handler: Handler) IntrError!void {
 /// Call the registered interrupt handler for the given vector.
 pub fn call(vector: u64, context: *Context) void {
     handlers[vector](context);
+}
+
+/// Interrupt handler for spurious interrupts.
+fn spuriousInterruptHandler(_: *norn.interrupt.Context) void {
+    std.log.scoped(.spurious).warn("Detected a spurious interrupt.", .{});
+    arch.getLocalApic().eoi();
 }
 
 /// Default handlers for unhandled interrupts.

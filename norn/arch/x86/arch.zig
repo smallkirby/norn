@@ -4,7 +4,6 @@ pub const task = @import("task.zig");
 
 pub const ApicTimer = apic.Timer;
 pub const Context = regs.CpuContext;
-pub const LocalApic = apic.LocalApic;
 
 // Architecture-specific error type.
 pub const ArchError = apic.ApicError || pg.PageError || syscall.Error;
@@ -15,20 +14,13 @@ pub const SyscallContext = regs.CpuContext;
 /// Number of interrupts available.
 pub const max_num_interrupts = intr.max_num_gates;
 
-/// Initialize the architecture-specific components.
-pub fn init() ArchError!void {
-    const ie = disableIrq();
-    defer if (ie) enableIrq();
-
-    enableAvx();
-
-    // Redirect IRQs.
-    if (isCurrentBsp()) {
-        const lapic = getLocalApic();
-        const ioapic = getIoApic();
-        ioapic.setRedirection(.serial1, .serial, lapic.id());
-    }
-}
+/// Arch-specific state.
+const state = struct {
+    /// Initialized globally.
+    var global_initialized: std.atomic.Value(bool) = .init(false);
+    /// Initialized for this CPU.
+    var local_initialized: bool linksection(pcpu.section) = false;
+};
 
 /// Enable AVX instructions.
 ///
@@ -235,21 +227,55 @@ pub inline fn fence(kind: Fence) void {
 
 /// Arch-specific global startup phase 1.
 ///
+/// Called once during kernel initialization.
+///
 /// - Initialize boot-time GDT.
 /// - Initialize IDT.
 pub fn startup1() void {
+    rtt.expect(!state.global_initialized.load(.acquire));
+
     gdt.globalInit();
     intr.globalInit();
+
+    state.global_initialized.store(true, .release);
 }
 
-/// Arch-specific initialization for each CPU.
-pub fn localInit(allocator: PageAllocator) PageAllocator.Error!void {
-    try gdt.localInit(allocator);
+/// Arch-specific CPU initialization.
+///
+/// - Initialize APIC.
+/// - Differentiate GDT for this CPU.
+/// - Enable AVX features.
+/// - Remap IRQs.
+pub fn localInit(palloc: PageAllocator) ArchError!void {
+    rtt.expect(pcpu.isThisCpuInitialized(getCpuId()));
+    rtt.expect(!pcpu.get(&state.local_initialized));
+
+    const ie = disableIrq();
+    defer if (ie) enableIrq();
+
+    // Differentiate GDT for this CPU.
+    try gdt.localInit(palloc);
+
+    // Initialize APIC.
+    try apic.init();
+
+    // Enable AVX features.
+    enableAvx();
+
+    // Redirect IRQs.
+    if (isCurrentBsp()) {
+        const lapic = getLocalApic();
+        const ioapic = getIoApic();
+        ioapic.setRedirection(.serial1, .serial, lapic.id());
+    }
+
+    pcpu.set(&state.local_initialized, true);
 }
 
-/// Initialize APIC.
-pub fn initApic() !void {
-    return apic.init();
+/// Get the core number of the running CPU core.
+pub fn getCpuId() u8 {
+    const ebx = cpuid.Leaf.version_info.query(0).ebx;
+    return norn.bits.extract(u8, ebx, 24);
 }
 
 /// Check if the current CPU is the BSP.
@@ -404,6 +430,8 @@ const log = std.log.scoped(.arch);
 const norn = @import("norn");
 const bits = norn.bits;
 const interrupt = norn.interrupt;
+const pcpu = norn.pcpu;
+const rtt = norn.rtt;
 const PageAllocator = norn.mem.PageAllocator;
 const IoAddr = norn.mem.IoAddr;
 const Phys = norn.mem.Phys;

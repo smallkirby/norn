@@ -65,7 +65,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     // Initialize interrupts.
     {
         log.info("Enabling exceptions.", .{});
-        arch.enableIrq();
+        try norn.interrupt.globalInit();
     }
 
     // Initialize bootstrap allocator.
@@ -123,31 +123,30 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         }
     }
 
-    // Set spurious interrupt handler.
+    // Initialize per-CPU data.
     {
-        log.info("Initializing APIC.", .{});
-        try norn.interrupt.setHandler(
-            .spurious,
-            spriousInterruptHandler,
+        log.info("Initializing per-CPU data.", .{});
+        try norn.pcpu.globalInit(
+            norn.acpi.getSystemInfo().num_cpus,
+            boot_info.percpu_base,
         );
-        try arch.initApic();
+        norn.pcpu.localInit(arch.getCpuId());
+    }
+
+    // Do per-CPU initialization.
+    {
+        log.info("Arch-specific CPU initialization.", .{});
+        try arch.localInit(norn.mem.page_allocator);
     }
 
     // Set serial interrupt handler.
-    try norn.interrupt.setHandler(
-        .serial,
-        norn.Serial.interruptHandler,
-    );
-
-    // Initialize per-CPU data.
-    try norn.pcpu.init(
-        norn.acpi.getSystemInfo().num_cpus,
-        boot_info.percpu_base,
-    );
-    norn.pcpu.initThisCpu(norn.arch.getLocalApic().id());
-
-    // Do per-CPU initialization.
-    try arch.localInit(norn.mem.page_allocator);
+    {
+        log.info("Setting serial interrupt handlers.", .{});
+        try norn.interrupt.setHandler(
+            .serial,
+            norn.Serial.interruptHandler,
+        );
+    }
 
     // Boot APs.
     log.info("Booting APs...", .{});
@@ -191,9 +190,6 @@ fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !voi
     norn.rtt.expect(norn.arch.isCurrentBsp());
     norn.rtt.expectEqual(false, norn.arch.isIrqEnabled());
     norn.arch.enableIrq();
-
-    // Initialize arch-specific features.
-    try norn.arch.init();
 
     // Initialize filesystem.
     // Set the root directory and CWD to the root of initramfs.
@@ -312,12 +308,6 @@ fn cloneBootInfo(boot_info: BootInfo) !BootInfo {
     arch.fence(.full);
 
     return new;
-}
-
-/// Interrupt handler for spurious interrupts.
-fn spriousInterruptHandler(_: *norn.interrupt.Context) void {
-    std.log.scoped(.spurious).warn("Detected a spurious interrupt.", .{});
-    arch.getLocalApic().eoi();
 }
 
 // =============================================================
