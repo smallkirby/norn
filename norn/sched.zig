@@ -32,7 +32,7 @@ var idle_task: *Thread linksection(pcpu.section) = undefined;
 /// Initialize the scheduler for this CPU.
 ///
 /// Note that the timer that triggers the scheduler does not start yet.
-pub fn initThisCpu() SchedError!void {
+pub fn localInit() SchedError!void {
     // Initialize the run queue
     const rq = try general_allocator.create(ThreadList);
     rq.* = .{};

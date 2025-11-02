@@ -149,12 +149,17 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     }
 
     // Boot APs.
-    log.info("Booting APs...", .{});
-    try arch.mp.bootAllAps();
+    {
+        log.info("Booting APs.", .{});
+        try arch.mp.bootAllAps();
+    }
 
     // Initialize scheduler.
-    _ = norn.arch.disableIrq();
-    try norn.sched.initThisCpu();
+    {
+        log.info("Initializing scheduler locally", .{});
+        _ = norn.arch.disableIrq();
+        try norn.sched.localInit();
+    }
 
     // Enter the Norn kernel thread.
     const cmdline = if (@intFromPtr(boot_info.cmdline) != 0) blk: {
@@ -206,33 +211,47 @@ fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !voi
     }
 
     // Initialize syscall.
-    try arch.enableSyscall();
+    {
+        log.info("Initializing syscall interface.", .{});
+        try arch.enableSyscall();
+    }
 
     // Initialize device system.
-    try norn.device.init();
-    log.debug("Initialized module system.", .{});
+    {
+        log.info("Initializing module system.", .{});
+        try norn.device.init();
+    }
 
     // Enable serial interrupt.
     norn.drivers.serial8250.enableInterrupt(.com1);
 
     // Print Norn banner.
-    log.info("", .{});
-    log.info("Norn Kernel - version {s} ({s})", .{ norn.version, norn.sha });
-    norn.getSerial().writeString("\n");
-    norn.getSerial().writeString(norn.banner);
-    norn.getSerial().writeString("\n");
+    {
+        log.info("", .{});
+        log.info("Norn Kernel - version {s} ({s})", .{ norn.version, norn.sha });
+        norn.getSerial().writeString("\n");
+        norn.getSerial().writeString(norn.banner);
+        norn.getSerial().writeString("\n");
+    }
 
     // Initialize scheduler.
-    log.info("Initializing scheduler...", .{});
-    try norn.sched.setupInitialTask(cmdline.init);
+    {
+        log.info("Initializing scheduler.", .{});
+        try norn.sched.setupInitialTask(cmdline.init);
+    }
 
     // Initialize nworker.
-    try norn.worker.init(norn.mem.general_allocator);
-    norn.sched.debugPrintRunQueue(log.debug);
+    {
+        log.info("Initializing Norn worker.", .{});
+        try norn.worker.init(norn.mem.general_allocator);
+        norn.sched.debugPrintRunQueue(log.debug);
+    }
 
     // Start timer and scheduler.
-    log.info("Starting scheduler...", .{});
-    try norn.timer.init();
+    {
+        log.info("Starting scheduler.", .{});
+        try norn.timer.init();
+    }
 
     // Misc runtime tests.
     if (norn.is_runtime_test) {
@@ -240,12 +259,15 @@ fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !voi
     }
 
     // PCI
-    try norn.pci.init(norn.mem.general_allocator);
-    norn.pci.debugPrintAllDevices();
-    const pci_usb = norn.pci.findDevice(norn.drivers.usb.class) orelse {
-        @panic("USB device not found.");
-    };
-    try norn.drivers.usb.init(pci_usb, norn.mem.general_allocator);
+    {
+        log.info("Initializing PCI.", .{});
+        try norn.pci.init(norn.mem.general_allocator);
+        norn.pci.debugPrintAllDevices();
+        const pci_usb = norn.pci.findDevice(norn.drivers.usb.class) orelse {
+            @panic("USB device not found.");
+        };
+        try norn.drivers.usb.init(pci_usb, norn.mem.general_allocator);
+    }
 
     // Spin wait for runtime tests.
     if (norn.is_runtime_test and norn.rtt_hid_wait != 0) {
@@ -255,7 +277,6 @@ fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !voi
     }
 
     // Start the scheduler.
-    // This function never returns.
     norn.sched.unlock();
     norn.sched.schedule();
 
