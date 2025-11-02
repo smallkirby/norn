@@ -6,9 +6,9 @@ pub const TaskError = arch.ArchError || mem.MemError;
 pub export var current_tss: TaskStateSegment linksection(pcpu.section) = undefined;
 
 /// Size in bytes of kernel stack.
-const kernel_stack_size = 5 * mem.size_4kib;
+const kstack_size = 5 * mem.size_4kib;
 /// Number of pages for kernel stack.
-const kernel_stack_num_pages = kernel_stack_size / mem.size_4kib;
+const kstack_num_pages = kstack_size / mem.size_4kib;
 
 /// x64 version of architecture-specific task context.
 const X64Context = struct {
@@ -38,7 +38,7 @@ pub fn setupNewTask(task: *Thread, ip: u64, args: ?*anyopaque) TaskError!void {
     task.mm.pgtbl = try arch.mem.createPageTables();
 
     // Init kernel stack.
-    const stack = try mem.vm_allocator.virtualAlloc(kernel_stack_size, .before);
+    const stack = try mem.vm_allocator.virtualAlloc(kstack_size, .before);
     errdefer mem.vm_allocator.virtualFree(stack);
     const stack_ptr = stack.ptr + stack.len;
     task.kernel_stack = stack;
@@ -143,11 +143,12 @@ noinline fn initialSwitchToImpl() callconv(.naked) noreturn {
     const sp_offset = @offsetOf(Thread, "kernel_stack_ptr");
 
     asm volatile (std.fmt.comptimePrint(
-            \\
             // Switch to the initial task's stack.
             \\movq {d}(%%rdi), %%rsp
+
             // Move initial task address to RSI for switchToInternal().
             \\movq %%rdi, %%rsi
+
             // Restore callee-saved registers.
             \\popq %%r15
             \\popq %%r14
@@ -174,7 +175,6 @@ noinline fn switchToImpl() callconv(.naked) void {
     const sp_offset = @offsetOf(Thread, "kernel_stack_ptr");
 
     asm volatile (std.fmt.comptimePrint(
-            \\
             // Save callee-saved registers.
             \\pushq %%rbp
             \\pushq %%rbx
@@ -182,9 +182,11 @@ noinline fn switchToImpl() callconv(.naked) void {
             \\pushq %%r13
             \\pushq %%r14
             \\pushq %%r15
+
             // Switch to the next task's stack.
             \\movq %%rsp, {d}(%%rdi)
             \\movq {d}(%%rsi), %%rsp
+
             // Restore callee-saved registers.
             \\popq %%r15
             \\popq %%r14
@@ -192,6 +194,7 @@ noinline fn switchToImpl() callconv(.naked) void {
             \\popq %%r12
             \\popq %%rbx
             \\popq %%rbp
+
             // We don't "call" here to leave the return address on the top of stack.
             // switchToInternal() returns to the caller of this function
             // (or any other function the stack pointer points to).
@@ -213,6 +216,10 @@ export fn switchToInternal(_: *Thread, next: *Thread) callconv(.c) void {
 
     // Switch CR3.
     norn.arch.mem.setPagetable(next.mm.pgtbl);
+
+    norn.arch.fence(.full);
+
+    norn.sched.enablePreemption();
 
     // Return to the caller of switchTo().
     return;

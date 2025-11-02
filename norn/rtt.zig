@@ -394,11 +394,7 @@ inline fn onlyForTest() void {
 
 fn failure() noreturn {
     @branchHint(.cold);
-
-    // Terminate QEMU if isa-debug-exit device is available.
-    norn.terminateQemu(1);
-    // Otherwise, halt the CPU.
-    norn.endlessHalt();
+    @panic("RTT failure. Aborting.");
 }
 
 // =============================================================

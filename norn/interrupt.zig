@@ -45,7 +45,18 @@ pub fn setHandler(vector: Vector, handler: Handler) IntrError!void {
 
 /// Call the registered interrupt handler for the given vector.
 pub fn call(vector: u64, context: *Context) void {
+    // Call corresponding handler.
     handlers[vector](context);
+
+    // Schedule if needed.
+    if (isIrq(vector) and norn.sched.needReschedule()) {
+        norn.sched.schedule();
+    }
+}
+
+/// Check if the given vector is an IRQ.
+fn isIrq(vector: u64) bool {
+    return 0x20 < vector; // TODO: arch-specific
 }
 
 /// Interrupt handler for spurious interrupts.

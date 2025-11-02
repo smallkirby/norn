@@ -536,6 +536,7 @@ pub const Tss = extern struct {
     /// RSP0.
     ///
     /// This field is used to store kernel stack pointer for privilege level change from ring-3 to ring-0.
+    /// This value does not change once set for the thread.
     rsp0: u64 align(1) = 0,
     /// RSP1.
     ///

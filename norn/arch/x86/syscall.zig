@@ -26,8 +26,10 @@ pub fn init() Error!void {
         }),
     };
     am.wrmsr(.star, star);
-    const fmask = regs.MsrFmask{ .flags = 0x200 }; // IE
-    am.wrmsr(.fmask, fmask); // syscall does not clear RFLAGS.
+    const fmask = regs.MsrFmask{ .flags = std.mem.zeroInit(regs.Rflags, .{
+        .ie = true,
+    }) };
+    am.wrmsr(.fmask, fmask);
 
     // Enable SYSCALL/SYSRET instructions.
     var efer = am.rdmsr(regs.MsrEfer, .efer);
@@ -109,7 +111,8 @@ export fn syscallEntry() callconv(.naked) void {
             // Switch to kernel stack
             \\movq %%gs:(current_tss + {[kernel_stack_offset]}), %%rsp
 
-            // TODO: Re-enable interrupts if necessary.
+            // Enable interrupts.
+            \\sti
 
             // Construct context
             \\pushq %[ss]                   # ss
@@ -209,7 +212,8 @@ export fn syscallEntry() callconv(.naked) void {
             \\add  $8, %%rsp                # cs
             \\popq %%r11                    # rflags
 
-            // TODO: Disable interrupts.
+            // Disable interrupts.
+            \\cli
 
             // Restore user stack.
             \\movq %%gs:(current_tss + {[user_stack_offset]}), %%rsp

@@ -24,30 +24,6 @@ pub const State = enum {
     dead,
 };
 
-/// CPU time consumed for the thread.
-pub const CpuTime = struct {
-    /// CPU time consumed in user mode.
-    user: u64 = 0,
-    /// CPU time consumed in kernel mode.
-    kernel: u64 = 0,
-    /// Time when the thread was last executed in user mode.
-    user_last_start: ?u64 = null,
-    /// Time when the thread was last executed in kernel mode.
-    kernel_last_start: ?u64 = null,
-
-    /// Update to record the time when the thread enters user mode.
-    pub fn updateEnterUser(self: *CpuTime, now: u64) void {
-        self.user_last_start = now;
-    }
-
-    /// Update to record the time when the thread exits user mode.
-    pub fn updateExitUser(self: *CpuTime, now: u64) void {
-        if (self.user_last_start) |last_start| {
-            self.user += now - last_start;
-        }
-    }
-};
-
 /// Next thread ID.
 var tid_next: Tid = 0;
 /// Spin lock for thread module.
@@ -73,8 +49,16 @@ pub const Credential = struct {
 pub const Thread = struct {
     const Self = @This();
 
+    /// Thread flags.
+    pub const Flags = packed struct {
+        /// This thread needs to be rescheduled.
+        need_resched: bool = false,
+    };
+
     /// Thread ID.
     tid: Tid,
+    /// Thread flags.
+    flags: Flags = .{},
     /// Kernel stack top.
     kernel_stack: []u8 = undefined,
     /// Kernel stack pointer.
@@ -89,8 +73,6 @@ pub const Thread = struct {
     comm: ?[]const u8 = null,
     /// Memory map.
     mm: *MemoryMap,
-    /// CPU time consumed for the thread.
-    cpu_time: CpuTime = .{},
     /// Thread credential.
     cred: Credential = .root,
     /// FS.

@@ -317,10 +317,9 @@ pub const MsrEfer = packed struct(u64) {
 /// IA32_STAR MSR
 pub const MsrFmask = packed struct(u64) {
     /// SYSCALL EFLAGS mask.
-    /// RFLAGS is set to the logical-AND of the current value and this mask.
-    flags: u32,
-    /// Reserved.
-    _reserved: u32 = 0,
+    ///
+    /// RFLAGS is set to the logical-AND of the current value and the complement of this mask.
+    flags: Rflags,
 };
 
 /// IA32_LSTAR MSR

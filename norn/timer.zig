@@ -73,7 +73,7 @@ fn calibrateTsc() TimerError!u64 {
 fn timer(_: *norn.interrupt.Context) void {
     jiffies += 1;
 
-    sched.schedule();
+    norn.sched.setNeedReschedule();
 
     arch.getLocalApic().eoi();
 }

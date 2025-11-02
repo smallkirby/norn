@@ -28,6 +28,13 @@ var is_initialized: bool linksection(pcpu.section) = false;
 var unlocked: bool linksection(pcpu.section) = false;
 /// Idle task.
 var idle_task: *Thread linksection(pcpu.section) = undefined;
+/// Counter for preemption disable calls.
+///
+/// While this counter is greater than zero, preemption is disabled.
+var preempt_count: *PreemptCounter linksection(pcpu.section) = undefined;
+
+/// Preemption counter type.
+const PreemptCounter = std.atomic.Value(usize);
 
 /// Initialize the scheduler for this CPU.
 ///
@@ -38,6 +45,11 @@ pub fn localInit() SchedError!void {
     rq.* = .{};
     pcpu.set(&runq, rq);
     pcpu.set(&is_initialized, true);
+
+    // Initialize preemption counter.
+    const counter = try general_allocator.create(PreemptCounter);
+    counter.* = .init(1);
+    pcpu.set(&preempt_count, counter);
 }
 
 /// Check if the scheduler is initialized for this CPU.
@@ -68,9 +80,15 @@ pub fn unlock() void {
 
 /// Schedule the next task.
 pub fn schedule() void {
-    _ = arch.disableIrq();
-
+    // Check if scheduling is allowed.
     if (!pcpu.get(&unlocked)) {
+        @branchHint(.unlikely);
+        return;
+    }
+
+    // Disable preemption during scheduling.
+    // The counter is decremented in the context switch handler.
+    if (!startSched()) {
         @branchHint(.unlikely);
         return;
     }
@@ -84,6 +102,7 @@ pub fn schedule() void {
         break :blk pcpu.get(&idle_task);
     };
     if (next.tid == 0 and cur.tid == 0) {
+        enablePreemption();
         return;
     }
     norn.rtt.expectEqual(.ready, next.state);
@@ -118,12 +137,6 @@ pub fn schedule() void {
     if (@import("option").debug_sched) {
         log.debug("Switching task: {d} -> {d}", .{ cur.tid, next.tid });
     }
-
-    // Update the CPU time.
-    // TODO: properly record user/kernel -CPU time.
-    const tsc = timer.getTimestamp();
-    cur.cpu_time.updateExitUser(tsc);
-    next.cpu_time.updateEnterUser(tsc);
 
     // Switch the context.
     cur.state = if (cur.state == .running) .ready else cur.state;
@@ -179,6 +192,55 @@ pub fn setupInitialTask(args: ?[]const []const u8) SchedError!void {
     // Enqueue the initial task to the run queue.
     enqueueTask(init_task);
 }
+
+/// Disable preemption.
+pub fn disablePreemption() void {
+    _ = pcpu.get(&preempt_count).fetchAdd(1, .release);
+}
+
+/// Enable preemption.
+pub fn enablePreemption() void {
+    const prev = pcpu.get(&preempt_count).fetchSub(1, .acquire);
+    norn.rtt.expect(prev != 0);
+}
+
+/// Check if preemption is enabled.
+pub fn isPreemptionEnabled() bool {
+    return pcpu.get(&preempt_count).load(.acquire) == 0;
+}
+
+/// Check if we can start scheduling, then decrease the preemption counter.
+fn startSched() bool {
+    const counter: *PreemptCounter = pcpu.get(&preempt_count);
+    const prev = counter.fetchAdd(1, .acquire);
+    if (prev != 0) {
+        _ = counter.fetchSub(1, .release);
+        return false;
+    }
+
+    return true;
+}
+
+/// Check if the current task needs to be rescheduled.
+pub fn needReschedule() bool {
+    if (!isInitialized()) {
+        return false;
+    }
+
+    const need_resched = getCurrentTask().flags.need_resched;
+    const preempt_allowed = pcpu.get(&preempt_count).load(.acquire) == 0;
+
+    return need_resched and preempt_allowed;
+}
+
+/// Set the current task to need rescheduling.
+pub fn setNeedReschedule() void {
+    getCurrentTask().flags.need_resched = true;
+}
+
+// =============================================================
+// Debug
+// =============================================================
 
 /// Print the list of threads in the run queue of this CPU.
 ///

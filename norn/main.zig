@@ -133,12 +133,6 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         norn.pcpu.localInit(arch.getCpuId());
     }
 
-    // Do per-CPU initialization.
-    {
-        log.info("Arch-specific CPU initialization.", .{});
-        try arch.localInit(norn.mem.page_allocator);
-    }
-
     // Set serial interrupt handler.
     {
         log.info("Setting serial interrupt handlers.", .{});
@@ -146,6 +140,12 @@ fn kernelMain(early_boot_info: BootInfo) !void {
             .serial,
             norn.Serial.interruptHandler,
         );
+    }
+
+    // Do per-CPU initialization.
+    {
+        log.info("Arch-specific CPU initialization.", .{});
+        try arch.localInit(norn.mem.page_allocator);
     }
 
     // Boot APs.
@@ -157,7 +157,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     // Initialize scheduler.
     {
         log.info("Initializing scheduler locally", .{});
-        _ = norn.arch.disableIrq();
+        _ = arch.disableIrq();
         try norn.sched.localInit();
     }
 
@@ -282,8 +282,10 @@ fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !voi
 
     // Idle task.
     while (true) {
-        norn.rtt.expect(!arch.isIrqEnabled());
-        norn.sched.schedule(); // TODO: should HLT
+        norn.rtt.expect(arch.isIrqEnabled());
+
+        arch.halt();
+        norn.sched.schedule();
     }
 }
 
