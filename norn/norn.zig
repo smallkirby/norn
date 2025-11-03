@@ -135,9 +135,6 @@ pub fn terminateQemu(status: u8) void {
 
 /// Halt the CPU indefinitely.
 pub fn endlessHalt() noreturn {
-    if (is_runtime_test) {
-        terminateQemu(3);
-    }
     while (true) {
         _ = arch.disableIrq();
         arch.halt();
