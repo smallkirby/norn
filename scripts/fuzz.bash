@@ -10,6 +10,18 @@ HEYSTACK=${HEYSTACK:-"Reached end of main"}
 LOGFILE=${LOGFILE:-"/tmp/norn-fuzz.log"}
 SHIFT=${SHIFT:-5}
 MAX=${MAX:-1000000}
+NUM_CORES=${NUM_CORES:-3}
+
+BIOS=/usr/share/ovmf/OVMF.fd
+CPU_MODEL=qemu64
+CPU_FEATURES=(
+  "+fsgsbase"
+  "+avx"
+  "+avx2"
+  "+xsave"
+  "+xsaveopt"
+  "+bmi1"
+)
 
 echo_normal "===== Build Information ======="
 echo_normal "Optimization    : $OPTIMIZE"
@@ -36,8 +48,8 @@ while true; do
 
   echo_normal "iter: $counter"
 
-  "$QEMU" \
-    -m "$MEMORY" \
+  qemu-system-x86_64 \
+    -m  512M \
     -bios "$BIOS" \
     -drive file=zig-out/diskimg,format=raw,if=virtio,media=disk \
     -nographic \
