@@ -49,10 +49,19 @@ pub const Credential = struct {
 pub const Thread = struct {
     const Self = @This();
 
+    /// Size in bytes of kernel stack.
+    const kstack_size = 3 * mem.size_4kib;
+    /// Number of pages for kernel stack.
+    const kstack_num_pages = kstack_size / mem.size_4kib;
+
     /// Thread flags.
-    pub const Flags = packed struct {
+    pub const Flags = struct {
         /// This thread needs to be rescheduled.
         need_resched: bool = false,
+        /// In IRQ context.
+        in_irq: std.atomic.Value(bool) = .init(false),
+        /// How many times preemption is disabled.
+        preempt_count: std.atomic.Value(u8) = .init(0),
     };
 
     /// Thread ID.
@@ -60,9 +69,13 @@ pub const Thread = struct {
     /// Thread flags.
     flags: Flags = .{},
     /// Kernel stack top.
-    kernel_stack: []u8 = undefined,
+    ///
+    /// Set to RSP0 for interrupts while in user-mode and syscalls.
+    kstack: []u8 = undefined,
     /// Kernel stack pointer.
-    kernel_stack_ptr: [*]u8 = undefined,
+    ///
+    /// Used to track the kernel stack top among context switches.
+    ksp: u64 = undefined,
     /// User stack top.
     user_stack: []u8 = undefined,
     /// Thread state.
@@ -111,6 +124,11 @@ pub const Thread = struct {
         const args_ptr = try allocator.create(ArgType);
         args_ptr.* = args;
         errdefer allocator.destroy(args_ptr);
+
+        // Create kernel stack.
+        const kstack = try mem.vm_allocator.virtualAlloc(kstack_size, .before);
+        errdefer mem.vm_allocator.virtualFree(kstack);
+        self.kstack = kstack;
 
         // Initialize arch-specific context.
         try arch.task.setupNewTask(
@@ -166,6 +184,11 @@ pub const Thread = struct {
             },
             else => @compileError("Kernel thread function cannot return value."),
         }
+    }
+
+    /// Get bottom address of the kernel stack.
+    pub fn kstackBottom(self: *const Self) u64 {
+        return @intFromPtr(self.kstack.ptr) + kstack_size;
     }
 };
 

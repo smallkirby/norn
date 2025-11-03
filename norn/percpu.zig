@@ -15,7 +15,7 @@
 pub const section = ".data..percpu";
 
 /// Alignment of per-CPU data.
-const percpu_align = 16;
+const percpu_align = mem.size_4kib;
 /// Address space of per-CPU data.
 const percpu_addrspace = std.builtin.AddressSpace.gs;
 
@@ -82,9 +82,20 @@ pub fn isThisCpuInitialized(cpu: usize) bool {
 }
 
 /// Get the address of per-CPU data relative to the per-CPU address space for the current CPU.
-/// TODO disable preemption
+///
+/// TODO: disable preemption
 pub inline fn ptr(comptime pointer: anytype) *allowzero addrspace(percpu_addrspace) @typeInfo(@TypeOf(pointer)).pointer.child {
     return @ptrCast(@addrSpaceCast(pointer));
+}
+
+/// Get the absolute address of per-CPU data.
+///
+/// TODO: disable preemption
+pub fn rawptr(comptime pointer: anytype) *@typeInfo(@TypeOf(pointer)).pointer.child {
+    const cpu_id = norn.arch.getCpuId();
+    const base = rawGetCpuHead(cpu_id);
+
+    return @ptrCast(@alignCast(base + @intFromPtr(pointer)));
 }
 
 /// Get the value of the per-CPU variable.
@@ -134,6 +145,10 @@ pub const mock_for_testing = struct {
 
     pub fn set(comptime pointer: anytype, value: @typeInfo(@TypeOf(pointer)).pointer.child) void {
         pointer.* = value;
+    }
+
+    pub fn rawptr(comptime pointer: anytype) *@typeInfo(@TypeOf(pointer)).pointer.child {
+        return pointer;
     }
 };
 

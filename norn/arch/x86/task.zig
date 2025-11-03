@@ -1,20 +1,7 @@
 pub const TaskError = arch.ArchError || mem.MemError;
 
-/// Current TSS.
-///
-/// Should be exported so that syscall entrypoint can access it.
-pub export var current_tss: TaskStateSegment linksection(pcpu.section) = undefined;
-
-/// Size in bytes of kernel stack.
-const kstack_size = 5 * mem.size_4kib;
-/// Number of pages for kernel stack.
-const kstack_num_pages = kstack_size / mem.size_4kib;
-
 /// x64 version of architecture-specific task context.
-const X64Context = struct {
-    /// TSS
-    tss: *TaskStateSegment,
-};
+const X64Context = struct {};
 
 /// Initial value of RFLAGS register for tasks.
 const initial_rflags = std.mem.zeroInit(regs.Rflags, .{ .ie = true });
@@ -37,26 +24,15 @@ pub fn setupNewTask(task: *Thread, ip: u64, args: ?*anyopaque) TaskError!void {
     // Init page table.
     task.mm.pgtbl = try arch.mem.createPageTables();
 
-    // Init kernel stack.
-    const stack = try mem.vm_allocator.virtualAlloc(kstack_size, .before);
-    errdefer mem.vm_allocator.virtualFree(stack);
-    const stack_ptr = stack.ptr + stack.len;
-    task.kernel_stack = stack;
-    task.kernel_stack_ptr = stack_ptr;
-
-    // Init TSS.
-    const tss = try mem.general_allocator.create(TaskStateSegment);
-    tss.* = TaskStateSegment{
-        .rsp0 = @intFromPtr(task.kernel_stack_ptr), // TODO: fix the value
-    };
-    x64ctx(task).tss = tss;
+    var sp = task.kstackBottom();
 
     // Setup CPU context.
+    //
     // The context holds an entry point (R8) and arguments (R9) for kernel thread.
     // If the task has an user thread, this function additionally holds a user context.
-    task.kernel_stack_ptr -= @sizeOf(CpuContext);
     {
-        const cpu_context: *CpuContext = @ptrCast(@alignCast(task.kernel_stack_ptr));
+        sp -= @sizeOf(CpuContext);
+        const cpu_context: *CpuContext = @ptrFromInt(sp);
         norn.rtt.expectEqual(0, @intFromPtr(cpu_context) % 16);
         norn.rtt.expectEqual(cpu_context, getCpuContextFromStack(task));
 
@@ -72,10 +48,13 @@ pub fn setupNewTask(task: *Thread, ip: u64, args: ?*anyopaque) TaskError!void {
     }
 
     // Setup orphan frame.
-    task.kernel_stack_ptr -= @sizeOf(OrphanFrame);
+    //
+    // This frame is used on the first context switch to this task.
     {
-        const orphan_frame: *OrphanFrame = @ptrCast(@alignCast(task.kernel_stack_ptr));
+        sp -= @sizeOf(OrphanFrame);
+        const orphan_frame: *OrphanFrame = @ptrFromInt(sp);
         norn.rtt.expectEqual(0, @intFromPtr(orphan_frame) % 16);
+
         orphan_frame.* = OrphanFrame{
             .r12 = 0,
             .r13 = 0,
@@ -86,6 +65,9 @@ pub fn setupNewTask(task: *Thread, ip: u64, args: ?*anyopaque) TaskError!void {
             .rip = @intFromPtr(&kernelThreadArchEntry),
         };
     }
+
+    // Set kernel stack pointer.
+    task.ksp = sp;
 }
 
 /// Initialize the user CPU state.
@@ -95,17 +77,11 @@ pub fn setUserContext(task: *Thread, rip: u64, rsp: u64) void {
     cpu_context.rsp = rsp;
 }
 
-/// Convert arch-specific task context to x64 context.
-inline fn x64ctx(task: *Thread) *X64Context {
-    return @ptrCast(&task.arch_ctx);
-}
-
 /// Get CPU context from kernel stack.
 ///
 /// This functions can be called only before the thread starts.
 fn getCpuContextFromStack(task: *Thread) *CpuContext {
-    const stack_bottom = @intFromPtr(task.kernel_stack.ptr) + task.kernel_stack.len;
-    return @ptrFromInt(stack_bottom - @sizeOf(CpuContext));
+    return @ptrFromInt(task.kstackBottom() - @sizeOf(CpuContext));
 }
 
 // =============================================================
@@ -117,7 +93,7 @@ fn getCpuContextFromStack(task: *Thread) *CpuContext {
 /// All entry points of kernel threads are set to this function.
 noinline fn kernelThreadArchEntry() noreturn {
     const task = sched.getCurrentTask();
-    const cpu_context: *const CpuContext = @ptrFromInt(@intFromPtr(task.kernel_stack_ptr) + @sizeOf(OrphanFrame));
+    const cpu_context = getCpuContextFromStack(task);
 
     asm volatile (
         \\movq %[args], %%rdi
@@ -127,7 +103,7 @@ noinline fn kernelThreadArchEntry() noreturn {
           [entry] "r" (cpu_context.r8),
         : .{ .memory = true });
 
-    unreachable; // TODO
+    @panic("Reached unreachable thread EOL.");
 }
 
 // =============================================================
@@ -140,7 +116,7 @@ noinline fn kernelThreadArchEntry() noreturn {
 /// No callee-saved registers are saved and restored.
 pub const initialSwitchTo: *const fn (init: *Thread) callconv(.c) noreturn = @ptrCast(&initialSwitchToImpl);
 noinline fn initialSwitchToImpl() callconv(.naked) noreturn {
-    const sp_offset = @offsetOf(Thread, "kernel_stack_ptr");
+    const sp_offset = @offsetOf(Thread, "ksp");
 
     asm volatile (std.fmt.comptimePrint(
             // Switch to the initial task's stack.
@@ -172,7 +148,7 @@ noinline fn initialSwitchToImpl() callconv(.naked) noreturn {
 /// We cast the function pointer to call it in C convention though actually it must be naked.
 pub const switchTo: *const fn (prev: *Thread, next: *Thread) callconv(.c) void = @ptrCast(&switchToImpl);
 noinline fn switchToImpl() callconv(.naked) void {
-    const sp_offset = @offsetOf(Thread, "kernel_stack_ptr");
+    const sp_offset = @offsetOf(Thread, "ksp");
 
     asm volatile (std.fmt.comptimePrint(
             // Save callee-saved registers.
@@ -209,17 +185,16 @@ noinline fn switchToImpl() callconv(.naked) void {
 ///
 /// This function returns to the caller of switchTo().
 export fn switchToInternal(_: *Thread, next: *Thread) callconv(.c) void {
-    // Restore TSS.RSP0.
-    const rsp0 = @intFromPtr(next.kernel_stack_ptr); // TODO: Should not set this kernel stack.
-    x64ctx(next).tss.rsp0 = rsp0;
-    pcpu.ptr(&current_tss).rsp0 = rsp0;
-
     // Switch CR3.
     norn.arch.mem.setPagetable(next.mm.pgtbl);
-
     norn.arch.fence(.full);
 
-    norn.sched.enablePreemption();
+    // Restore TSS.RSP0.
+    gdt.loadSp0(next.kstackBottom());
+
+    // Enable IRQ.
+    norn.rtt.expect(!arch.isIrqEnabled());
+    norn.arch.enableIrq();
 
     // Return to the caller of switchTo().
     return;
@@ -315,4 +290,3 @@ const isr = @import("isr.zig");
 const regs = @import("registers.zig");
 const syscall = @import("syscall.zig");
 const CpuContext = regs.CpuContext;
-const TaskStateSegment = gdt.Tss;

@@ -24,7 +24,7 @@ SECTIONS {
      * Per-CPU variable placeholder.
      *
      * Variables in this section is copied to each CPU's private data area after boot.
-     * The virtual address must be 0 (relative to FS).
+     * The virtual address must be 0 (relative to GS).
      */
     __per_cpu_start = .;
     .data..percpu KERNEL_VADDR_PCPU : AT (KERNEL_PADDR_BASE) {

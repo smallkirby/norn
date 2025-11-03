@@ -65,6 +65,9 @@ pub fn log(
         );
     };
 
+    const ie = norn.arch.disableIrq();
+    defer if (ie) norn.arch.enableIrq();
+
     writer.print(
         level_str ++ " " ++ scope_str ++ fmt ++ "\n",
         args,

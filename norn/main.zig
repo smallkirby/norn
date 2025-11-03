@@ -66,6 +66,7 @@ fn kernelMain(early_boot_info: BootInfo) !void {
     {
         log.info("Enabling exceptions.", .{});
         try norn.interrupt.globalInit();
+        norn.rtt.expect(!arch.isIrqEnabled());
     }
 
     // Initialize bootstrap allocator.
@@ -148,16 +149,9 @@ fn kernelMain(early_boot_info: BootInfo) !void {
         try arch.localInit(norn.mem.page_allocator);
     }
 
-    // Boot APs.
-    {
-        log.info("Booting APs.", .{});
-        try arch.mp.bootAllAps();
-    }
-
     // Initialize scheduler.
     {
         log.info("Initializing scheduler locally", .{});
-        _ = arch.disableIrq();
         try norn.sched.localInit();
     }
 
@@ -193,8 +187,13 @@ fn kernelMain(early_boot_info: BootInfo) !void {
 /// and the initial task is launched.
 fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !void {
     norn.rtt.expect(norn.arch.isCurrentBsp());
-    norn.rtt.expectEqual(false, norn.arch.isIrqEnabled());
-    norn.arch.enableIrq();
+    norn.rtt.expect(norn.arch.isIrqEnabled());
+
+    // Boot APs.
+    {
+        log.info("Booting APs.", .{});
+        try arch.mp.bootAllAps();
+    }
 
     // Initialize filesystem.
     // Set the root directory and CWD to the root of initramfs.
@@ -283,9 +282,7 @@ fn nornThread(initramfs: surtr.InitramfsInfo, cmdline: norn.params.Cmdline) !voi
     // Idle task.
     while (true) {
         norn.rtt.expect(arch.isIrqEnabled());
-
         arch.halt();
-        norn.sched.schedule();
     }
 }
 

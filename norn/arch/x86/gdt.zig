@@ -1,6 +1,11 @@
 /// GDT is initialized and differentiated for this CPU.
 var initialized: bool linksection(pcpu.section) = false;
 
+/// Current TSS.
+///
+/// Should be exported so that syscall entrypoint can access it.
+export var current_tss: Tss align(aligns.tss) linksection(pcpu.section) = undefined;
+
 /// Boot-time variables.
 const early = struct {
     /// Boot-time GDT.
@@ -111,13 +116,12 @@ pub fn localInit(allocator: PageAllocator) PageAllocator.Error!void {
     gdt.init();
 
     // Create TSS.
-    const tss_page = try allocator.allocPages(1, .normal);
-    errdefer allocator.freePages(tss_page);
-
-    const tss = Tss.from(tss_page.ptr);
+    const tss: *Tss = pcpu.rawptr(&current_tss);
     tss.init();
 
-    // Set RSP0
+    // Set temporary RSP0
+    //
+    // This value is unique per kernel thread.
     const rps0_page_num = istack_size / mem.size_4kib;
     const rsp0 = try allocator.allocPages(rps0_page_num, .normal);
     errdefer allocator.freePages(rsp0);
@@ -139,6 +143,16 @@ pub fn localInit(allocator: PageAllocator) PageAllocator.Error!void {
 
     // Mark as initialized.
     pcpu.set(&initialized, true);
+}
+
+/// Load RSP0 of the current TSS.
+pub fn loadSp0(sp0: Virt) void {
+    const ie = norn.arch.disableIrq();
+    defer if (ie) norn.arch.enableIrq();
+
+    rtt.expect(pcpu.get(&initialized));
+
+    pcpu.ptr(&current_tss).rsp0 = sp0;
 }
 
 /// Load kernel segment selectors.

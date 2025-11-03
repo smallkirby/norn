@@ -80,7 +80,8 @@ pub fn isInited(self: Self) bool {
 /// If the ring buffer is full, the received byte is discarded.
 pub fn interruptHandler(_: *norn.interrupt.Context) void {
     const s = norn.getSerial();
-    const ie = s.lock.lockDisableIrq();
+    s.lock.lock();
+    defer s.lock.unlock();
 
     while (s.tryReadNoLock()) |b| {
         s.rb.produceOne(b) catch {
@@ -93,7 +94,6 @@ pub fn interruptHandler(_: *norn.interrupt.Context) void {
         .args = &.{},
     }) catch {}; // ignore error
 
-    s.lock.unlockRestoreIrq(ie);
     norn.arch.getLocalApic().eoi();
 }
 

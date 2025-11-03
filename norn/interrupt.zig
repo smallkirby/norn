@@ -29,8 +29,6 @@ pub const Handler = *const fn (*Context) void;
 /// Initialize the interrupt subsystem globally.
 pub fn globalInit() IntrError!void {
     try setHandler(.spurious, spuriousInterruptHandler);
-
-    arch.enableIrq();
 }
 
 /// Set an interrupt handler for the given vector.
@@ -45,18 +43,27 @@ pub fn setHandler(vector: Vector, handler: Handler) IntrError!void {
 
 /// Call the registered interrupt handler for the given vector.
 pub fn call(vector: u64, context: *Context) void {
+    const current = norn.sched.getCurrentTask();
+    const in_irq = current.flags.in_irq.load(.acquire);
+    current.flags.in_irq.store(true, .release);
+    defer current.flags.in_irq.store(in_irq, .release);
+
     // Call corresponding handler.
     handlers[vector](context);
 
     // Schedule if needed.
-    if (isIrq(vector) and norn.sched.needReschedule()) {
+    if (!in_irq and isIrq(vector) and norn.sched.needReschedule()) {
+        norn.sched.disablePreemption();
+        norn.arch.enableIrq();
         norn.sched.schedule();
+        _ = arch.disableIrq();
+        norn.sched.enablePreemption();
     }
 }
 
 /// Check if the given vector is an IRQ.
 fn isIrq(vector: u64) bool {
-    return 0x20 < vector; // TODO: arch-specific
+    return 0x20 <= vector; // TODO: arch-specific
 }
 
 /// Interrupt handler for spurious interrupts.
@@ -145,10 +152,21 @@ fn x64UnhandledHandler(context: *Context) void {
         }
     }
 
+    // Print thread information.
+    if (norn.pcpu.isThisCpuInitialized(cpuid) and norn.sched.isInitialized()) {
+        const current = norn.sched.getCurrentTask();
+
+        writer.log("", .{});
+        writer.log("=== Task Information =====================", .{});
+        writer.log("TID    : {d}", .{current.tid});
+        writer.log("Name   : {s}", .{current.name});
+        writer.log("Kstack : 0x{X:0>8}-0x{X:0>8}", .{ @intFromPtr(current.kstack.ptr), current.kstackBottom() });
+    }
+
     // Check if it's a kernel stack overflow.
     if (norn.pcpu.isThisCpuInitialized(cpuid) and norn.sched.isInitialized()) {
         const current = norn.sched.getCurrentTask();
-        const kstack = current.kernel_stack;
+        const kstack = current.kstack;
         const kstack_guard_start = @intFromPtr(kstack.ptr);
         if (kstack_guard_start <= context.rsp and context.rsp < (kstack_guard_start + norn.mem.size_4kib)) {
             writer.log("", .{});

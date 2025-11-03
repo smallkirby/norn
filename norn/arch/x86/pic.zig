@@ -170,8 +170,9 @@ const Ocw = union(ocw) {
 /// Initialize the PIC, but disable all interrupts.
 pub fn initDisabled() void {
     // We have to disable interrupts to prevent PIC-driven interrupts before registering handlers.
+    const ie = am.readRflags().ie;
     am.cli();
-    defer am.sti();
+    defer if (ie) am.sti();
 
     // Start initialization sequence.
     issue(Icw{ .icw1 = .{} }, primary_command_port);
