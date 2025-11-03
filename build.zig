@@ -116,7 +116,7 @@ pub fn build(b: *std.Build) !void {
         []const u8,
         "bootparams",
         "Path to Surtr boot parameters file.",
-    ) orelse "assets/boot/bootprarams";
+    ) orelse "assets/boot/bootparams";
 
     const rtt_hid_wait = b.option(
         u32,
