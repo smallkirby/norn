@@ -50,7 +50,7 @@ pub const Thread = struct {
     const Self = @This();
 
     /// Size in bytes of kernel stack.
-    const kstack_size = 3 * mem.size_4kib;
+    const kstack_size = 5 * mem.size_4kib;
     /// Number of pages for kernel stack.
     const kstack_num_pages = kstack_size / mem.size_4kib;
 
