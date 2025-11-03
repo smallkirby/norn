@@ -202,10 +202,10 @@ export fn switchToInternal(_: *Thread, next: *Thread) callconv(.c) void {
 
 /// Enter userland.
 pub noinline fn enterUser() noreturn {
+    _ = arch.disableIrq();
+
     const task = sched.getCurrentTask();
     const cpu_context = getCpuContextFromStack(task);
-
-    _ = arch.disableIrq();
 
     asm volatile (
         \\movq %[ctx], %%rdi
